@@ -1,0 +1,22 @@
+{
+  "name": "paypulse",
+  "version": "1.0.0",
+  "description": "Pay-per-appointment auto-billing CRM",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.11.1",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.22.0",
+    "postgres": "^3.4.9",
+    "uuid": "^9.0.0"
+  }
+}

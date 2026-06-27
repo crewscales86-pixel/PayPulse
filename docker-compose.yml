@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://user:pass@db:5432/paypulse
+      - JWT_SECRET=change-this-to-a-random-64-char-string
+      - BASE_URL=http://localhost:3000
+      # Stripe (optional - for SMMA subscription billing)
+      # - STRIPE_SECRET_KEY=sk_live_xxx
+      # - STRIPE_PRICE_STANDARD=price_xxx
+      # - STRIPE_PRICE_PRO=price_yyy
+      # - STRIPE_WEBHOOK_SECRET=whsec_xxx
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: paypulse
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

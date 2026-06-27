@@ -1,0 +1,465 @@
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
+
+// ─── DATABASE LAYER ─────────────────────────────────────────────
+// Uses PostgreSQL in production (DATABASE_URL set), SQLite for local dev
+
+const USE_PG = !!process.env.DATABASE_URL;
+
+let pgPool = null;
+let sqliteDb = null;
+
+if (USE_PG) {
+  const { Pool } = require('pg');
+  pgPool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+} else {
+  const Database = require('better-sqlite3');
+  sqliteDb = new Database(path.join(__dirname, 'paypulse.db'));
+}
+
+// ─── SCHEMA ─────────────────────────────────────────────────────
+async function initSchema() {
+  if (USE_PG) {
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'agency',
+        company_name TEXT DEFAULT '',
+        processor TEXT DEFAULT 'stripe',
+        stripe_secret_key TEXT DEFAULT '',
+        stripe_publishable_key TEXT DEFAULT '',
+        whop_api_key TEXT DEFAULT '',
+        whop_company_id TEXT DEFAULT '',
+        plan TEXT DEFAULT 'free',
+        monthly_rate REAL DEFAULT 0,
+        active INTEGER DEFAULT 1,
+        appointment_tracking_mode INTEGER DEFAULT 0,
+        stripe_customer_id TEXT DEFAULT '',
+        stripe_subscription_id TEXT DEFAULT '',
+        ghl_webhook_secret TEXT DEFAULT '',
+        whop_webhook_secret TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS customers (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        company_name TEXT DEFAULT '',
+        email TEXT NOT NULL,
+        phone TEXT DEFAULT '',
+        status TEXT DEFAULT 'new',
+        card_on_file INTEGER DEFAULT 0,
+        stripe_customer_id TEXT DEFAULT '',
+        stripe_payment_method_id TEXT DEFAULT '',
+        whop_member_id TEXT DEFAULT '',
+        whop_payment_method_id TEXT DEFAULT '',
+        rate_per_trigger REAL DEFAULT 147,
+        total_charged REAL DEFAULT 0,
+        total_triggers INTEGER DEFAULT 0,
+        ghl_location_id TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS charges (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        customer_id TEXT NOT NULL,
+        customer_name TEXT DEFAULT '',
+        customer_email TEXT DEFAULT '',
+        amount REAL NOT NULL,
+        processor TEXT DEFAULT 'stripe',
+        status TEXT DEFAULT 'pending',
+        stripe_charge_id TEXT DEFAULT '',
+        failure_reason TEXT DEFAULT '',
+        note TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS appointments (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        customer_id TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        date TEXT DEFAULT '',
+        time TEXT DEFAULT '',
+        note TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        read INTEGER DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS ad_metrics (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        customer_id TEXT NOT NULL,
+        source TEXT DEFAULT 'facebook',
+        campaign_name TEXT DEFAULT '',
+        date_from DATE,
+        date_to DATE,
+        ad_spend REAL DEFAULT 0,
+        impressions INTEGER DEFAULT 0,
+        clicks INTEGER DEFAULT 0,
+        leads INTEGER DEFAULT 0,
+        appointments INTEGER DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+  } else {
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
+        password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'agency',
+        company_name TEXT DEFAULT '', processor TEXT DEFAULT 'stripe',
+        stripe_secret_key TEXT DEFAULT '', stripe_publishable_key TEXT DEFAULT '',
+        whop_api_key TEXT DEFAULT '', whop_company_id TEXT DEFAULT '',
+        plan TEXT DEFAULT 'free', monthly_rate REAL DEFAULT 0, active INTEGER DEFAULT 1,
+        appointment_tracking_mode INTEGER DEFAULT 0,
+        stripe_customer_id TEXT DEFAULT '', stripe_subscription_id TEXT DEFAULT '',
+        ghl_webhook_secret TEXT DEFAULT '', whop_webhook_secret TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS customers (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
+        company_name TEXT DEFAULT '', email TEXT NOT NULL, phone TEXT DEFAULT '', status TEXT DEFAULT 'new',
+        card_on_file INTEGER DEFAULT 0, stripe_customer_id TEXT DEFAULT '',
+        stripe_payment_method_id TEXT DEFAULT '', whop_member_id TEXT DEFAULT '',
+        whop_payment_method_id TEXT DEFAULT '', rate_per_trigger REAL DEFAULT 147,
+        total_charged REAL DEFAULT 0, total_triggers INTEGER DEFAULT 0,
+        ghl_location_id TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS charges (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL, customer_id TEXT NOT NULL,
+        customer_name TEXT DEFAULT '', customer_email TEXT DEFAULT '',
+        amount REAL NOT NULL, processor TEXT DEFAULT 'stripe',
+        status TEXT DEFAULT 'pending', stripe_charge_id TEXT DEFAULT '',
+        failure_reason TEXT DEFAULT '', note TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS appointments (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL, customer_id TEXT NOT NULL,
+        status TEXT DEFAULT 'pending', date TEXT DEFAULT '', time TEXT DEFAULT '',
+        note TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL, type TEXT NOT NULL,
+        title TEXT NOT NULL, body TEXT NOT NULL, read INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS ad_metrics (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL, customer_id TEXT NOT NULL,
+        source TEXT DEFAULT 'facebook', campaign_name TEXT DEFAULT '',
+        date_from TEXT, date_to TEXT, ad_spend REAL DEFAULT 0,
+        impressions INTEGER DEFAULT 0, clicks INTEGER DEFAULT 0,
+        leads INTEGER DEFAULT 0, appointments INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+    `);
+  }
+}
+
+// ─── HELPERS ────────────────────────────────────────────────────
+function run(sql, params = []) {
+  if (USE_PG) return pgPool.query(sql, params);
+  return sqliteDb.prepare(sql).run(...params);
+}
+
+function get(sql, params = []) {
+  if (USE_PG) return pgPool.query(sql, params).then(r => r.rows[0] || null);
+  return sqliteDb.prepare(sql).get(...params);
+}
+
+function all(sql, params = []) {
+  if (USE_PG) return pgPool.query(sql, params).then(r => r.rows);
+  return sqliteDb.prepare(sql).all(...params);
+}
+
+function uuid() { return uuidv4(); }
+
+// ─── USERS ──────────────────────────────────────────────────────
+function createUser(data) {
+  const id = uuid();
+  const ghlSecret = uuid();
+  const whopSecret = uuid();
+  if (USE_PG) {
+    // PG path: return promise
+    return pgPool.query(
+      `INSERT INTO users (id, email, name, password_hash, role, company_name, processor, plan, monthly_rate, ghl_webhook_secret, whop_webhook_secret)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+      [id, data.email, data.name, data.password_hash, data.role || 'agency', data.company_name || '',
+       data.processor || 'stripe', data.plan || 'free', data.monthly_rate || 97, ghlSecret, whopSecret]
+    ).then(() => getUserById(id));
+  }
+  // SQLite path: synchronous
+  sqliteDb.prepare(
+    `INSERT INTO users (id, email, name, password_hash, role, company_name, processor, plan, monthly_rate, ghl_webhook_secret, whop_webhook_secret)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+  ).run(id, data.email, data.name, data.password_hash, data.role || 'agency', data.company_name || '',
+    data.processor || 'stripe', data.plan || 'free', data.monthly_rate || 97, ghlSecret, whopSecret);
+  return getUserById(id);
+}
+
+function getUserByEmail(email) { return get('SELECT * FROM users WHERE email = ?', [email]); }
+function getUserById(id) { return get('SELECT * FROM users WHERE id = ?', [id]); }
+function getUserByGhlSecret(secret) { return get('SELECT * FROM users WHERE ghl_webhook_secret = ?', [secret]); }
+function getUserByWhopSecret(secret) { return get('SELECT * FROM users WHERE whop_webhook_secret = ?', [secret]); }
+
+function updateUser(id, updates) {
+  const keys = Object.keys(updates);
+  if (keys.length === 0) return getUserById(id);
+  if (USE_PG) {
+    const setClauses = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
+    return pgPool.query(`UPDATE users SET ${setClauses} WHERE id = $${keys.length + 1}`, [...keys.map(k => updates[k]), id]).then(() => getUserById(id));
+  }
+  const setClause = keys.map(k => `${k} = ?`).join(', ');
+  sqliteDb.prepare(`UPDATE users SET ${setClause} WHERE id = ?`).run(...keys.map(k => updates[k]), id);
+  return getUserById(id);
+}
+
+function listUsers(role) {
+  if (role) return all('SELECT * FROM users WHERE role = ?', [role]);
+  return all('SELECT * FROM users');
+}
+
+// ─── CUSTOMERS ──────────────────────────────────────────────────
+function createCustomer(data) {
+  const id = uuid();
+  if (USE_PG) {
+    return pgPool.query(
+      `INSERT INTO customers (id, user_id, name, company_name, email, phone, status, card_on_file, stripe_customer_id, stripe_payment_method_id, whop_member_id, whop_payment_method_id, rate_per_trigger, ghl_location_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      [id, data.user_id, data.name, data.company_name || '', data.email, data.phone || '', data.status || 'new',
+       data.card_on_file ? 1 : 0, data.stripe_customer_id || '', data.stripe_payment_method_id || '',
+       data.whop_member_id || '', data.whop_payment_method_id || '', data.rate_per_trigger || 147, data.ghl_location_id || '']
+    ).then(() => getCustomerById(id));
+  }
+  sqliteDb.prepare(
+    `INSERT INTO customers (id, user_id, name, company_name, email, phone, status, card_on_file, stripe_customer_id, stripe_payment_method_id, whop_member_id, whop_payment_method_id, rate_per_trigger, ghl_location_id)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+  ).run(id, data.user_id, data.name, data.company_name || '', data.email, data.phone || '', data.status || 'new',
+    data.card_on_file ? 1 : 0, data.stripe_customer_id || '', data.stripe_payment_method_id || '',
+    data.whop_member_id || '', data.whop_payment_method_id || '', data.rate_per_trigger || 147, data.ghl_location_id || '');
+  return getCustomerById(id);
+}
+
+function getCustomerById(id) { return get('SELECT * FROM customers WHERE id = ?', [id]); }
+function getCustomersByUser(userId) { return all('SELECT * FROM customers WHERE user_id = ? ORDER BY created_at DESC', [userId]); }
+function getCustomerByEmailAndUser(email, userId) { return get('SELECT * FROM customers WHERE email = ? AND user_id = ?', [email, userId]); }
+function getCustomerByLocationId(locationId, userId) { return get('SELECT * FROM customers WHERE ghl_location_id = ? AND user_id = ?', [locationId, userId]); }
+
+function updateCustomer(id, updates) {
+  const keys = Object.keys(updates);
+  if (keys.length === 0) return getCustomerById(id);
+  if (USE_PG) {
+    const setClauses = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
+    return pgPool.query(`UPDATE customers SET ${setClauses} WHERE id = $${keys.length + 1}`, [...keys.map(k => updates[k]), id]).then(() => getCustomerById(id));
+  }
+  const setClause = keys.map(k => `${k} = ?`).join(', ');
+  sqliteDb.prepare(`UPDATE customers SET ${setClause} WHERE id = ?`).run(...keys.map(k => updates[k]), id);
+  return getCustomerById(id);
+}
+
+// ─── CHARGES ────────────────────────────────────────────────────
+function createCharge(data) {
+  const id = uuid();
+  if (USE_PG) {
+    return pgPool.query(
+      `INSERT INTO charges (id, user_id, customer_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, failure_reason, note)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [id, data.user_id, data.customer_id, data.customer_name, data.customer_email, data.amount,
+       data.processor, data.status, data.stripe_charge_id || '', data.failure_reason || '', data.note || '']
+    ).then(() => getChargeById(id));
+  }
+  sqliteDb.prepare(
+    `INSERT INTO charges (id, user_id, customer_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, failure_reason, note)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+  ).run(id, data.user_id, data.customer_id, data.customer_name, data.customer_email, data.amount,
+    data.processor, data.status, data.stripe_charge_id || '', data.failure_reason || '', data.note || '');
+  return getChargeById(id);
+}
+
+function getChargeById(id) { return get('SELECT * FROM charges WHERE id = ?', [id]); }
+function getChargesByUser(userId) { return all('SELECT * FROM charges WHERE user_id = ? ORDER BY created_at DESC', [userId]); }
+
+function updateCharge(id, updates) {
+  const keys = Object.keys(updates);
+  if (keys.length === 0) return getChargeById(id);
+  if (USE_PG) {
+    const setClauses = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
+    return pgPool.query(`UPDATE charges SET ${setClauses} WHERE id = $${keys.length + 1}`, [...keys.map(k => updates[k]), id]).then(() => getChargeById(id));
+  }
+  const setClause = keys.map(k => `${k} = ?`).join(', ');
+  sqliteDb.prepare(`UPDATE charges SET ${setClause} WHERE id = ?`).run(...keys.map(k => updates[k]), id);
+  return getChargeById(id);
+}
+
+// ─── APPOINTMENTS ───────────────────────────────────────────────
+function createAppointment(data) {
+  const id = uuid();
+  if (USE_PG) {
+    return pgPool.query(
+      `INSERT INTO appointments (id, user_id, customer_id, status, date, time, note) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [id, data.user_id, data.customer_id, data.status || 'pending', data.date || '', data.time || '', data.note || '']
+    ).then(() => getAppointmentById(id));
+  }
+  sqliteDb.prepare(
+    `INSERT INTO appointments (id, user_id, customer_id, status, date, time, note) VALUES (?,?,?,?,?,?,?)`
+  ).run(id, data.user_id, data.customer_id, data.status || 'pending', data.date || '', data.time || '', data.note || '');
+  return getAppointmentById(id);
+}
+
+function getAppointmentById(id) { return get('SELECT * FROM appointments WHERE id = ?', [id]); }
+function getAppointmentsByUser(userId) { return all('SELECT * FROM appointments WHERE user_id = ? ORDER BY created_at DESC', [userId]); }
+
+function updateAppointment(id, updates) {
+  const keys = Object.keys(updates);
+  if (keys.length === 0) return getAppointmentById(id);
+  if (USE_PG) {
+    const setClauses = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
+    return pgPool.query(`UPDATE appointments SET ${setClauses} WHERE id = $${keys.length + 1}`, [...keys.map(k => updates[k]), id]).then(() => getAppointmentById(id));
+  }
+  const setClause = keys.map(k => `${k} = ?`).join(', ');
+  sqliteDb.prepare(`UPDATE appointments SET ${setClause} WHERE id = ?`).run(...keys.map(k => updates[k]), id);
+  return getAppointmentById(id);
+}
+
+// ─── NOTIFICATIONS ──────────────────────────────────────────────
+function addNotification(data) {
+  const id = uuid();
+  if (USE_PG) {
+    return pgPool.query(
+      `INSERT INTO notifications (id, user_id, type, title, body) VALUES ($1,$2,$3,$4,$5)`,
+      [id, data.user_id, data.type, data.title, data.body]
+    ).then(() => id);
+  }
+  sqliteDb.prepare(
+    `INSERT INTO notifications (id, user_id, type, title, body) VALUES (?,?,?,?,?)`
+  ).run(id, data.user_id, data.type, data.title, data.body);
+  return id;
+}
+
+function getNotificationsByUser(userId) { return all('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC', [userId]); }
+function markAllRead(userId) { return run('UPDATE notifications SET read = 1 WHERE user_id = ?', [userId]); }
+function getUnreadCount(userId) {
+  if (USE_PG) return pgPool.query('SELECT COUNT(*) as c FROM notifications WHERE user_id = $1 AND read = 0', [userId]).then(r => parseInt(r.rows[0].c));
+  return sqliteDb.prepare('SELECT COUNT(*) as c FROM notifications WHERE user_id = ? AND read = 0').get(userId).c;
+}
+
+// ─── AD METRICS (Facebook) ──────────────────────────────────────
+function createAdMetric(data) {
+  const id = uuid();
+  if (USE_PG) {
+    return pgPool.query(
+      `INSERT INTO ad_metrics (id, user_id, customer_id, source, campaign_name, date_from, date_to, ad_spend, impressions, clicks, leads, appointments)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [id, data.user_id, data.customer_id, data.source || 'facebook', data.campaign_name || '',
+       data.date_from || null, data.date_to || null, data.ad_spend || 0,
+       data.impressions || 0, data.clicks || 0, data.leads || 0, data.appointments || 0]
+    ).then(() => id);
+  }
+  sqliteDb.prepare(
+    `INSERT INTO ad_metrics (id, user_id, customer_id, source, campaign_name, date_from, date_to, ad_spend, impressions, clicks, leads, appointments)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+  ).run(id, data.user_id, data.customer_id, data.source || 'facebook', data.campaign_name || '',
+    data.date_from || '', data.date_to || '', data.ad_spend || 0,
+    data.impressions || 0, data.clicks || 0, data.leads || 0, data.appointments || 0);
+  return id;
+}
+
+function getAdMetricsByCustomer(customerId) {
+  return all('SELECT * FROM ad_metrics WHERE customer_id = ? ORDER BY created_at DESC', [customerId]);
+}
+
+function getAdMetricsByUser(userId) {
+  return all('SELECT * FROM ad_metrics WHERE user_id = ? ORDER BY created_at DESC', [userId]);
+}
+
+function deleteAdMetric(id) {
+  if (USE_PG) {
+    return pgPool.query('DELETE FROM ad_metrics WHERE id = $1', [id]);
+  }
+  sqliteDb.prepare('DELETE FROM ad_metrics WHERE id = ?').run(id);
+}
+
+// ─── STATS ──────────────────────────────────────────────────────
+function getStats(userId) {
+  if (USE_PG) {
+    return (async () => {
+      const charged = await pgPool.query("SELECT COALESCE(SUM(amount), 0) as s FROM charges WHERE user_id = $1 AND status = 'succeeded'", [userId]);
+      const failed = await pgPool.query("SELECT COUNT(*) as c FROM charges WHERE user_id = $1 AND status = 'failed'", [userId]);
+      const chargebacks = await pgPool.query("SELECT COUNT(*) as c FROM charges WHERE user_id = $1 AND status = 'chargeback'", [userId]);
+      const customers = await pgPool.query('SELECT COUNT(*) as c FROM customers WHERE user_id = $1', [userId]);
+      const cards = await pgPool.query('SELECT COUNT(*) as c FROM customers WHERE user_id = $1 AND card_on_file = 1', [userId]);
+      const triggers = await pgPool.query('SELECT COUNT(*) as c FROM charges WHERE user_id = $1', [userId]);
+      return {
+        totalCustomers: parseInt(customers.rows[0].c),
+        cardsOnFile: parseInt(cards.rows[0].c),
+        totalCharged: parseFloat(charged.rows[0].s),
+        totalFailed: parseInt(failed.rows[0].c),
+        totalChargebacks: parseInt(chargebacks.rows[0].c),
+        totalTriggers: parseInt(triggers.rows[0].c)
+      };
+    })();
+  }
+  const totalCharged = sqliteDb.prepare("SELECT COALESCE(SUM(amount), 0) as s FROM charges WHERE user_id = ? AND status = 'succeeded'").get(userId).s;
+  const totalFailed = sqliteDb.prepare("SELECT COUNT(*) as c FROM charges WHERE user_id = ? AND status = 'failed'").get(userId).c;
+  const totalChargebacks = sqliteDb.prepare("SELECT COUNT(*) as c FROM charges WHERE user_id = ? AND status = 'chargeback'").get(userId).c;
+  const totalCustomers = sqliteDb.prepare('SELECT COUNT(*) as c FROM customers WHERE user_id = ?').get(userId).c;
+  const cardsOnFile = sqliteDb.prepare('SELECT COUNT(*) as c FROM customers WHERE user_id = ? AND card_on_file = 1').get(userId).c;
+  const totalTriggers = sqliteDb.prepare('SELECT COUNT(*) as c FROM charges WHERE user_id = ?').get(userId).c;
+  return { totalCustomers, cardsOnFile, totalCharged, totalFailed, totalChargebacks, totalTriggers };
+}
+
+function getAdminStats() {
+  if (USE_PG) {
+    return (async () => {
+      const agencies = await pgPool.query("SELECT COUNT(*) as c FROM users WHERE role = 'agency'");
+      const active = await pgPool.query("SELECT COUNT(*) as c FROM users WHERE role = 'agency' AND active = 1");
+      const mrr = await pgPool.query("SELECT COALESCE(SUM(monthly_rate), 0) as s FROM users WHERE role = 'agency' AND active = 1");
+      const charges = await pgPool.query("SELECT COALESCE(SUM(amount), 0) as s FROM charges WHERE status = 'succeeded'");
+      const customers = await pgPool.query('SELECT COUNT(*) as c FROM customers');
+      return {
+        totalAgencies: parseInt(agencies.rows[0].c),
+        activeAgencies: parseInt(active.rows[0].c),
+        totalRevenue: parseFloat(mrr.rows[0].s),
+        totalCharges: parseFloat(charges.rows[0].s),
+        totalCustomers: parseInt(customers.rows[0].c)
+      };
+    })();
+  }
+  const totalAgencies = sqliteDb.prepare("SELECT COUNT(*) as c FROM users WHERE role = 'agency'").get().c;
+  const activeAgencies = sqliteDb.prepare("SELECT COUNT(*) as c FROM users WHERE role = 'agency' AND active = 1").get().c;
+  const totalRevenue = sqliteDb.prepare("SELECT COALESCE(SUM(monthly_rate), 0) as s FROM users WHERE role = 'agency' AND active = 1").get().s;
+  const totalCharges = sqliteDb.prepare("SELECT COALESCE(SUM(amount), 0) as s FROM charges WHERE status = 'succeeded'").get().s;
+  const totalCustomers = sqliteDb.prepare('SELECT COUNT(*) as c FROM customers').get().c;
+  return { totalAgencies, activeAgencies, totalRevenue, totalCharges, totalCustomers };
+}
+
+function ensureAdmin() {
+  const existing = get("SELECT * FROM users WHERE role = 'admin' LIMIT 1");
+  if (!existing) {
+    const bcrypt = require('bcrypt');
+    const hash = bcrypt.hashSync('admin123', 10);
+    createUser({ email: 'admin@paypulse.co', name: 'Admin', password_hash: hash, role: 'admin', company_name: 'PayPulse', plan: 'admin' });
+    console.log('  Admin user created: admin@paypulse.co / admin123');
+  }
+}
+
+module.exports = {
+  initSchema,
+  createUser, getUserByEmail, getUserById, getUserByGhlSecret, getUserByWhopSecret, updateUser, listUsers,
+  createCustomer, getCustomerById, getCustomersByUser, getCustomerByEmailAndUser, getCustomerByLocationId, updateCustomer,
+  createCharge, getChargeById, getChargesByUser, updateCharge,
+  createAppointment, getAppointmentById, getAppointmentsByUser, updateAppointment,
+  addNotification, getNotificationsByUser, markAllRead, getUnreadCount,
+  createAdMetric, getAdMetricsByCustomer, getAdMetricsByUser, deleteAdMetric,
+  getStats, getAdminStats,
+  ensureAdmin,
+};
