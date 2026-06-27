@@ -21,7 +21,12 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── INIT DB ─────────────────────────────────────────────────────
-db.initSchema().then(() => db.ensureAdmin()).catch(console.error);
+db.initSchema().then(() => db.ensureAdmin()).then(() => {
+  console.log('  ✓ DB schema + admin ready');
+}).catch(err => {
+  console.error('  ✗ DB init error:', err.message);
+  process.exit(1);
+});
 
 // ─── AUTH MIDDLEWARE ──────────────────────────────────────────────
 function requireAuth(req, res, next) {
@@ -546,14 +551,12 @@ app.get('/api/admin/agencies/:id/subscription', requireAuth, requireAdmin, (req,
 // ─── SERVE ────────────────────────────────────────────────────────
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-// Seed admin on first boot
-db.ensureAdmin();
-
 app.listen(PORT, () => {
+  const adminEmail = process.env.ADMIN_EMAIL || 'admin@paypulse.co';
+  const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
   console.log(`\n╔══════════════════════════════════════════════════════╗`);
   console.log(`║  ⚡ PAYPULSE running at http://localhost:${PORT}           ║`);
   console.log(`╠═══════════════════════════════════════════════════════╣`);
-  console.log(`║  Sign up:     http://localhost:${PORT}                      ║`);
-  console.log(`║  Admin:       admin@paypulse.co / admin123            ║`);
+  console.log(`║  Admin:       ${adminEmail} / ${adminPass}`);
   console.log(`╚═══════════════════════════════════════════════════════╝\n`);
 });

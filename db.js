@@ -442,13 +442,17 @@ function getAdminStats() {
   return { totalAgencies, activeAgencies, totalRevenue, totalCharges, totalCustomers };
 }
 
-function ensureAdmin() {
-  const existing = get("SELECT * FROM users WHERE role = 'admin' LIMIT 1");
+async function ensureAdmin() {
+  const existing = await get("SELECT * FROM users WHERE role = 'admin' LIMIT 1");
   if (!existing) {
     const bcrypt = require('bcrypt');
-    const hash = bcrypt.hashSync('admin123', 10);
-    createUser({ email: 'admin@paypulse.co', name: 'Admin', password_hash: hash, role: 'admin', company_name: 'PayPulse', plan: 'admin' });
-    console.log('  Admin user created: admin@paypulse.co / admin123');
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@paypulse.co';
+    const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
+    const hash = bcrypt.hashSync(adminPass, 10);
+    await createUser({ email: adminEmail, name: 'Admin', password_hash: hash, role: 'admin', company_name: 'PayPulse', plan: 'admin' });
+    console.log('  ✓ Admin created: ' + adminEmail + ' / ' + adminPass);
+  } else {
+    console.log('  ✓ Admin exists: ' + existing.email);
   }
 }
 
