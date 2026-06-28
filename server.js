@@ -12,8 +12,6 @@ const JWT_SECRET = process.env.JWT_SECRET || 'paypulse-dev-secret-change-in-prod
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
-
-
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
@@ -44,9 +42,6 @@ function requireAdmin(req, res, next) {
 }
 
 // ─── AUTH ──────────────────────────────────────────────────────────
-// Registration is admin-only. Public signup is disabled.
-// Use POST /api/admin/agencies to create accounts (admin auth required).
-
 app.post('/api/auth/change-password', requireAuth, async (req, res) => {
   try {
     const { currentPassword, newPassword, email } = req.body;
@@ -54,7 +49,6 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
     const user = await db.getUserById(req.user.id);
     const valid = await bcrypt.compare(currentPassword, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
-
     const hash = await bcrypt.hash(newPassword, 10);
     const updates = { password_hash: hash };
     if (email && email !== user.email) {
@@ -71,7 +65,7 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
-    const user = db.getUserByEmail(email);
+    const user = await db.getUserByEmail(email);
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
@@ -89,9 +83,9 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/auth/me', requireAuth, (req, res) => {
+app.get('/api/auth/me', requireAuth, async (req, res) => {
   try {
-    const user = db.getUserById(req.user.id);
+    const user = await db.getUserById(req.user.id);
     if (!user) return res.status(404).json({ error: 'Not found' });
     res.json({
       id: user.id, name: user.name, email: user.email, role: user.role,
@@ -108,100 +102,95 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
 });
 
 
-// POST /webhook/ghl/:secret — legacy agency-level webhook (matches by email)
+// POST /webhook/ghl/:secret — agency-level webhook (matches by email or location_id in body)
 app.post('/webhook/ghl/:secret', async (req, res) => {
-  const user = db.getUserByGhlSecret(req.params.secret);
-  if (!user) return res.status(403).json({ error: 'Invalid secret' });
+  try {
+    const user = await db.getUserByGhlSecret(req.params.secret);
+    if (!user) return res.status(403).json({ error: 'Invalid secret' });
 
-  const payload = req.body;
-  // Try location-based routing first (GHL sends location_id in payload)
-  const ghlLocationId = payload.location_id || payload.locationId || '';
-  let customer = null;
+    const payload = req.body;
+    const ghlLocationId = payload.location_id || payload.locationId || '';
+    let customer = null;
 
-  if (ghlLocationId) {
-    customer = db.getCustomerByLocationId(ghlLocationId, user.id);
-  }
+    if (ghlLocationId) {
+      customer = await db.getCustomerByLocationId(ghlLocationId, user.id);
+    }
+    if (!customer) {
+      customer = await db.getCustomerByEmailAndUser(payload.email, user.id);
+    }
+    if (!customer) {
+      customer = await db.createCustomer({
+        user_id: user.id, name: payload.full_name || payload.name || payload.email.split('@')[0], email: payload.email,
+        phone: payload.phone || '', whop_member_id: payload.whop_member_id || '', whop_payment_method_id: payload.whop_payment_method_id || '',
+        stripe_customer_id: payload.stripe_customer_id || '', stripe_payment_method_id: payload.stripe_payment_method_id || '',
+        rate_per_trigger: payload.rate_per_trigger || user.monthly_rate || 147, status: 'new',
+        card_on_file: !!(payload.whop_payment_method_id || payload.stripe_payment_method_id),
+        ghl_location_id: ghlLocationId
+      });
+      db.addNotification({ user_id: user.id, type: 'new', title: `New customer — ${customer.name}`, body: `${customer.email} added. Location: ${ghlLocationId || 'unknown'}` });
+    }
 
-  // Fallback to email match
-  if (!customer) {
-    customer = db.getCustomerByEmailAndUser(payload.email, user.id);
-  }
+    if (payload.whop_payment_method_id || payload.stripe_payment_method_id) {
+      db.updateCustomer(customer.id, { card_on_file: 1, whop_payment_method_id: payload.whop_payment_method_id || '', stripe_payment_method_id: payload.stripe_payment_method_id || '' });
+      customer = await db.getCustomerById(customer.id);
+    }
 
-  if (!customer) {
-    customer = db.createCustomer({
-      user_id: user.id, name: payload.full_name || payload.name || payload.email.split('@')[0], email: payload.email,
-      phone: payload.phone || '', whop_member_id: payload.whop_member_id || '', whop_payment_method_id: payload.whop_payment_method_id || '',
-      stripe_customer_id: payload.stripe_customer_id || '', stripe_payment_method_id: payload.stripe_payment_method_id || '',
-      rate_per_trigger: payload.rate_per_trigger || user.monthly_rate || 147, status: 'new',
-      card_on_file: !!(payload.whop_payment_method_id || payload.stripe_payment_method_id),
-      ghl_location_id: ghlLocationId
-    });
-    db.addNotification({ user_id: user.id, type: 'new', title: `New customer — ${customer.name}`, body: `${customer.email} added. Location: ${ghlLocationId || 'unknown'}` });
-  }
+    db.addNotification({ user_id: user.id, type: 'trigger', title: `Trigger fired — ${customer.name}`, body: `$${customer.rate_per_trigger} ready via GHL trigger. Location: ${ghlLocationId || 'N/A'}` });
 
-  // Update card status if payment method provided
-  if (payload.whop_payment_method_id || payload.stripe_payment_method_id) {
-    db.updateCustomer(customer.id, { card_on_file: 1, whop_payment_method_id: payload.whop_payment_method_id || '', stripe_payment_method_id: payload.stripe_payment_method_id || '' });
-    customer = db.getCustomerById(customer.id);
-  }
+    if (user.appointment_tracking_mode) {
+      const appt = db.createAppointment({ user_id: user.id, customer_id: customer.id, status: 'pending', date: payload.appointment_date || '', time: payload.appointment_time || '', note: payload.note || '' });
+      return res.json({ success: true, mode: 'appointment_tracking', appointmentId: appt.id, customerId: customer.id, locationId: ghlLocationId });
+    }
 
-  db.addNotification({ user_id: user.id, type: 'trigger', title: `Trigger fired — ${customer.name}`, body: `$${customer.rate_per_trigger} ready via GHL trigger. Location: ${ghlLocationId || 'N/A'}` });
-
-  if (user.appointment_tracking_mode) {
-    const appt = db.createAppointment({ user_id: user.id, customer_id: customer.id, status: 'pending', date: payload.appointment_date || '', time: payload.appointment_time || '', note: payload.note || '' });
-    return res.json({ success: true, mode: 'appointment_tracking', appointmentId: appt.id, customerId: customer.id, locationId: ghlLocationId });
-  }
-
-  const charge = await processCharge(user, customer, payload.note || 'GHL Trigger');
-  res.json({ success: true, chargeId: charge.id, status: charge.status, customerId: customer.id, locationId: ghlLocationId });
+    const charge = await processCharge(user, customer, payload.note || 'GHL Trigger');
+    res.json({ success: true, chargeId: charge.id, status: charge.status, customerId: customer.id, locationId: ghlLocationId });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // POST /webhook/ghl/:secret/:locationId — per-client webhook (routes by GHL Location ID)
 app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
-  const user = db.getUserByGhlSecret(req.params.secret);
-  if (!user) return res.status(403).json({ error: 'Invalid secret' });
+  try {
+    const user = await db.getUserByGhlSecret(req.params.secret);
+    if (!user) return res.status(403).json({ error: 'Invalid secret' });
 
-  const locationId = req.params.locationId;
-  const payload = req.body;
+    const locationId = req.params.locationId;
+    const payload = req.body;
+    let customer = await db.getCustomerByLocationId(locationId, user.id);
 
-  // Route directly to the client by location ID
-  let customer = db.getCustomerByLocationId(locationId, user.id);
+    if (!customer) {
+      customer = await db.createCustomer({
+        user_id: user.id, name: payload.full_name || payload.name || `GHL Location ${locationId.slice(0,8)}`,
+        email: payload.email || `location-${locationId.slice(0,8)}@ghl.auto`,
+        phone: payload.phone || '', whop_member_id: payload.whop_member_id || '', whop_payment_method_id: payload.whop_payment_method_id || '',
+        stripe_customer_id: payload.stripe_customer_id || '', stripe_payment_method_id: payload.stripe_payment_method_id || '',
+        rate_per_trigger: payload.rate_per_trigger || user.monthly_rate || 147, status: 'new',
+        card_on_file: !!(payload.whop_payment_method_id || payload.stripe_payment_method_id),
+        ghl_location_id: locationId
+      });
+      db.addNotification({ user_id: user.id, type: 'new', title: `New client auto-created — ${customer.name}`, body: `GHL Location ${locationId} mapped. Set rate and payment method.` });
+    }
 
-  if (!customer) {
-    // Auto-create customer with this location ID
-    customer = db.createCustomer({
-      user_id: user.id, name: payload.full_name || payload.name || `GHL Location ${locationId.slice(0,8)}`,
-      email: payload.email || `location-${locationId.slice(0,8)}@ghl.auto`,
-      phone: payload.phone || '', whop_member_id: payload.whop_member_id || '', whop_payment_method_id: payload.whop_payment_method_id || '',
-      stripe_customer_id: payload.stripe_customer_id || '', stripe_payment_method_id: payload.stripe_payment_method_id || '',
-      rate_per_trigger: payload.rate_per_trigger || user.monthly_rate || 147, status: 'new',
-      card_on_file: !!(payload.whop_payment_method_id || payload.stripe_payment_method_id),
-      ghl_location_id: locationId
-    });
-    db.addNotification({ user_id: user.id, type: 'new', title: `New client auto-created — ${customer.name}`, body: `GHL Location ${locationId} mapped. Set rate and payment method.` });
-  }
+    if (payload.email && payload.email !== customer.email && !customer.email.includes('@ghl.auto')) {
+      db.updateCustomer(customer.id, { email: payload.email });
+    }
+    if (payload.full_name && payload.full_name !== customer.name && customer.name.startsWith('GHL Location')) {
+      db.updateCustomer(customer.id, { name: payload.full_name });
+    }
+    if (payload.whop_payment_method_id || payload.stripe_payment_method_id) {
+      db.updateCustomer(customer.id, { card_on_file: 1, whop_payment_method_id: payload.whop_payment_method_id || '', stripe_payment_method_id: payload.stripe_payment_method_id || '' });
+      customer = await db.getCustomerById(customer.id);
+    }
 
-  // Update customer details from payload if provided
-  if (payload.email && payload.email !== customer.email && !customer.email.includes('@ghl.auto')) {
-    db.updateCustomer(customer.id, { email: payload.email });
-  }
-  if (payload.full_name && payload.full_name !== customer.name && customer.name.startsWith('GHL Location')) {
-    db.updateCustomer(customer.id, { name: payload.full_name });
-  }
-  if (payload.whop_payment_method_id || payload.stripe_payment_method_id) {
-    db.updateCustomer(customer.id, { card_on_file: 1, whop_payment_method_id: payload.whop_payment_method_id || '', stripe_payment_method_id: payload.stripe_payment_method_id || '' });
-    customer = db.getCustomerById(customer.id);
-  }
+    db.addNotification({ user_id: user.id, type: 'trigger', title: `Appointment — ${customer.name}`, body: `GHL Location ${locationId} fired. $${customer.rate_per_trigger} charge ready.` });
 
-  db.addNotification({ user_id: user.id, type: 'trigger', title: `Appointment — ${customer.name}`, body: `GHL Location ${locationId} fired. $${customer.rate_per_trigger} charge ready.` });
+    if (user.appointment_tracking_mode) {
+      const appt = db.createAppointment({ user_id: user.id, customer_id: customer.id, status: 'pending', date: payload.appointment_date || '', time: payload.appointment_time || '', note: payload.note || '' });
+      return res.json({ success: true, mode: 'appointment_tracking', appointmentId: appt.id, customerId: customer.id, locationId, customerName: customer.name });
+    }
 
-  if (user.appointment_tracking_mode) {
-    const appt = db.createAppointment({ user_id: user.id, customer_id: customer.id, status: 'pending', date: payload.appointment_date || '', time: payload.appointment_time || '', note: payload.note || '' });
-    return res.json({ success: true, mode: 'appointment_tracking', appointmentId: appt.id, customerId: customer.id, locationId, customerName: customer.name });
-  }
-
-  const charge = await processCharge(user, customer, payload.note || `GHL Location ${locationId} Trigger`);
-  res.json({ success: true, chargeId: charge.id, status: charge.status, customerId: customer.id, locationId, customerName: customer.name });
+    const charge = await processCharge(user, customer, payload.note || `GHL Location ${locationId} Trigger`);
+    res.json({ success: true, chargeId: charge.id, status: charge.status, customerId: customer.id, locationId, customerName: customer.name });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ─── CHARGE PROCESSING ────────────────────────────────────────────
@@ -218,8 +207,6 @@ async function processCharge(user, customer, note = '') {
     return db.getChargeById(charge.id);
   }
 
-  // SIMULATED CHARGE (Whop / manual billing)
-  // In production, you'd integrate real Whop/Stripe charges here
   db.updateCharge(charge.id, { status: 'succeeded', stripe_charge_id: `sim_${uuidv4().slice(0,8)}` });
   db.updateCustomer(customer.id, { total_charged: customer.total_charged + customer.rate_per_trigger, total_triggers: customer.total_triggers + 1 });
   db.addNotification({ user_id: user.id, type: 'success', title: `Charge successful — ${customer.name}`, body: `$${customer.rate_per_trigger.toFixed(2)} charged via ${user.processor}. ${note}` });
@@ -227,127 +214,132 @@ async function processCharge(user, customer, note = '') {
 }
 
 // ─── WHOP WEBHOOK ─────────────────────────────────────────────────
-app.post('/webhook/whop/:secret', (req, res) => {
-  const user = db.getUserByWhopSecret(req.params.secret);
-  if (!user) return res.status(403).json({ error: 'Invalid secret' });
-  const { event, data } = req.body;
-  if (event === 'payment.succeeded' || event === 'membership.went_valid') {
-    const email = data.user?.email || data.customer?.email;
-    const name = data.user?.name || data.customer?.name;
-    let customer = db.getCustomerByEmailAndUser(email, user.id);
-    if (!customer) customer = db.createCustomer({ user_id: user.id, name: name || email.split('@')[0], email, whop_member_id: data.user?.id || '' });
-    db.updateCustomer(customer.id, { card_on_file: 1, whop_member_id: data.user?.id || '' });
-    db.addNotification({ user_id: user.id, type: 'success', title: `Whop payment — ${customer.name}`, body: 'Payment succeeded via Whop webhook.' });
-  }
-  res.json({ received: true });
+app.post('/webhook/whop/:secret', async (req, res) => {
+  try {
+    const user = await db.getUserByWhopSecret(req.params.secret);
+    if (!user) return res.status(403).json({ error: 'Invalid secret' });
+    const { event, data } = req.body;
+    if (event === 'payment.succeeded' || event === 'membership.went_valid') {
+      const email = data.user?.email || data.customer?.email;
+      const name = data.user?.name || data.customer?.name;
+      let customer = await db.getCustomerByEmailAndUser(email, user.id);
+      if (!customer) customer = await db.createCustomer({ user_id: user.id, name: name || email.split('@')[0], email, whop_member_id: data.user?.id || '' });
+      db.updateCustomer(customer.id, { card_on_file: 1, whop_member_id: data.user?.id || '' });
+      db.addNotification({ user_id: user.id, type: 'success', title: `Whop payment — ${customer.name}`, body: 'Payment succeeded via Whop webhook.' });
+    }
+    res.json({ received: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ─── STRIPE WEBHOOK ───────────────────────────────────────────────
-app.post('/webhook/stripe/:secret', (req, res) => {
-  const user = db.getUserByWhopSecret(req.params.secret);
-  // Actually we'd want stripe webhook per user differently, but for now:
-  const event = req.body;
-  if (event.type === 'payment_intent.succeeded') {
-    const obj = event.data.object;
-    const email = obj.receipt_email;
-    const allUsers = db.listUsers('agency');
-    for (const u of allUsers) {
-      let customer = db.getCustomerByEmailAndUser(email, u.id);
-      if (customer) {
-        db.updateCustomer(customer.id, { card_on_file: 1, stripe_payment_method_id: obj.payment_method || '' });
-        db.addNotification({ user_id: u.id, type: 'success', title: `Stripe payment — ${customer.name}`, body: 'Payment intent succeeded.' });
-        break;
+app.post('/webhook/stripe/:secret', async (req, res) => {
+  try {
+    const event = req.body;
+    if (event.type === 'payment_intent.succeeded') {
+      const obj = event.data.object;
+      const email = obj.receipt_email;
+      const allUsers = await db.listUsers('agency');
+      for (const u of allUsers) {
+        let customer = await db.getCustomerByEmailAndUser(email, u.id);
+        if (customer) {
+          db.updateCustomer(customer.id, { card_on_file: 1, stripe_payment_method_id: obj.payment_method || '' });
+          db.addNotification({ user_id: u.id, type: 'success', title: `Stripe payment — ${customer.name}`, body: 'Payment intent succeeded.' });
+          break;
+        }
       }
     }
-  }
-  if (event.type === 'charge.dispute.created') {
-    // Chargeback
-    const obj = event.data.object;
-    const allUsers = db.listUsers('agency');
-    for (const u of allUsers) {
-      const charges = db.getChargesByUser(u.id);
-      const match = charges.find(c => c.stripe_charge_id === obj.charge);
-      if (match) {
-        db.createCharge({ id: uuidv4(), user_id: u.id, customer_id: match.customer_id, customer_name: match.customer_name, customer_email: match.customer_email,
-          amount: match.amount, processor: 'stripe', status: 'chargeback', stripe_charge_id: obj.id, note: 'Chargeback initiated', failure_reason: obj.reason });
-        db.addNotification({ user_id: u.id, type: 'fail', title: `CHARGEBACK — ${match.customer_name}`, body: `$${match.amount.toFixed(2)} chargeback initiated. Reason: ${obj.reason}` });
-        break;
+    if (event.type === 'charge.dispute.created') {
+      const obj = event.data.object;
+      const allUsers = await db.listUsers('agency');
+      for (const u of allUsers) {
+        const charges = await db.getChargesByUser(u.id);
+        const match = charges.find(c => c.stripe_charge_id === obj.charge);
+        if (match) {
+          db.createCharge({ id: uuidv4(), user_id: u.id, customer_id: match.customer_id, customer_name: match.customer_name, customer_email: match.customer_email,
+            amount: match.amount, processor: 'stripe', status: 'chargeback', stripe_charge_id: obj.id, note: 'Chargeback initiated', failure_reason: obj.reason });
+          db.addNotification({ user_id: u.id, type: 'fail', title: `CHARGEBACK — ${match.customer_name}`, body: `$${match.amount.toFixed(2)} chargeback initiated. Reason: ${obj.reason}` });
+          break;
+        }
       }
     }
-  }
-  res.json({ received: true });
+    res.json({ received: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ─── CRM API (AGENCY) ────────────────────────────────────────────
-app.get('/api/customers', requireAuth, (req, res) => {
-  res.json(db.getCustomersByUser(req.user.id));
+app.get('/api/customers', requireAuth, async (req, res) => {
+  res.json(await db.getCustomersByUser(req.user.id));
 });
 
-app.post('/api/customers', requireAuth, (req, res) => {
+app.post('/api/customers', requireAuth, async (req, res) => {
   try {
-    const c = db.createCustomer({ ...req.body, user_id: req.user.id });
+    const c = await db.createCustomer({ ...req.body, user_id: req.user.id });
     db.addNotification({ user_id: req.user.id, type: 'new', title: `New customer — ${c.name}`, body: `${c.email} added manually.` });
     res.json(c);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.patch('/api/customers/:id', requireAuth, (req, res) => {
-  const c = db.getCustomerById(req.params.id);
+app.patch('/api/customers/:id', requireAuth, async (req, res) => {
+  const c = await db.getCustomerById(req.params.id);
   if (!c || c.user_id !== req.user.id) return res.status(404).json({ error: 'Not found' });
-  res.json(db.updateCustomer(req.params.id, req.body));
+  res.json(await db.updateCustomer(req.params.id, req.body));
 });
 
-app.delete('/api/customers/:id', requireAuth, (req, res) => {
-  const c = db.getCustomerById(req.params.id);
+app.delete('/api/customers/:id', requireAuth, async (req, res) => {
+  const c = await db.getCustomerById(req.params.id);
   if (!c || c.user_id !== req.user.id) return res.status(404).json({ error: 'Not found' });
-  db.db.prepare('DELETE FROM customers WHERE id = ?').run(req.params.id);
+  if (db.sqliteDb) {
+    db.sqliteDb.prepare('DELETE FROM customers WHERE id = ?').run(req.params.id);
+  } else {
+    await db.pgPool.query('DELETE FROM customers WHERE id = $1', [req.params.id]);
+  }
   res.json({ ok: true });
 });
 
 // Per-client webhook URL (for GHL sub-account config)
-app.get('/api/customers/:id/webhook-url', requireAuth, (req, res) => {
-  const c = db.getCustomerById(req.params.id);
+app.get('/api/customers/:id/webhook-url', requireAuth, async (req, res) => {
+  const c = await db.getCustomerById(req.params.id);
   if (!c || c.user_id !== req.user.id) return res.status(404).json({ error: 'Not found' });
-  const user = db.getUserById(req.user.id);
+  const user = await db.getUserById(req.user.id);
   if (!c.ghl_location_id) return res.json({ webhookUrl: null, error: 'Set GHL Location ID first' });
   res.json({ webhookUrl: `${BASE_URL}/webhook/ghl/${user.ghl_webhook_secret}/${c.ghl_location_id}` });
 });
 
 app.post('/api/customers/:id/charge', requireAuth, async (req, res) => {
-  const c = db.getCustomerById(req.params.id);
+  const c = await db.getCustomerById(req.params.id);
   if (!c || c.user_id !== req.user.id) return res.status(404).json({ error: 'Not found' });
-  const user = db.getUserById(req.user.id);
+  const user = await db.getUserById(req.user.id);
   const charge = await processCharge(user, c, req.body.note || 'Manual charge');
   res.json(charge);
 });
 
 // ─── CHARGES API ──────────────────────────────────────────────────
-app.get('/api/charges', requireAuth, (req, res) => {
-  res.json(db.getChargesByUser(req.user.id));
+app.get('/api/charges', requireAuth, async (req, res) => {
+  res.json(await db.getChargesByUser(req.user.id));
 });
 
 // ─── APPOINTMENTS API ─────────────────────────────────────────────
-app.get('/api/appointments', requireAuth, (req, res) => {
-  res.json(db.getAppointmentsByUser(req.user.id));
+app.get('/api/appointments', requireAuth, async (req, res) => {
+  res.json(await db.getAppointmentsByUser(req.user.id));
 });
 
-app.patch('/api/appointments/:id', requireAuth, (req, res) => {
-  const a = db.getAppointmentById(req.params.id);
+app.patch('/api/appointments/:id', requireAuth, async (req, res) => {
+  const a = await db.getAppointmentById(req.params.id);
   if (!a || a.user_id !== req.user.id) return res.status(404).json({ error: 'Not found' });
   const oldStatus = a.status;
   db.updateAppointment(req.params.id, { status: req.body.status || a.status });
-  const updated = db.getAppointmentById(req.params.id);
-  const user = db.getUserById(req.user.id);
+  const updated = await db.getAppointmentById(req.params.id);
+  const user = await db.getUserById(req.user.id);
   if (user.appointment_tracking_mode && oldStatus !== updated.status && updated.status === 'showed') {
-    const customer = db.getCustomerById(updated.customer_id);
+    const customer = await db.getCustomerById(updated.customer_id);
     if (customer) processCharge(user, customer, `Appointment showed — ${updated.date}`);
   }
   res.json(updated);
 });
 
 // ─── NOTIFICATIONS API ────────────────────────────────────────────
-app.get('/api/notifications', requireAuth, (req, res) => {
-  res.json(db.getNotificationsByUser(req.user.id));
+app.get('/api/notifications', requireAuth, async (req, res) => {
+  res.json(await db.getNotificationsByUser(req.user.id));
 });
 
 app.post('/api/notifications/read', requireAuth, (req, res) => {
@@ -360,8 +352,8 @@ app.get('/api/notifications/unread-count', requireAuth, (req, res) => {
 });
 
 // ─── SETTINGS API ─────────────────────────────────────────────────
-app.get('/api/settings', requireAuth, (req, res) => {
-  const user = db.getUserById(req.user.id);
+app.get('/api/settings', requireAuth, async (req, res) => {
+  const user = await db.getUserById(req.user.id);
   res.json({
     companyName: user.company_name, processor: user.processor,
     stripeSecretKey: user.stripe_secret_key ? '••••••••' + user.stripe_secret_key.slice(-4) : '',
@@ -377,7 +369,7 @@ app.get('/api/settings', requireAuth, (req, res) => {
   });
 });
 
-app.post('/api/settings', requireAuth, (req, res) => {
+app.post('/api/settings', requireAuth, async (req, res) => {
   const updates = {};
   if (req.body.companyName !== undefined) updates.company_name = req.body.companyName;
   if (req.body.processor !== undefined) updates.processor = req.body.processor;
@@ -386,26 +378,24 @@ app.post('/api/settings', requireAuth, (req, res) => {
   if (req.body.whopApiKey) updates.whop_api_key = req.body.whopApiKey;
   if (req.body.whopCompanyId !== undefined) updates.whop_company_id = req.body.whopCompanyId;
   if (req.body.appointmentTrackingMode !== undefined) updates.appointment_tracking_mode = req.body.appointmentTrackingMode ? 1 : 0;
-  res.json(db.updateUser(req.user.id, updates));
+  res.json(await db.updateUser(req.user.id, updates));
 });
 
 app.post('/api/settings/note-templates', requireAuth, (req, res) => {
-  // Store in a simple JSON field or separate table — for now skip for brevity
   res.json({ templates: [] });
 });
 
 // ─── STATS API ────────────────────────────────────────────────────
-app.get('/api/stats', requireAuth, (req, res) => {
-  res.json(db.getStats(req.user.id));
+app.get('/api/stats', requireAuth, async (req, res) => {
+  res.json(await db.getStats(req.user.id));
 });
 
 // ─── METRICS DATA ─────────────────────────────────────────────────
-app.get('/api/metrics', requireAuth, (req, res) => {
+app.get('/api/metrics', requireAuth, async (req, res) => {
   const userId = req.user.id;
-  const charges = db.getChargesByUser(userId);
-  const customers = db.getCustomersByUser(userId);
+  const charges = await db.getChargesByUser(userId);
+  const customers = await db.getCustomersByUser(userId);
 
-  // Revenue by day (last 30) — UTC keys
   const revenueByDay = {};
   const triggersByDay = {};
   const failuresByDay = {};
@@ -425,13 +415,11 @@ app.get('/api/metrics', requireAuth, (req, res) => {
     }
   });
 
-  // Top customers
   const topCustomers = customers
     .map(c => ({ name: c.name, totalCharged: c.total_charged, totalTriggers: c.total_triggers }))
     .sort((a, b) => b.totalCharged - a.totalCharged)
     .slice(0, 5);
 
-  // Failure rate
   const totalCharged = charges.filter(c => c.status === 'succeeded').length;
   const totalFailed = charges.filter(c => c.status === 'failed').length;
   const totalChargebacks = charges.filter(c => c.status === 'chargeback').length;
@@ -447,32 +435,42 @@ app.get('/api/metrics', requireAuth, (req, res) => {
 });
 
 // ─── ADMIN API ────────────────────────────────────────────────────
-app.get('/api/admin/stats', requireAuth, requireAdmin, (req, res) => {
-  res.json(db.getAdminStats());
+app.get('/api/admin/stats', requireAuth, requireAdmin, async (req, res) => {
+  res.json(await db.getAdminStats());
 });
 
-app.get('/api/admin/agencies', requireAuth, requireAdmin, (req, res) => {
-  const agencies = db.listUsers('agency');
-  res.json(agencies.map(u => ({
-    id: u.id, name: u.name, email: u.email, companyName: u.company_name, plan: u.plan,
-    monthlyRate: u.monthly_rate, active: !!u.active, processor: u.processor,
-    stripeCustomerId: u.stripe_customer_id, stripeSubscriptionId: u.stripe_subscription_id,
-    totalCustomers: db.getCustomersByUser(u.id).length,
-    totalCharged: db.getStats(u.id).totalCharged
-  })));
+app.get('/api/admin/agencies', requireAuth, requireAdmin, async (req, res) => {
+  const agencies = await db.listUsers('agency');
+  const result = [];
+  for (const u of agencies) {
+    const custs = await db.getCustomersByUser(u.id);
+    const stats = await db.getStats(u.id);
+    result.push({
+      id: u.id, name: u.name, email: u.email, companyName: u.company_name, plan: u.plan,
+      monthlyRate: u.monthly_rate, active: !!u.active, processor: u.processor,
+      stripeCustomerId: u.stripe_customer_id, stripeSubscriptionId: u.stripe_subscription_id,
+      totalCustomers: custs.length,
+      totalCharged: stats.totalCharged
+    });
+  }
+  res.json(result);
 });
 
-app.patch('/api/admin/agencies/:id', requireAuth, requireAdmin, (req, res) => {
+app.patch('/api/admin/agencies/:id', requireAuth, requireAdmin, async (req, res) => {
   const updates = {};
   if (req.body.plan !== undefined) updates.plan = req.body.plan;
   if (req.body.monthlyRate !== undefined) updates.monthly_rate = req.body.monthlyRate;
   if (req.body.active !== undefined) updates.active = req.body.active ? 1 : 0;
   if (req.body.processor !== undefined) updates.processor = req.body.processor;
-  res.json(db.updateUser(req.params.id, updates));
+  res.json(await db.updateUser(req.params.id, updates));
 });
 
-app.delete('/api/admin/agencies/:id', requireAuth, requireAdmin, (req, res) => {
-  db.db.prepare('DELETE FROM users WHERE id = ? AND role = ?').run(req.params.id, 'agency');
+app.delete('/api/admin/agencies/:id', requireAuth, requireAdmin, async (req, res) => {
+  if (db.sqliteDb) {
+    db.sqliteDb.prepare('DELETE FROM users WHERE id = ? AND role = ?').run(req.params.id, 'agency');
+  } else {
+    await db.pgPool.query('DELETE FROM users WHERE id = $1 AND role = $2', [req.params.id, 'agency']);
+  }
   res.json({ ok: true });
 });
 
@@ -482,9 +480,8 @@ app.post('/api/customers/:customerId/ad-metrics', requireAuth, async (req, res) 
     const { customerId } = req.params;
     const customer = await db.getCustomerById(customerId);
     if (!customer || customer.user_id !== req.user.id) return res.status(404).json({ error: 'Customer not found' });
-
     const { source, campaign_name, date_from, date_to, ad_spend, impressions, clicks, leads, appointments } = req.body;
-    const id = await db.createAdMetric({
+    const id = db.createAdMetric({
       user_id: req.user.id, customer_id: customerId,
       source: source || 'facebook', campaign_name: campaign_name || '',
       date_from, date_to, ad_spend: ad_spend || 0,
@@ -507,7 +504,7 @@ app.get('/api/customers/:customerId/ad-metrics', requireAuth, async (req, res) =
 
 app.delete('/api/ad-metrics/:id', requireAuth, async (req, res) => {
   try {
-    await db.deleteAdMetric(req.params.id);
+    db.deleteAdMetric(req.params.id);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -517,18 +514,14 @@ app.post('/api/admin/agencies', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { email, password, name, companyName, plan, monthlyRate, processor } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
-    const existing = db.getUserByEmail(email);
+    const existing = await db.getUserByEmail(email);
     if (existing) return res.status(409).json({ error: 'Email already registered' });
-
     const hash = await bcrypt.hash(password, 10);
-    const user = db.createUser({
+    const user = await db.createUser({
       email, password_hash: hash, name, companyName, role: 'agency',
       plan: 'free', monthlyRate: 0,
       processor: 'stripe',
     });
-
-    // Stripe subscription creation removed — handle billing personally
-
     res.json({
       id: user.id, email: user.email, name: user.name,
       companyName: user.companyName, plan: 'free',
@@ -539,8 +532,8 @@ app.post('/api/admin/agencies', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // ─── ADMIN: AGENCY SUBSCRIPTION STATUS ──────────────────────────
-app.get('/api/admin/agencies/:id/subscription', requireAuth, requireAdmin, (req, res) => {
-  const user = db.getUserById(req.params.id);
+app.get('/api/admin/agencies/:id/subscription', requireAuth, requireAdmin, async (req, res) => {
+  const user = await db.getUserById(req.params.id);
   if (!user) return res.status(404).json({ error: 'Not found' });
   res.json({
     plan: user.plan, monthlyRate: user.monthly_rate, active: !!user.active,
