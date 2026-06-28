@@ -166,18 +166,35 @@ async function initSchema() {
 }
 
 // ─── HELPERS ────────────────────────────────────────────────────
+// Convert SQLite-style `?` placeholders to PostgreSQL `$1, $2, ...`
+function convertParams(sql, params) {
+  if (!USE_PG || !params.length) return { sql, params };
+  let idx = 0;
+  const newSql = sql.replace(/\?/g, () => `$${++idx}`);
+  return { sql: newSql, params };
+}
+
 function run(sql, params = []) {
-  if (USE_PG) return pgPool.query(sql, params);
+  if (USE_PG) {
+    const { sql: s, params: p } = convertParams(sql, params);
+    return pgPool.query(s, p);
+  }
   return sqliteDb.prepare(sql).run(...params);
 }
 
 function get(sql, params = []) {
-  if (USE_PG) return pgPool.query(sql, params).then(r => r.rows[0] || null);
+  if (USE_PG) {
+    const { sql: s, params: p } = convertParams(sql, params);
+    return pgPool.query(s, p).then(r => r.rows[0] || null);
+  }
   return sqliteDb.prepare(sql).get(...params);
 }
 
 function all(sql, params = []) {
-  if (USE_PG) return pgPool.query(sql, params).then(r => r.rows);
+  if (USE_PG) {
+    const { sql: s, params: p } = convertParams(sql, params);
+    return pgPool.query(s, p).then(r => r.rows);
+  }
   return sqliteDb.prepare(sql).all(...params);
 }
 
