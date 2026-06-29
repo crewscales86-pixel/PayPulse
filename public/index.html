@@ -128,6 +128,7 @@
   }
   .cust-card:hover { border-color: #444; }
   .cust-name { font-weight: 700; font-size: 15px; margin-bottom: 3px; }
+  .cust-rate { font-weight: 800; color: var(--blue); font-size: 14px; margin-bottom: 4px; }
   .cust-email { color: var(--text2); font-size: 12px; margin-bottom: 10px; }
   .cust-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
   .tag {
@@ -137,7 +138,6 @@
   .tag-red { background: rgba(255,68,68,0.1); color: var(--danger); }
   .tag-blue { background: rgba(68,136,255,0.1); color: var(--blue); }
   .tag-purple { background: rgba(170,102,255,0.1); color: var(--purple); }
-  .rate { font-weight: 700; color: var(--blue); font-size: 13px; margin-left: auto; }
   .cust-actions { display: flex; gap: 6px; }
   .btn-sm {
     padding: 6px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
@@ -202,8 +202,23 @@
     background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
     width: 90%; max-width: 440px; max-height: 90vh; overflow: auto; padding: 24px;
   }
+  .modal.wide { max-width: 700px; }
   .modal h3 { font-size: 18px; margin-bottom: 20px; }
   .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+  /* Payment Detail Modal */
+  .detail-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+  .detail-stat { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .detail-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text2); margin-bottom: 4px; }
+  .detail-stat-value { font-size: 18px; font-weight: 700; }
+  .detail-stat-value.green { color: var(--accent); }
+  .detail-stat-value.red { color: var(--danger); }
+  .detail-stat-value.blue { color: var(--blue); }
+  .detail-section { margin-bottom: 20px; }
+  .detail-section h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--text2); margin-bottom: 10px; }
+  .charge-table { font-size: 12px; }
+  .charge-table th { padding: 8px 12px; }
+  .charge-table td { padding: 8px 12px; }
 
   /* Metrics */
   .metrics-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 20px; }
@@ -238,6 +253,7 @@
     .nav { padding: 0 16px; overflow-x: auto; }
     .page { padding: 16px; }
     .stats-row { grid-template-columns: 1fr 1fr; }
+    .detail-stats { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -250,6 +266,7 @@ const e = React.createElement;
 const API = window.location.origin.includes('localhost') ? 'http://localhost:3000' : window.location.origin;
 
 function fmtDate(iso) {
+  if (!iso) return '—';
   const d = new Date(iso);
   return `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}, ${d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}`;
 }
@@ -330,6 +347,7 @@ function CustomerCard({ customer, onCharge, onEdit, onAnalytics, webhookSecret }
 
   return e('div', { className: 'cust-card' },
     e('div', { className: 'cust-name' }, customer.name),
+    e('div', { className: 'cust-rate' }, '$' + customer.rate_per_trigger + '/appt'),
     customer.company_name && e('div', { className: 'cust-company', style: { fontSize: 12, color: 'var(--text2)', marginTop: 2 } }, customer.company_name),
     e('div', { className: 'cust-email' }, customer.email),
     locId && e('div', { style: { fontSize: 11, color: 'var(--blue)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 } },
@@ -343,13 +361,148 @@ function CustomerCard({ customer, onCharge, onEdit, onAnalytics, webhookSecret }
     e('div', { className: 'cust-meta' },
       customer.card_on_file
         ? e('span', { className: 'tag tag-green' }, '\u2713 Card on file')
-        : e('span', { className: 'tag tag-red' }, 'No card'),
-      e('span', { className: 'rate' }, '$' + customer.rate_per_trigger + '/trigger')
+        : e('span', { className: 'tag tag-red' }, 'No card')
     ),
     e('div', { className: 'cust-actions' },
       e('button', { className: 'btn-sm green', onClick: () => onCharge(customer) }, 'Charge'),
       e('button', { className: 'btn-sm', onClick: () => onEdit(customer) }, 'Edit'),
       e('button', { className: 'btn-sm purple', onClick: () => onAnalytics(customer) }, 'Analytics')
+    )
+  );
+}
+
+// ─── PAYMENT DETAIL MODAL ────────────────────────────────────────
+function PaymentDetailModal({ customer, onClose, onRefresh }) {
+  const [details, setDetails] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [savingRate, setSavingRate] = useState(false);
+  const [newRate, setNewRate] = useState(customer.rate_per_trigger);
+  const [note, setNote] = useState('');
+
+  useEffect(() => {
+    api('/api/customers/' + customer.id + '/payment-details')
+      .then(setDetails)
+      .catch(err => alert('Failed to load details: ' + err.message))
+      .finally(() => setLoading(false));
+  }, [customer.id]);
+
+  const saveRate = async () => {
+    setSavingRate(true);
+    await api('/api/customers/' + customer.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: parseFloat(newRate) || 147 }) });
+    setSavingRate(false);
+    onRefresh();
+    const updated = await api('/api/customers/' + customer.id + '/payment-details');
+    setDetails(updated);
+  };
+
+  const fireCharge = async () => {
+    if (!confirm(`Charge $${customer.rate_per_trigger} for ${customer.name}?`)) return;
+    try {
+      const res = await api('/api/customers/' + customer.id + '/charge', { method: 'POST', body: JSON.stringify({ note }) });
+      alert(res.status === 'succeeded' ? `✓ Charge succeeded! (ID: ${res.id.slice(-8)})` : `✗ Charge failed: ${res.failure_reason}`);
+      onRefresh();
+      const updated = await api('/api/customers/' + customer.id + '/payment-details');
+      setDetails(updated);
+      setNote('');
+    } catch (err) { alert('Charge failed: ' + err.message); }
+  };
+
+  if (loading) return e('div', { className: 'modal-back', onClick: onClose },
+    e('div', { className: 'modal wide' }, e('h3', null, 'Loading...'))
+  );
+
+  const d = details || { charges: [], totalCharged: 0, totalTriggers: 0, failureCount: 0, chargebackCount: 0, ratePerTrigger: customer.rate_per_trigger, cardOnFile: false };
+  const c = d.customer || customer;
+
+  return e('div', { className: 'modal-back', onClick: ev => ev.target === ev.currentTarget && onClose() },
+    e('div', { className: 'modal wide' },
+      e('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 } },
+        e('div', null,
+          e('h3', { style: { marginBottom: 4 } }, c.name),
+          e('div', { style: { color: 'var(--text2)', fontSize: 13 } }, c.email)
+        ),
+        e('button', { onClick: onClose, style: { fontSize: 20, padding: '4px 8px', color: 'var(--text2)' } }, '✕')
+      ),
+
+      e('div', { className: 'detail-stats' },
+        e('div', { className: 'detail-stat' },
+          e('div', { className: 'detail-stat-label' }, 'Total Charged'),
+          e('div', { className: 'detail-stat-value green' }, '$' + (d.totalCharged || 0).toFixed(2))
+        ),
+        e('div', { className: 'detail-stat' },
+          e('div', { className: 'detail-stat-label' }, 'Total Triggers'),
+          e('div', { className: 'detail-stat-value blue' }, d.totalTriggers || 0)
+        ),
+        e('div', { className: 'detail-stat' },
+          e('div', { className: 'detail-stat-label' }, 'Last Charge'),
+          e('div', { className: 'detail-stat-value', style: { fontSize: 14 } }, fmtDate(d.lastChargeDate))
+        ),
+        e('div', { className: 'detail-stat' },
+          e('div', { className: 'detail-stat-label' }, 'Failed / Chargebacks'),
+          e('div', { className: 'detail-stat-value ' + ((d.failureCount + d.chargebackCount) > 0 ? 'red' : '') },
+            (d.failureCount || 0) + ' / ' + (d.chargebackCount || 0)
+          )
+        )
+      ),
+
+      e('div', { className: 'detail-section' },
+        e('h4', null, 'Rate per Appointment'),
+        e('div', { style: { display: 'flex', gap: 10, alignItems: 'center' } },
+          e('input', { type: 'number', value: newRate, onChange: ev => setNewRate(ev.target.value), style: { width: 120 } }),
+          e('button', { className: 'btn-sm green', onClick: saveRate, disabled: savingRate }, savingRate ? '...' : 'Save'),
+          d.cardOnFile
+            ? e('span', { className: 'tag tag-green' }, 'Card on file')
+            : e('span', { className: 'tag tag-red' }, 'No card on file')
+        )
+      ),
+
+      e('div', { className: 'detail-section' },
+        e('h4', null, 'GHL & Webhook Info'),
+        e('div', { style: { fontSize: 13, color: 'var(--text2)' } },
+          'Location ID: ', e('strong', { style: { color: 'var(--text)' } }, d.ghlLocationId || '—')
+        ),
+        d.webhookUrl && e('div', { style: { marginTop: 6, padding: '8px 12px', background: 'var(--surface2)', borderRadius: 6, fontFamily: 'monospace', fontSize: 11, color: 'var(--blue)', wordBreak: 'break-all' } },
+          d.webhookUrl
+        ),
+        !d.webhookUrl && e('div', { style: { fontSize: 12, color: 'var(--text2)', marginTop: 6 } }, 'Set a GHL Location ID to get a per-client webhook URL')
+      ),
+
+      e('div', { className: 'detail-section' },
+        e('h4', null, 'Charge History (Last ' + Math.min(d.charges.length, 10) + ' of ' + d.charges.length + ')'),
+        e('div', { className: 'table-wrap', style: { maxHeight: 250, overflow: 'auto' } },
+          e('table', { className: 'charge-table' },
+            e('thead', null, e('tr', null,
+              e('th', null, 'Status'), e('th', null, 'Amount'), e('th', null, 'Note'), e('th', null, 'Date')
+            )),
+            e('tbody', null,
+              d.charges.slice(0, 10).map(ch =>
+                e('tr', { key: ch.id },
+                  e('td', null,
+                    e('span', { className: 'status-dot ' + (ch.status==='succeeded'?'ok':ch.status==='failed'?'fail':'warn') }),
+                    e('span', { style: { textTransform:'capitalize' } }, ch.status)
+                  ),
+                  e('td', null, '$' + ch.amount.toFixed(2)),
+                  e('td', { style: { color: 'var(--text2)' } }, ch.note || '—'),
+                  e('td', { style: { color: 'var(--text2)' } }, fmtDate(ch.created_at))
+                )
+              ),
+              d.charges.length === 0 && e('tr', null, e('td', { colSpan: 4, style: { textAlign:'center', color:'#555', padding:20 } }, 'No charges yet'))
+            )
+          )
+        )
+      ),
+
+      e('div', { className: 'detail-section' },
+        e('h4', null, 'Fire Manual Charge'),
+        e('div', { style: { display: 'flex', gap: 10, alignItems: 'center' } },
+          e('input', { placeholder: 'Note (optional)', value: note, onChange: ev => setNote(ev.target.value), style: { flex: 1 } }),
+          e('button', { className: 'btn-primary', onClick: fireCharge, style: { width: 'auto' } }, 'Charge $' + c.rate_per_trigger)
+        )
+      ),
+
+      e('div', { className: 'modal-actions' },
+        e('button', { className: 'btn-ghost', onClick: onClose }, 'Close')
+      )
     )
   );
 }
@@ -360,9 +513,10 @@ function CustomersPage({ customers, onRefresh, settings }) {
   const [search, setSearch] = useState('');
   const [chargeModal, setChargeModal] = useState(null);
   const [editModal, setEditModal] = useState(null);
+  const [detailModal, setDetailModal] = useState(null);
   const [note, setNote] = useState('');
 
-  const processors = { all: 'All', whop: 'Whop', stripe: 'Stripe', fanbasis: 'Fanbasis' };
+  const processors = { all: 'All', whop: 'Whop', stripe: 'Stripe' };
 
   const filtered = customers.filter(c => {
     if (filter !== 'all' && filter !== c.processor) return false;
@@ -429,7 +583,7 @@ function CustomersPage({ customers, onRefresh, settings }) {
           className: 'filter-pill ' + (filter===k ? 'active' : ''),
           onClick: () => setFilter(k)
         },
-          k === 'whop' ? '\u26A1 ' : k === 'stripe' ? '\u25C6 ' : k === 'fanbasis' ? '\u2605 ' : '',
+          k === 'whop' ? '\u26A1 ' : k === 'stripe' ? '\u25C6 ' : '',
           v,
           e('span', { className: 'count' }, k === 'all' ? customers.length : customers.filter(c => c.processor === k).length)
         )
@@ -450,7 +604,7 @@ function CustomersPage({ customers, onRefresh, settings }) {
               onCharge: setChargeModal,
               onEdit: setEditModal,
               webhookSecret: settings?.ghlWebhookSecret,
-              onAnalytics: () => alert('Analytics: ' + c.name + ' \u2014 ' + (c.total_triggers || 0) + ' triggers, $' + ((c.total_charged || 0)).toFixed(2) + ' charged')
+              onAnalytics: () => setDetailModal(c)
             })
           ),
           byStatus[col.key].length === 0 && e('div', { style: { color:'#555', fontSize:13, textAlign:'center', padding:40 } }, 'No clients')
@@ -460,6 +614,10 @@ function CustomersPage({ customers, onRefresh, settings }) {
     chargeModal && e('div', { className: 'modal-back', onClick: ev => ev.target === ev.currentTarget && setChargeModal(null) },
       e('div', { className: 'modal' },
         e('h3', null, 'Charge ' + chargeModal.name),
+        e('div', { style: { color: 'var(--text2)', fontSize: 13, marginBottom: 16 } },
+          'Per appointment rate for ', e('strong', { style: { color: 'var(--text)' } }, chargeModal.name),
+          ': ', e('strong', { style: { color: 'var(--accent)' } }, '$' + chargeModal.rate_per_trigger)
+        ),
         e('div', { className: 'form-group' },
           e('label', null, 'Amount'),
           e('input', { value: '$' + chargeModal.rate_per_trigger, disabled: true })
@@ -474,6 +632,11 @@ function CustomersPage({ customers, onRefresh, settings }) {
         )
       )
     ),
+    detailModal && e(PaymentDetailModal, {
+      customer: detailModal,
+      onClose: () => setDetailModal(null),
+      onRefresh
+    }),
     editModal && e('div', { className: 'modal-back', onClick: ev => ev.target === ev.currentTarget && setEditModal(null) },
       e('div', { className: 'modal' },
         e('h3', null, editModal.id === 'new' ? 'Add Customer' : 'Edit ' + editModal.name),
@@ -557,13 +720,13 @@ function SettingsPage({ settings, onSave }) {
         e('div', { className: 'form-group' },
           e('label', null, 'Select Processor'),
           e('div', { className: 'processor-tabs' },
-            ['whop','stripe','fanbasis'].map(p =>
+            ['whop','stripe'].map(p =>
               e('div', {
                 key: p,
                 className: 'proc-tab ' + (s.processor===p ? 'active' : ''),
                 onClick: () => setS({...s, processor: p})
               },
-                p === 'whop' ? '\u26A1 ' : p === 'stripe' ? '\u25C6 ' : '\u2605 ',
+                p === 'whop' ? '\u26A1 ' : p === 'stripe' ? '\u25C6 ' : '',
                 p.charAt(0).toUpperCase() + p.slice(1)
               )
             )
@@ -942,7 +1105,7 @@ function AdminSettingsPage({ user, onSave }) {
           'Update your admin password and email address.'
         ),
         error && e('div', { className: 'error-msg', style: { marginBottom: 12 } }, error),
-        saved && e('div', { style: { color: 'var(--accent)', fontSize: 13, marginBottom: 12, fontWeight: 600 } }, '✓ Settings saved successfully'),
+        saved && e('div', { style: { color: 'var(--accent)', fontSize: 13, marginBottom: 12, fontWeight: 600 } }, '\u2713 Settings saved successfully'),
         e('div', { className: 'form-group' },
           e('label', null, 'Email'),
           e('input', { type: 'email', value: newEmail, onChange: ev => setNewEmail(ev.target.value), placeholder: 'admin@paypulse.co' })
@@ -1060,7 +1223,7 @@ function App() {
       ),
       e('div', { className: 'nav-link', style: { opacity: 0.6, cursor: 'default' } }, '\u2B50'),
       e('div', { className: 'nav-link', style: { fontSize: 12, color: user?.subscription?.hasStripe ? 'var(--accent)' : 'var(--text2)' } },
-        user?.subscription?.hasStripe ? '● Pro' : user?.subscription?.plan || 'Free'
+        user?.subscription?.hasStripe ? '\u25CF Pro' : user?.subscription?.plan || 'Free'
       ),
       e('div', { className: 'nav-link', style: { opacity: 0.5, cursor: 'pointer' }, onClick: logout }, 'Sign Out')
     ),
