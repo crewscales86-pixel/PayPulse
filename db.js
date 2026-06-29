@@ -59,6 +59,7 @@ async function initSchema() {
         rate_per_trigger REAL DEFAULT 147,
         total_charged REAL DEFAULT 0,
         total_triggers INTEGER DEFAULT 0,
+        credit_balance REAL DEFAULT 0,
         ghl_location_id TEXT DEFAULT '',
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
@@ -132,6 +133,7 @@ async function initSchema() {
         stripe_payment_method_id TEXT DEFAULT '', whop_member_id TEXT DEFAULT '',
         whop_payment_method_id TEXT DEFAULT '', rate_per_trigger REAL DEFAULT 147,
         total_charged REAL DEFAULT 0, total_triggers INTEGER DEFAULT 0,
+        credit_balance REAL DEFAULT 0,
         ghl_location_id TEXT DEFAULT '',
         created_at TEXT DEFAULT (datetime('now'))
       );
@@ -162,6 +164,20 @@ async function initSchema() {
         created_at TEXT DEFAULT (datetime('now'))
       );
     `);
+  }
+
+  // Migrations: add credit_balance column to existing customers table if missing
+  try {
+    if (USE_PG) {
+      await pgPool.query('ALTER TABLE customers ADD COLUMN IF NOT EXISTS credit_balance REAL DEFAULT 0');
+    } else {
+      const cols = sqliteDb.prepare("PRAGMA table_info(customers)").all();
+      if (!cols.find(c => c.name === 'credit_balance')) {
+        sqliteDb.exec('ALTER TABLE customers ADD COLUMN credit_balance REAL DEFAULT 0');
+      }
+    }
+  } catch (e) {
+    // ignore migration errors (column already exists etc.)
   }
 }
 

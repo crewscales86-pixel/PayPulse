@@ -339,11 +339,23 @@ function AuthPage({ onAuth }) {
 }
 
 // ─── CUSTOMER CARD ──────────────────────────────────────────────
-function CustomerCard({ customer, onCharge, onEdit, onAnalytics, webhookSecret }) {
+function CustomerCard({ customer, onCharge, onEdit, onAnalytics, webhookSecret, onSaveCard }) {
   const locId = customer.ghl_location_id;
   const clientWebhook = locId && webhookSecret ? (window.location.origin + '/webhook/ghl/' + webhookSecret + '/' + locId) : null;
   const [copied, setCopied] = useState(false);
+  const [savingCard, setSavingCard] = useState(false);
   const copyUrl = () => { navigator.clipboard.writeText(clientWebhook); setCopied(true); setTimeout(() => setCopied(false), 2000); };
+
+  const saveCard = async () => {
+    setSavingCard(true);
+    try {
+      const data = await api('/api/customers/' + customer.id + '/setup-card', { method: 'POST' });
+      window.location.href = data.url;
+    } catch (err) {
+      alert('Failed to create card setup link: ' + err.message);
+      setSavingCard(false);
+    }
+  };
 
   return e('div', { className: 'cust-card' },
     e('div', { className: 'cust-name' }, customer.name),
@@ -360,13 +372,14 @@ function CustomerCard({ customer, onCharge, onEdit, onAnalytics, webhookSecret }
     ),
     e('div', { className: 'cust-meta' },
       customer.card_on_file
-        ? e('span', { className: 'tag tag-green' }, '\u2713 Card on file')
+        ? e('span', { className: 'tag tag-green' }, '\\u2713 Card on file')
         : e('span', { className: 'tag tag-red' }, 'No card')
     ),
     e('div', { className: 'cust-actions' },
       e('button', { className: 'btn-sm green', onClick: () => onCharge(customer) }, 'Charge'),
       e('button', { className: 'btn-sm', onClick: () => onEdit(customer) }, 'Edit'),
-      e('button', { className: 'btn-sm purple', onClick: () => onAnalytics(customer) }, 'Analytics')
+      e('button', { className: 'btn-sm purple', onClick: () => onAnalytics(customer) }, 'Analytics'),
+      e('button', { className: 'btn-sm', style: { background: 'rgba(68,136,255,0.1)', color: 'var(--blue)', borderColor: 'rgba(68,136,255,0.3)' }, onClick: saveCard, disabled: savingCard }, savingCard ? '...' : 'Save Card')
     )
   );
 }
@@ -378,6 +391,8 @@ function PaymentDetailModal({ customer, onClose, onRefresh }) {
   const [savingRate, setSavingRate] = useState(false);
   const [newRate, setNewRate] = useState(customer.rate_per_trigger);
   const [note, setNote] = useState('');
+  const [retrying, setRetrying] = useState(null);
+  const [savingCard, setSavingCard] = useState(false);
 
   useEffect(() => {
     api('/api/customers/' + customer.id + '/payment-details')
@@ -407,11 +422,34 @@ function PaymentDetailModal({ customer, onClose, onRefresh }) {
     } catch (err) { alert('Charge failed: ' + err.message); }
   };
 
+  const saveCard = async () => {
+    setSavingCard(true);
+    try {
+      const data = await api('/api/customers/' + customer.id + '/setup-card', { method: 'POST' });
+      window.location.href = data.url;
+    } catch (err) {
+      alert('Failed to create card setup link: ' + err.message);
+      setSavingCard(false);
+    }
+  };
+
+  const retryCharge = async (chargeId) => {
+    setRetrying(chargeId);
+    try {
+      const res = await api('/api/charges/' + chargeId + '/retry', { method: 'POST' });
+      alert(res.status === 'succeeded' ? `✓ Retry succeeded! (ID: ${res.id.slice(-8)})` : `✗ Retry failed: ${res.failure_reason}`);
+      onRefresh();
+      const updated = await api('/api/customers/' + customer.id + '/payment-details');
+      setDetails(updated);
+    } catch (err) { alert('Retry failed: ' + err.message); }
+    setRetrying(null);
+  };
+
   if (loading) return e('div', { className: 'modal-back', onClick: onClose },
     e('div', { className: 'modal wide' }, e('h3', null, 'Loading...'))
   );
 
-  const d = details || { charges: [], totalCharged: 0, totalTriggers: 0, failureCount: 0, chargebackCount: 0, ratePerTrigger: customer.rate_per_trigger, cardOnFile: false };
+  const d = details || { charges: [], totalCharged: 0, totalTriggers: 0, creditBalance: 0, failureCount: 0, chargebackCount: 0, ratePerTrigger: customer.rate_per_trigger, cardOnFile: false };
   const c = d.customer || customer;
 
   return e('div', { className: 'modal-back', onClick: ev => ev.target === ev.currentTarget && onClose() },
@@ -434,6 +472,10 @@ function PaymentDetailModal({ customer, onClose, onRefresh }) {
           e('div', { className: 'detail-stat-value blue' }, d.totalTriggers || 0)
         ),
         e('div', { className: 'detail-stat' },
+          e('div', { className: 'detail-stat-label' }, 'Credit Balance'),
+          e('div', { className: 'detail-stat-value ' + ((d.creditBalance || 0) > 0 ? 'green' : '') }, '$' + (d.creditBalance || 0).toFixed(2))
+        ),
+        e('div', { className: 'detail-stat' },
           e('div', { className: 'detail-stat-label' }, 'Last Charge'),
           e('div', { className: 'detail-stat-value', style: { fontSize: 14 } }, fmtDate(d.lastChargeDate))
         ),
@@ -442,6 +484,20 @@ function PaymentDetailModal({ customer, onClose, onRefresh }) {
           e('div', { className: 'detail-stat-value ' + ((d.failureCount + d.chargebackCount) > 0 ? 'red' : '') },
             (d.failureCount || 0) + ' / ' + (d.chargebackCount || 0)
           )
+        ),
+        e('div', { className: 'detail-stat' },
+          e('div', { className: 'detail-stat-label' }, 'Card on File'),
+          e('div', { className: 'detail-stat-value ' + (d.cardOnFile ? 'green' : 'red'), style: { fontSize: 14 } },
+            d.cardOnFile ? '✓ Yes' : '✗ No'
+          )
+        )
+      ),
+
+      !d.cardOnFile && e('div', { className: 'detail-section' },
+        e('h4', null, 'Card Setup'),
+        e('div', { style: { display: 'flex', gap: 10, alignItems: 'center' } },
+          e('span', { style: { color: 'var(--text2)', fontSize: 13, flex: 1 } }, 'No card on file. Generate a Stripe Checkout link to save the client\'s card ($1 auth charge).'),
+          e('button', { className: 'btn-sm', style: { background: 'rgba(68,136,255,0.1)', color: 'var(--blue)', borderColor: 'rgba(68,136,255,0.3)', padding: '8px 16px' }, onClick: saveCard, disabled: savingCard }, savingCard ? '...' : 'Save Card')
         )
       ),
 
@@ -472,7 +528,7 @@ function PaymentDetailModal({ customer, onClose, onRefresh }) {
         e('div', { className: 'table-wrap', style: { maxHeight: 250, overflow: 'auto' } },
           e('table', { className: 'charge-table' },
             e('thead', null, e('tr', null,
-              e('th', null, 'Status'), e('th', null, 'Amount'), e('th', null, 'Note'), e('th', null, 'Date')
+              e('th', null, 'Status'), e('th', null, 'Amount'), e('th', null, 'Note'), e('th', null, 'Date'), e('th', null, 'Action')
             )),
             e('tbody', null,
               d.charges.slice(0, 10).map(ch =>
@@ -483,10 +539,15 @@ function PaymentDetailModal({ customer, onClose, onRefresh }) {
                   ),
                   e('td', null, '$' + ch.amount.toFixed(2)),
                   e('td', { style: { color: 'var(--text2)' } }, ch.note || '—'),
-                  e('td', { style: { color: 'var(--text2)' } }, fmtDate(ch.created_at))
+                  e('td', { style: { color: 'var(--text2)' } }, fmtDate(ch.created_at)),
+                  e('td', null,
+                    ch.status === 'failed'
+                      ? e('button', { className: 'btn-sm', style: { padding: '4px 10px', fontSize: 10 }, onClick: () => retryCharge(ch.id), disabled: retrying === ch.id }, retrying === ch.id ? '...' : 'Retry')
+                      : ''
+                  )
                 )
               ),
-              d.charges.length === 0 && e('tr', null, e('td', { colSpan: 4, style: { textAlign:'center', color:'#555', padding:20 } }, 'No charges yet'))
+              d.charges.length === 0 && e('tr', null, e('td', { colSpan: 5, style: { textAlign:'center', color:'#555', padding:20 } }, 'No charges yet'))
             )
           )
         )
@@ -539,7 +600,7 @@ function CustomersPage({ customers, onRefresh, settings }) {
     if (editModal.id === 'new') {
       await api('/api/customers', { method: 'POST', body: JSON.stringify({ ...editModal, user_id: req.user.id }) });
     } else {
-      await api('/api/customers/' + editModal.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: editModal.rate_per_trigger, status: editModal.status, name: editModal.name, company_name: editModal.company_name, ghl_location_id: editModal.ghl_location_id }) });
+      await api('/api/customers/' + editModal.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: editModal.rate_per_trigger, status: editModal.status, name: editModal.name, company_name: editModal.company_name, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
     }
     setEditModal(null); onRefresh();
   };
@@ -677,6 +738,16 @@ function CustomersPage({ customers, onRefresh, settings }) {
           e('div', { style: { padding: '10px 14px', background: 'var(--surface3)', borderRadius: 8, fontFamily: 'monospace', fontSize: 12, color: 'var(--blue)', wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: 8 } },
             e('span', { style: { flex: 1 } }, window.location.origin + '/webhook/ghl/' + settings.ghlWebhookSecret + '/' + editModal.ghl_location_id),
             e('button', { onClick: () => { navigator.clipboard.writeText(window.location.origin + '/webhook/ghl/' + settings.ghlWebhookSecret + '/' + editModal.ghl_location_id); }, style: { background: 'var(--accent)', color: '#000', border: 'none', borderRadius: 4, padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0 } }, 'Copy')
+          )
+        ),
+        editModal.id !== 'new' && e('div', null,
+          e('div', { className: 'form-group' },
+            e('label', null, 'Stripe Customer ID (manual paste)'),
+            e('input', { value: editModal.stripe_customer_id || '', onChange: ev => setEditModal({...editModal, stripe_customer_id: ev.target.value}), placeholder: 'cus_...', style: { fontFamily: 'monospace', fontSize: 12 } })
+          ),
+          e('div', { className: 'form-group' },
+            e('label', null, 'Stripe Payment Method ID (manual paste)'),
+            e('input', { value: editModal.stripe_payment_method_id || '', onChange: ev => setEditModal({...editModal, stripe_payment_method_id: ev.target.value}), placeholder: 'pm_...', style: { fontFamily: 'monospace', fontSize: 12 } })
           )
         ),
         e('div', { className: 'modal-actions' },

@@ -139,8 +139,9 @@ app.post('/webhook/ghl/:secret', async (req, res) => {
     db.addNotification({ user_id: user.id, type: 'trigger', title: `Trigger fired — ${customer.name}`, body: `$${customer.rate_per_trigger} ready via GHL trigger. Location: ${ghlLocationId || 'N/A'}` });
 
     if (user.appointment_tracking_mode) {
-      const appt = db.createAppointment({ user_id: user.id, customer_id: customer.id, status: 'pending', date: payload.appointment_date || '', time: payload.appointment_time || '', note: payload.note || '' });
-      return res.json({ success: true, mode: 'appointment_tracking', appointmentId: appt.id, customerId: customer.id, locationId: ghlLocationId });
+      const appt = await db.createAppointment({ user_id: user.id, customer_id: customer.id, status: 'booked', date: payload.appointment_date || '', time: payload.appointment_time || '', note: payload.note || '' });
+      const charge = await processCharge(user, customer, payload.note || 'GHL Trigger (booked)');
+      return res.json({ success: true, mode: 'appointment_tracking', appointmentId: appt.id, chargeId: charge.id, chargeStatus: charge.status, customerId: customer.id, locationId: ghlLocationId });
     }
 
     const charge = await processCharge(user, customer, payload.note || 'GHL Trigger');
@@ -185,8 +186,9 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
     db.addNotification({ user_id: user.id, type: 'trigger', title: `Appointment — ${customer.name}`, body: `GHL Location ${locationId} fired. $${customer.rate_per_trigger} charge ready.` });
 
     if (user.appointment_tracking_mode) {
-      const appt = db.createAppointment({ user_id: user.id, customer_id: customer.id, status: 'pending', date: payload.appointment_date || '', time: payload.appointment_time || '', note: payload.note || '' });
-      return res.json({ success: true, mode: 'appointment_tracking', appointmentId: appt.id, customerId: customer.id, locationId, customerName: customer.name });
+      const appt = await db.createAppointment({ user_id: user.id, customer_id: customer.id, status: 'booked', date: payload.appointment_date || '', time: payload.appointment_time || '', note: payload.note || '' });
+      const charge = await processCharge(user, customer, payload.note || `GHL Location ${locationId} Trigger (booked)`);
+      return res.json({ success: true, mode: 'appointment_tracking', appointmentId: appt.id, chargeId: charge.id, chargeStatus: charge.status, customerId: customer.id, locationId, customerName: customer.name });
     }
 
     const charge = await processCharge(user, customer, payload.note || `GHL Location ${locationId} Trigger`);
@@ -196,15 +198,42 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
 
 // ─── CHARGE PROCESSING ────────────────────────────────────────────
 async function processCharge(user, customer, note = '') {
+  const rate = parseFloat(customer.rate_per_trigger) || 0;
+  const credit = parseFloat(customer.credit_balance) || 0;
+
+  // Credit covers the full charge
+  if (credit > 0 && credit >= rate) {
+    const charge = await db.createCharge({
+      user_id: user.id, customer_id: customer.id, customer_name: customer.name, customer_email: customer.email,
+      amount: rate, processor: user.processor, status: 'credited', note
+    });
+    await db.updateCustomer(customer.id, { credit_balance: credit - rate });
+    await db.addNotification({ user_id: user.id, type: 'success', title: `Credit applied — ${customer.name}`, body: `$${rate.toFixed(2)} covered by credit balance. Remaining credit: $${(credit - rate).toFixed(2)}` });
+    return db.getChargeById(charge.id);
+  }
+
+  // Partial credit: charge the difference, reset credit to 0
+  let chargeAmount = rate;
+  let creditUsed = 0;
+  if (credit > 0 && credit < rate) {
+    chargeAmount = rate - credit;
+    creditUsed = credit;
+  }
+
   const charge = await db.createCharge({
     user_id: user.id, customer_id: customer.id, customer_name: customer.name, customer_email: customer.email,
-    amount: customer.rate_per_trigger, processor: user.processor, status: 'pending', note
+    amount: chargeAmount, processor: user.processor, status: 'pending', note: creditUsed > 0 ? `${note} (credit applied: $${creditUsed.toFixed(2)})` : note
   });
+
+  // Reset credit balance if partial credit was used
+  if (creditUsed > 0) {
+    await db.updateCustomer(customer.id, { credit_balance: 0 });
+  }
 
   if (!customer.card_on_file) {
     await db.updateCustomer(customer.id, { status: 'at_risk' });
     await db.updateCharge(charge.id, { status: 'failed', failure_reason: 'No payment method on file' });
-    await db.addNotification({ user_id: user.id, type: 'fail', title: `Charge failed — ${customer.name}`, body: `$${customer.rate_per_trigger} failed — No payment method on file` });
+    await db.addNotification({ user_id: user.id, type: 'fail', title: `Charge failed — ${customer.name}`, body: `$${chargeAmount.toFixed(2)} failed — No payment method on file` });
     return db.getChargeById(charge.id);
   }
 
@@ -213,7 +242,7 @@ async function processCharge(user, customer, note = '') {
     try {
       const stripeClient = Stripe(user.stripe_secret_key);
       const paymentIntent = await stripeClient.paymentIntents.create({
-        amount: Math.round(customer.rate_per_trigger * 100),
+        amount: Math.round(chargeAmount * 100),
         currency: 'usd',
         customer: customer.stripe_customer_id,
         payment_method: customer.stripe_payment_method_id,
@@ -225,8 +254,8 @@ async function processCharge(user, customer, note = '') {
 
       if (paymentIntent.status === 'succeeded') {
         await db.updateCharge(charge.id, { status: 'succeeded', stripe_charge_id: paymentIntent.id });
-        await db.updateCustomer(customer.id, { total_charged: customer.total_charged + customer.rate_per_trigger, total_triggers: customer.total_triggers + 1 });
-        await db.addNotification({ user_id: user.id, type: 'success', title: `Charge successful — ${customer.name}`, body: `$${customer.rate_per_trigger.toFixed(2)} charged via Stripe. PI: ${paymentIntent.id.slice(-8)}` });
+        await db.updateCustomer(customer.id, { total_charged: (parseFloat(customer.total_charged) || 0) + chargeAmount, total_triggers: (parseInt(customer.total_triggers) || 0) + 1 });
+        await db.addNotification({ user_id: user.id, type: 'success', title: `Charge successful — ${customer.name}`, body: `$${chargeAmount.toFixed(2)} charged via Stripe. PI: ${paymentIntent.id.slice(-8)}` });
       } else {
         await db.updateCharge(charge.id, { status: 'failed', failure_reason: `PaymentIntent status: ${paymentIntent.status}` });
         await db.addNotification({ user_id: user.id, type: 'fail', title: `Charge failed — ${customer.name}`, body: `Stripe returned status: ${paymentIntent.status}` });
@@ -241,8 +270,8 @@ async function processCharge(user, customer, note = '') {
 
   // Whop or no Stripe key — simulated charge
   await db.updateCharge(charge.id, { status: 'succeeded', stripe_charge_id: `sim_${uuidv4().slice(0,8)}` });
-  await db.updateCustomer(customer.id, { total_charged: customer.total_charged + customer.rate_per_trigger, total_triggers: customer.total_triggers + 1 });
-  await db.addNotification({ user_id: user.id, type: 'success', title: `Charge successful — ${customer.name}`, body: `$${customer.rate_per_trigger.toFixed(2)} charged via ${user.processor}. ${note}` });
+  await db.updateCustomer(customer.id, { total_charged: (parseFloat(customer.total_charged) || 0) + chargeAmount, total_triggers: (parseInt(customer.total_triggers) || 0) + 1 });
+  await db.addNotification({ user_id: user.id, type: 'success', title: `Charge successful — ${customer.name}`, body: `$${chargeAmount.toFixed(2)} charged via ${user.processor}. ${note}` });
   return db.getChargeById(charge.id);
 }
 
@@ -268,6 +297,59 @@ app.post('/webhook/whop/:secret', async (req, res) => {
 app.post('/webhook/stripe/:secret', async (req, res) => {
   try {
     const event = req.body;
+
+    if (event.type === 'checkout.session.completed') {
+      const obj = event.data.object;
+      const paypulseCustomerId = obj.metadata?.paypulse_customer_id;
+      const paypulseUserId = obj.metadata?.paypulse_user_id;
+      if (paypulseCustomerId) {
+        const customer = await db.getCustomerById(paypulseCustomerId);
+        if (customer) {
+          // Retrieve the session to get payment_method and customer
+          let stripeCustomerId = obj.customer || customer.stripe_customer_id || '';
+          let paymentMethodId = '';
+          if (paypulseUserId) {
+            const user = await db.getUserById(paypulseUserId);
+            if (user && user.stripe_secret_key) {
+              try {
+                const stripeClient = Stripe(user.stripe_secret_key);
+                const session = await stripeClient.checkout.sessions.retrieve(obj.id);
+                stripeCustomerId = session.customer || stripeCustomerId;
+                if (session.payment_intent) {
+                  const intent = await stripeClient.paymentIntents.retrieve(session.payment_intent);
+                  paymentMethodId = intent.payment_method || '';
+                }
+              } catch (e) {
+                // best effort retrieval
+              }
+            }
+          }
+          await db.updateCustomer(paypulseCustomerId, {
+            stripe_customer_id: stripeCustomerId,
+            stripe_payment_method_id: paymentMethodId,
+            card_on_file: 1
+          });
+          await db.addNotification({ user_id: customer.user_id, type: 'success', title: `Card saved — ${customer.name}`, body: 'Card authorization completed via Stripe Checkout.' });
+        }
+      }
+    }
+
+    if (event.type === 'payment_intent.payment_failed') {
+      const obj = event.data.object;
+      const paypulseCustomerId = obj.metadata?.paypulse_customer_id || obj.metadata?.customer_id;
+      if (paypulseCustomerId) {
+        const customer = await db.getCustomerById(paypulseCustomerId);
+        if (customer) {
+          await db.createCharge({
+            id: uuidv4(), user_id: customer.user_id, customer_id: customer.id, customer_name: customer.name, customer_email: customer.email,
+            amount: parseFloat(obj.amount_received || obj.amount || 0) / 100, processor: 'stripe', status: 'failed',
+            stripe_charge_id: obj.id, note: 'Payment intent failed (Stripe webhook)', failure_reason: obj.last_payment_error?.message || 'Payment failed'
+          });
+          await db.addNotification({ user_id: customer.user_id, type: 'fail', title: `Charge failed — ${customer.name}`, body: `Stripe payment intent failed: ${obj.last_payment_error?.message || 'Unknown'}` });
+        }
+      }
+    }
+
     if (event.type === 'payment_intent.succeeded') {
       const obj = event.data.object;
       const email = obj.receipt_email;
@@ -346,6 +428,47 @@ app.post('/api/customers/:id/charge', requireAuth, async (req, res) => {
   res.json(charge);
 });
 
+// ─── STRIPE CARD SETUP ───────────────────────────────────────────
+app.post('/api/customers/:id/setup-card', requireAuth, async (req, res) => {
+  try {
+    const customer = await db.getCustomerById(req.params.id);
+    if (!customer || customer.user_id !== req.user.id) return res.status(404).json({ error: 'Not found' });
+    const user = await db.getUserById(req.user.id);
+    if (!user.stripe_secret_key) return res.status(400).json({ error: 'Set your Stripe secret key in Settings first' });
+
+    const stripeClient = Stripe(user.stripe_secret_key);
+
+    let stripeCustomerId = customer.stripe_customer_id;
+    if (!stripeCustomerId) {
+      const stripeCustomer = await stripeClient.customers.create({
+        email: customer.email,
+        name: customer.name,
+        metadata: { paypulse_customer_id: customer.id }
+      });
+      stripeCustomerId = stripeCustomer.id;
+      await db.updateCustomer(customer.id, { stripe_customer_id: stripeCustomerId });
+    }
+
+    const session = await stripeClient.checkout.sessions.create({
+      mode: 'payment',
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          product_data: { name: 'Card Authorization' },
+          unit_amount: 100
+        },
+        quantity: 1
+      }],
+      customer: stripeCustomerId,
+      success_url: BASE_URL + '/?card_saved=1',
+      cancel_url: BASE_URL + '/?card_cancelled=1',
+      metadata: { paypulse_customer_id: customer.id, paypulse_user_id: user.id }
+    });
+
+    res.json({ url: session.url });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── CHARGES API ──────────────────────────────────────────────────
 app.get('/api/charges', requireAuth, async (req, res) => {
   res.json(await db.getChargesByUser(req.user.id));
@@ -357,6 +480,29 @@ app.get('/api/customers/:id/charges', requireAuth, async (req, res) => {
   if (!c || c.user_id !== req.user.id) return res.status(404).json({ error: 'Not found' });
   const charges = await db.all('SELECT * FROM charges WHERE customer_id = ? ORDER BY created_at DESC LIMIT 50', [req.params.id]);
   res.json(charges);
+});
+
+// ─── CHARGE RETRY ────────────────────────────────────────────────
+app.post('/api/charges/:id/retry', requireAuth, async (req, res) => {
+  try {
+    const oldCharge = await db.getChargeById(req.params.id);
+    if (!oldCharge || oldCharge.user_id !== req.user.id) return res.status(404).json({ error: 'Not found' });
+    if (oldCharge.status !== 'failed') return res.status(400).json({ error: 'Only failed charges can be retried' });
+
+    const customer = await db.getCustomerById(oldCharge.customer_id);
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+    const user = await db.getUserById(req.user.id);
+
+    // Temporarily override rate_per_trigger so processCharge uses the original charge amount
+    const originalAmount = parseFloat(oldCharge.amount) || 0;
+    const chargeCustomer = { ...customer, rate_per_trigger: originalAmount };
+    const newCharge = await processCharge(user, chargeCustomer, `Retry of charge ${oldCharge.id.slice(-8)}`);
+
+    // Mark old charge as retried
+    await db.updateCharge(oldCharge.id, { status: 'retried' });
+
+    res.json(newCharge);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // Per-customer payment details (for analytics modal)
@@ -374,6 +520,7 @@ app.get('/api/customers/:id/payment-details', requireAuth, async (req, res) => {
     charges,
     totalCharged: c.total_charged || 0,
     totalTriggers: c.total_triggers || 0,
+    creditBalance: parseFloat(c.credit_balance) || 0,
     lastChargeDate: lastCharge,
     failureCount,
     chargebackCount,
@@ -396,11 +543,29 @@ app.patch('/api/appointments/:id', requireAuth, async (req, res) => {
   await db.updateAppointment(req.params.id, { status: req.body.status || a.status });
   const updated = await db.getAppointmentById(req.params.id);
   const user = await db.getUserById(req.user.id);
+
+  // When status changes to 'no_show': issue credit
+  if (oldStatus !== updated.status && updated.status === 'no_show') {
+    const customer = await db.getCustomerById(updated.customer_id);
+    if (customer) {
+      const rate = parseFloat(customer.rate_per_trigger) || 0;
+      const currentCredit = parseFloat(customer.credit_balance) || 0;
+      await db.updateCustomer(customer.id, { credit_balance: currentCredit + rate });
+      await db.createCharge({
+        user_id: user.id, customer_id: customer.id, customer_name: customer.name, customer_email: customer.email,
+        amount: rate, processor: user.processor, status: 'credited', note: 'No-show credit'
+      });
+      await db.addNotification({ user_id: user.id, type: 'success', title: `Credit issued — ${customer.name}`, body: `$${rate.toFixed(2)} credited for no-show` });
+      return res.json({ ...updated, creditIssued: true, creditAmount: rate });
+    }
+  }
+
+  // When status changes to 'showed': already charged on booking, nothing special
   if (user.appointment_tracking_mode && oldStatus !== updated.status && updated.status === 'showed') {
     const customer = await db.getCustomerById(updated.customer_id);
     if (customer) {
-      const charge = await processCharge(user, customer, `Appointment showed — ${updated.date}`);
-      return res.json({ ...updated, chargeId: charge.id, chargeStatus: charge.status });
+      // Already charged on booking — no additional charge
+      return res.json({ ...updated, alreadyCharged: true });
     }
   }
   res.json(updated);
