@@ -75,7 +75,11 @@ async function initSchema() {
         stripe_charge_id TEXT DEFAULT '',
         failure_reason TEXT DEFAULT '',
         note TEXT DEFAULT '',
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        utm_source TEXT DEFAULT '',
+        utm_medium TEXT DEFAULT '',
+        utm_campaign TEXT DEFAULT '',
+        gclid TEXT DEFAULT ''
       );
       CREATE TABLE IF NOT EXISTS appointments (
         id TEXT PRIMARY KEY,
@@ -127,16 +131,18 @@ async function initSchema() {
         created_at TEXT DEFAULT (datetime('now'))
       );
       CREATE TABLE IF NOT EXISTS customers (
-        id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
-        company_name TEXT DEFAULT '', email TEXT NOT NULL, phone TEXT DEFAULT '', status TEXT DEFAULT 'new',
-        card_on_file INTEGER DEFAULT 0, stripe_customer_id TEXT DEFAULT '',
-        stripe_payment_method_id TEXT DEFAULT '', whop_member_id TEXT DEFAULT '',
-        whop_payment_method_id TEXT DEFAULT '', rate_per_trigger REAL DEFAULT 147,
-        total_charged REAL DEFAULT 0, total_triggers INTEGER DEFAULT 0,
-        credit_balance REAL DEFAULT 0,
-        ghl_location_id TEXT DEFAULT '',
-        created_at TEXT DEFAULT (datetime('now'))
-      );
+        CREATE TABLE IF NOT EXISTS customers (
+                id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
+                company_name TEXT DEFAULT '', email TEXT NOT NULL, phone TEXT DEFAULT '', status TEXT DEFAULT 'new',
+                card_on_file INTEGER DEFAULT 0, stripe_customer_id TEXT DEFAULT '', stripe_payment_method_id TEXT DEFAULT '',
+                whop_member_id TEXT DEFAULT '', whop_payment_method_id TEXT DEFAULT '', rate_per_trigger REAL DEFAULT 147,
+                total_charged REAL DEFAULT 0, total_triggers INTEGER DEFAULT 0,
+                credit_balance REAL DEFAULT 0,
+                ghl_location_id TEXT DEFAULT '',
+                contact_created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_contacted_at TIMESTAMP NULL,
+                created_at TEXT DEFAULT (datetime('now'))
+              );
       CREATE TABLE IF NOT EXISTS charges (
         id TEXT PRIMARY KEY, user_id TEXT NOT NULL, customer_id TEXT NOT NULL,
         customer_name TEXT DEFAULT '', customer_email TEXT DEFAULT '',
