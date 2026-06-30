@@ -238,22 +238,44 @@ async function processCharge(user, customer, note = '') {
   }
 
   // Real Stripe charging
-  if (user.processor === 'stripe' && user.stripe_secret_key && customer.stripe_customer_id && customer.stripe_payment_method_id) {
+  if (user.processor === 'stripe') {
+    if (!user.stripe_secret_key) {
+      await db.updateCharge(charge.id, { status: 'failed', failure_reason: 'No Stripe Secret Key configured' });
+      await db.addNotification({ user_id: user.id, type: 'fail', title: `Charge failed — ${customer.name}`, body: 'No Stripe Secret Key configured' });
+      return db.getChargeById(charge.id);
+    }
+    if (!user.stripe_secret_key.startsWith('sk_')) {
+      await db.updateCharge(charge.id, { status: 'failed', failure_reason: 'Invalid Stripe key — must start with sk_live_ or sk_test_' });
+      await db.addNotification({ user_id: user.id, type: 'fail', title: `Charge failed — ${customer.name}`, body: 'Invalid Stripe key — must start with sk_live_ or sk_test_' });
+      return db.getChargeById(charge.id);
+    }
+    if (!customer.stripe_customer_id) {
+      await db.updateCharge(charge.id, { status: 'failed', failure_reason: 'No Stripe customer ID on file' });
+      await db.addNotification({ user_id: user.id, type: 'fail', title: `Charge failed — ${customer.name}`, body: 'No Stripe customer ID on file' });
+      return db.getChargeById(charge.id);
+    }
+
     try {
       const stripeClient = Stripe(user.stripe_secret_key);
-      const paymentIntent = await stripeClient.paymentIntents.create({
+      const piOptions = {
         amount: Math.round(chargeAmount * 100),
         currency: 'usd',
         customer: customer.stripe_customer_id,
-        payment_method: customer.stripe_payment_method_id,
         off_session: true,
         confirm: true,
         description: `PayPulse charge for ${customer.name}`,
         metadata: { customer_id: customer.id, user_id: user.id }
-      });
+      };
+      if (customer.stripe_payment_method_id) {
+        piOptions.payment_method = customer.stripe_payment_method_id;
+      }
+      const paymentIntent = await stripeClient.paymentIntents.create(piOptions);
 
       if (paymentIntent.status === 'succeeded') {
         await db.updateCharge(charge.id, { status: 'succeeded', stripe_charge_id: paymentIntent.id });
+        if (!customer.stripe_payment_method_id && paymentIntent.payment_method) {
+          await db.updateCustomer(customer.id, { stripe_payment_method_id: paymentIntent.payment_method, card_on_file: 1 });
+        }
         await db.updateCustomer(customer.id, { total_charged: (parseFloat(customer.total_charged) || 0) + chargeAmount, total_triggers: (parseInt(customer.total_triggers) || 0) + 1 });
         await db.addNotification({ user_id: user.id, type: 'success', title: `Charge successful — ${customer.name}`, body: `$${chargeAmount.toFixed(2)} charged via Stripe. PI: ${paymentIntent.id.slice(-8)}` });
       } else {
@@ -261,6 +283,7 @@ async function processCharge(user, customer, note = '') {
         await db.addNotification({ user_id: user.id, type: 'fail', title: `Charge failed — ${customer.name}`, body: `Stripe returned status: ${paymentIntent.status}` });
       }
     } catch (stripeErr) {
+      console.error('Stripe charge error:', stripeErr);
       const reason = stripeErr.message || 'Unknown Stripe error';
       await db.updateCharge(charge.id, { status: 'failed', failure_reason: reason });
       await db.addNotification({ user_id: user.id, type: 'fail', title: `Charge failed — ${customer.name}`, body: `Stripe error: ${reason}` });
@@ -611,9 +634,9 @@ app.post('/api/settings', requireAuth, async (req, res) => {
   const updates = {};
   if (req.body.companyName !== undefined) updates.company_name = req.body.companyName;
   if (req.body.processor !== undefined) updates.processor = req.body.processor;
-  if (req.body.stripeSecretKey) updates.stripe_secret_key = req.body.stripeSecretKey;
+  if (req.body.stripeSecretKey && !req.body.stripeSecretKey.startsWith('•')) updates.stripe_secret_key = req.body.stripeSecretKey;
   if (req.body.stripePublishableKey !== undefined) updates.stripe_publishable_key = req.body.stripePublishableKey;
-  if (req.body.whopApiKey) updates.whop_api_key = req.body.whopApiKey;
+  if (req.body.whopApiKey && !req.body.whopApiKey.startsWith('•')) updates.whop_api_key = req.body.whopApiKey;
   if (req.body.whopCompanyId !== undefined) updates.whop_company_id = req.body.whopCompanyId;
   if (req.body.appointmentTrackingMode !== undefined) updates.appointment_tracking_mode = req.body.appointmentTrackingMode ? 1 : 0;
   res.json(await db.updateUser(req.user.id, updates));

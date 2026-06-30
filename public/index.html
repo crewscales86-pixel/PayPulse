@@ -255,6 +255,10 @@
     .stats-row { grid-template-columns: 1fr 1fr; }
     .detail-stats { grid-template-columns: 1fr; }
   }
+  @keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
 </style>
 </head>
 <body>
@@ -289,6 +293,29 @@ function api(path, opts) {
     if (err.message === 'Failed to fetch') throw new Error('Server unreachable — check your connection');
     throw err;
   });
+}
+
+// ─── UI COMPONENTS ────────────────────────────────────────────────
+function Button({ loading, children, className, onClick, disabled, style }) {
+  return e('button', { className, style, disabled: disabled || loading, onClick },
+    loading ? e('span', { style: { marginRight: 6 } }, '\u23F3') : null,
+    children
+  );
+}
+
+function Toast({ toast, onDismiss }) {
+  if (!toast) return null;
+  const bg = toast.type === 'error' ? '#ff4444' : toast.type === 'success' ? 'var(--accent)' : 'var(--blue)';
+  return e('div', {
+    style: {
+      position: 'fixed', top: 24, right: 24, zIndex: 9999,
+      background: bg, color: '#000', padding: '12px 20px',
+      borderRadius: 10, fontWeight: 700, fontSize: 14,
+      boxShadow: '0 8px 24px rgba(0,0,0,0.4)', animation: 'slideIn .3s ease',
+      cursor: 'pointer'
+    },
+    onClick: onDismiss
+  }, toast.message);
 }
 
 // ─── AUTH PAGE ────────────────────────────────────────────────────
@@ -569,7 +596,7 @@ function PaymentDetailModal({ customer, onClose, onRefresh }) {
 }
 
 // ─── CUSTOMERS PAGE ───────────────────────────────────────────────
-function CustomersPage({ customers, onRefresh, settings }) {
+function CustomersPage({ customers, onRefresh, settings, showToast }) {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [chargeModal, setChargeModal] = useState(null);
@@ -592,17 +619,32 @@ function CustomersPage({ customers, onRefresh, settings }) {
   });
 
   const doCharge = async () => {
-    await api('/api/customers/' + chargeModal.id + '/charge', { method: 'POST', body: JSON.stringify({ note }) });
-    setChargeModal(null); setNote(''); onRefresh();
+    setChargeModal({ ...chargeModal, loading: true });
+    try {
+      await api('/api/customers/' + chargeModal.id + '/charge', { method: 'POST', body: JSON.stringify({ note }) });
+      showToast('Charge successful!', 'success');
+      setChargeModal(null); setNote(''); onRefresh();
+    } catch (err) {
+      showToast(err.message || 'Charge failed', 'error');
+      setChargeModal({ ...chargeModal, loading: false });
+    }
   };
 
   const doEdit = async () => {
-    if (editModal.id === 'new') {
-      await api('/api/customers', { method: 'POST', body: JSON.stringify({ name: editModal.name, email: editModal.email, rate_per_trigger: editModal.rate_per_trigger, status: editModal.status, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
-    } else {
-      await api('/api/customers/' + editModal.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: editModal.rate_per_trigger, status: editModal.status, name: editModal.name, company_name: editModal.company_name, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
+    setEditModal({ ...editModal, saving: true });
+    try {
+      if (editModal.id === 'new') {
+        await api('/api/customers', { method: 'POST', body: JSON.stringify({ name: editModal.name, email: editModal.email, rate_per_trigger: editModal.rate_per_trigger, status: editModal.status, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
+        showToast('Customer added!', 'success');
+      } else {
+        await api('/api/customers/' + editModal.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: editModal.rate_per_trigger, status: editModal.status, name: editModal.name, company_name: editModal.company_name, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
+        showToast('Customer updated!', 'success');
+      }
+      setEditModal(null); onRefresh();
+    } catch (err) {
+      showToast(err.message || 'Save failed', 'error');
+      setEditModal({ ...editModal, saving: false });
     }
-    setEditModal(null); onRefresh();
   };
 
   const colConfig = [
@@ -689,7 +731,7 @@ function CustomersPage({ customers, onRefresh, settings }) {
         ),
         e('div', { className: 'modal-actions' },
           e('button', { className: 'btn-ghost', onClick: () => setChargeModal(null) }, 'Cancel'),
-          e('button', { className: 'btn-primary', onClick: doCharge }, 'Charge $' + chargeModal.rate_per_trigger)
+          e(Button, { className: 'btn-primary', loading: chargeModal.loading, onClick: doCharge }, 'Charge $' + chargeModal.rate_per_trigger)
         )
       )
     ),
@@ -752,7 +794,7 @@ function CustomersPage({ customers, onRefresh, settings }) {
         ),
         e('div', { className: 'modal-actions' },
           e('button', { className: 'btn-ghost', onClick: () => setEditModal(null) }, 'Cancel'),
-          e('button', { className: 'btn-primary', onClick: doEdit }, editModal.id === 'new' ? 'Add Customer' : 'Save')
+          e(Button, { className: 'btn-primary', loading: editModal.saving, onClick: doEdit }, editModal.id === 'new' ? 'Add Customer' : 'Save')
         )
       )
     )
@@ -760,21 +802,30 @@ function CustomersPage({ customers, onRefresh, settings }) {
 }
 
 // ─── SETTINGS PAGE ───────────────────────────────────────────────
-function SettingsPage({ settings, onSave }) {
+function SettingsPage({ settings, onSave, showToast }) {
   const [s, setS] = useState(settings || {});
   const [saved, setSaved] = useState(false);
   const [templateInput, setTemplateInput] = useState('');
 
+  const [saving, setSaving] = useState(false);
+
   useEffect(() => { if (settings) setS(settings); }, [settings]);
 
   const save = async () => {
-    await api('/api/settings', { method: 'POST', body: JSON.stringify({
-      companyName: s.companyName, processor: s.processor,
-      stripeSecretKey: s.stripeSecretKey, stripePublishableKey: s.stripePublishableKey,
-      whopApiKey: s.whopApiKey, whopCompanyId: s.whopCompanyId,
-      appointmentTrackingMode: s.appointmentTrackingMode
-    }) });
-    setSaved(true); setTimeout(() => setSaved(false), 2000); onSave();
+    setSaving(true);
+    try {
+      await api('/api/settings', { method: 'POST', body: JSON.stringify({
+        companyName: s.companyName, processor: s.processor,
+        stripeSecretKey: s.stripeSecretKey, stripePublishableKey: s.stripePublishableKey,
+        whopApiKey: s.whopApiKey, whopCompanyId: s.whopCompanyId,
+        appointmentTrackingMode: s.appointmentTrackingMode
+      }) });
+      showToast('Settings saved!', 'success');
+      onSave();
+    } catch (err) {
+      showToast(err.message || 'Save failed', 'error');
+    }
+    setSaving(false);
   };
 
   const addTemplate = async () => { if (!templateInput.trim()) return; setTemplateInput(''); };
@@ -823,7 +874,7 @@ function SettingsPage({ settings, onSave }) {
             e('input', { value: s.stripePublishableKey || '', onChange: ev => setS({...s, stripePublishableKey: ev.target.value}), placeholder: 'pk_live_...' })
           )
         ),
-        e('button', { className: 'btn-primary', onClick: save }, saved ? 'Saved!' : 'Save Changes')
+        e(Button, { className: 'btn-primary', loading: saving, onClick: save }, saving ? 'Saving...' : 'Save Changes')
       ),
       e('div', { className: 'settings-card' },
         e('h3', null, 'Appointment Tracking Mode'),
@@ -1223,6 +1274,12 @@ function App() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [agencies, setAgencies] = useState([]);
   const [adminStats, setAdminStats] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  const showToast = useCallback((message, type = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!token) return;
@@ -1298,13 +1355,14 @@ function App() {
       ),
       e('div', { className: 'nav-link', style: { opacity: 0.5, cursor: 'pointer' }, onClick: logout }, 'Sign Out')
     ),
-    !isAdmin && page === 'customers' && e(CustomersPage, { customers, onRefresh: refresh, settings }),
-    !isAdmin && page === 'settings' && e(SettingsPage, { settings, onSave: refresh }),
-    !isAdmin && page === 'inbox' && e(InboxPage, { notifications, onRefresh: refresh }),
-    !isAdmin && page === 'charges' && e(ChargesPage, { charges }),
-    !isAdmin && page === 'metrics' && e(MetricsPage, { metrics }),
-    isAdmin && page === 'admin' && e(AdminPage, { agencies, adminStats, onRefresh: refresh }),
-    isAdmin && page === 'admin-settings' && e(AdminSettingsPage, { user, onSave: refresh })
+    !isAdmin && page === 'customers' && e(CustomersPage, { customers, onRefresh: refresh, settings, showToast }),
+    !isAdmin && page === 'settings' && e(SettingsPage, { settings, onSave: refresh, showToast }),
+    !isAdmin && page === 'inbox' && e(InboxPage, { notifications, onRefresh: refresh, showToast }),
+    !isAdmin && page === 'charges' && e(ChargesPage, { charges, showToast }),
+    !isAdmin && page === 'metrics' && e(MetricsPage, { metrics, showToast }),
+    isAdmin && page === 'admin' && e(AdminPage, { agencies, adminStats, onRefresh: refresh, showToast }),
+    isAdmin && page === 'admin-settings' && e(AdminSettingsPage, { user, onSave: refresh, showToast }),
+    e(Toast, { toast, onDismiss: () => setToast(null) })
   );
 }
 
