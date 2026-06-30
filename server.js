@@ -534,31 +534,39 @@ app.post('/api/charges/:id/retry', requireAuth, async (req, res) => {
 
 // Per-customer payment details (for analytics modal)
 app.get('/api/customers/:id/payment-details', requireAuth, async (req, res) => {
-  const c = await db.getCustomerById(req.params.id);
-  if (!c || c.user_id !== req.user.id) return res.status(404).json({ error: 'Not found' });
-  const charges = await db.all('SELECT * FROM charges WHERE customer_id = ? ORDER BY created_at DESC LIMIT 50', [req.params.id]);
-  const user = await db.getUserById(req.user.id);
-  const webhookUrl = c.ghl_location_id ? `${BASE_URL}/webhook/ghl/${user.ghl_webhook_secret}/${c.ghl_location_id}` : null;
-  const lastCharge = charges.length > 0 ? charges[0].created_at : null;
-  const failureCount = charges.filter(ch => ch.status === 'failed').length;
-  const chargebackCount = charges.filter(ch => ch.status === 'chargeback').length;
-  res.json({
-    customer: c,
-    charges,
-    totalCharged: c.total_charged || 0,
-    totalTriggers: c.total_triggers || 0,
-    creditBalance: parseFloat(c.credit_balance) || 0,
-    lastChargeDate: lastCharge,
-    failureCount,
-    chargebackCount,
-    ratePerTrigger: c.rate_per_trigger,
-    cardOnFile: !!c.card_on_file,
-    ghlLocationId: c.ghl_location_id,
-    webhookUrl
-  });
+  try {
+    const c = await db.getCustomerById(req.params.id);
+    if (!c || c.user_id !== req.user.id) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const charges = await db.all('SELECT * FROM charges WHERE customer_id = ? ORDER BY created_at DESC LIMIT 50', [req.params.id]);
+    const user = await db.getUserById(req.user.id);
+    if (!user) {
+      return res.status(500).json({ error: 'User not found' });
+    }
+    const webhookUrl = c.ghl_location_id ? `${BASE_URL}/webhook/ghl/${user.ghl_webhook_secret}/${c.ghl_location_id}` : null;
+    const lastCharge = charges.length > 0 ? charges[0].created_at : null;
+    const failureCount = charges.filter(ch => ch.status === 'failed').length;
+    const chargebackCount = charges.filter(ch => ch.status === 'chargeback').length;
+    res.json({
+      customer: c,
+      charges,
+      totalCharged: c.total_charged || 0,
+      totalTriggers: c.total_triggers || 0,
+      creditBalance: parseFloat(c.credit_balance) || 0,
+      lastChargeDate: lastCharge,
+      failureCount,
+      chargebackCount,
+      ratePerTrigger: c.rate_per_trigger,
+      cardOnFile: !!c.card_on_file,
+      ghlLocationId: c.ghl_location_id,
+      webhookUrl
+    });
+  } catch (err) {
+    console.error('Error in payment-details endpoint:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
-
-// ─── APPOINTMENTS API ─────────────────────────────────────────────
 app.get('/api/appointments', requireAuth, async (req, res) => {
   res.json(await db.getAppointmentsByUser(req.user.id));
 });
