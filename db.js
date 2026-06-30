@@ -269,7 +269,7 @@ function createCustomer(data) {
       `INSERT INTO customers (id, user_id, name, company_name, email, phone, status, card_on_file, stripe_customer_id, stripe_payment_method_id, whop_member_id, whop_payment_method_id, rate_per_trigger, ghl_location_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [id, data.user_id, data.name, data.company_name || '', data.email, data.phone || '', data.status || 'new',
-       data.card_on_file ? 1 : 0, data.stripe_customer_id || '', data.stripe_payment_method_id || '',
+       data.card_on_file ? 1 : (data.stripe_payment_method_id || data.whop_payment_method_id ? 1 : 0), data.stripe_customer_id || '', data.stripe_payment_method_id || '',
        data.whop_member_id || '', data.whop_payment_method_id || '', data.rate_per_trigger || 147, data.ghl_location_id || '']
     ).then(() => getCustomerById(id));
   }
@@ -277,7 +277,7 @@ function createCustomer(data) {
     `INSERT INTO customers (id, user_id, name, company_name, email, phone, status, card_on_file, stripe_customer_id, stripe_payment_method_id, whop_member_id, whop_payment_method_id, rate_per_trigger, ghl_location_id)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(id, data.user_id, data.name, data.company_name || '', data.email, data.phone || '', data.status || 'new',
-    data.card_on_file ? 1 : 0, data.stripe_customer_id || '', data.stripe_payment_method_id || '',
+    data.card_on_file ? 1 : (data.stripe_payment_method_id || data.whop_payment_method_id ? 1 : 0), data.stripe_customer_id || '', data.stripe_payment_method_id || '',
     data.whop_member_id || '', data.whop_payment_method_id || '', data.rate_per_trigger || 147, data.ghl_location_id || '');
   return getCustomerById(id);
 }

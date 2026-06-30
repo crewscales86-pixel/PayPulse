@@ -397,7 +397,11 @@ app.post('/api/customers', requireAuth, async (req, res) => {
 app.patch('/api/customers/:id', requireAuth, async (req, res) => {
   const c = await db.getCustomerById(req.params.id);
   if (!c || c.user_id !== req.user.id) return res.status(404).json({ error: 'Not found' });
-  res.json(await db.updateCustomer(req.params.id, req.body));
+  const updates = { ...req.body };
+  if (updates.stripe_payment_method_id || updates.whop_payment_method_id) {
+    updates.card_on_file = 1;
+  }
+  res.json(await db.updateCustomer(req.params.id, updates));
 });
 
 app.delete('/api/customers/:id', requireAuth, async (req, res) => {
@@ -641,7 +645,7 @@ app.get('/api/metrics', requireAuth, async (req, res) => {
   }
 
   charges.forEach(c => {
-    const dateKey = (c.created_at || '').split(' ')[0];
+    const dateKey = (c.created_at ? String(c.created_at) : '').split(' ')[0];
     if (revenueByDay[dateKey] !== undefined) {
       if (c.status === 'succeeded') revenueByDay[dateKey] += c.amount;
       if (c.status === 'failed') failuresByDay[dateKey] += 1;
