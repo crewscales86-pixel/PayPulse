@@ -598,7 +598,7 @@ function CustomersPage({ customers, onRefresh, settings }) {
 
   const doEdit = async () => {
     if (editModal.id === 'new') {
-      await api('/api/customers', { method: 'POST', body: JSON.stringify({ ...editModal, user_id: req.user.id }) });
+      await api('/api/customers', { method: 'POST', body: JSON.stringify({ name: editModal.name, email: editModal.email, rate_per_trigger: editModal.rate_per_trigger, status: editModal.status, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
     } else {
       await api('/api/customers/' + editModal.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: editModal.rate_per_trigger, status: editModal.status, name: editModal.name, company_name: editModal.company_name, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
     }
@@ -633,7 +633,7 @@ function CustomersPage({ customers, onRefresh, settings }) {
         e('span', { className: 'tag tag-green', style: { borderRadius:10 } }, customers.length)
       ),
       e('div', { className: 'nav-spacer' }),
-      e('button', { className: 'btn-primary', style: { padding:'8px 18px', fontSize:13 }, onClick: () => setEditModal({ id: 'new', name: '', email: '', rate_per_trigger: 147, status: 'new', ghl_location_id: '' }) }, '+ Add Customer'),
+      e('button', { className: 'btn-primary', style: { padding:'8px 18px', fontSize:13 }, onClick: () => setEditModal({ id: 'new', name: '', email: '', rate_per_trigger: 147, status: 'new', ghl_location_id: '', stripe_customer_id: '', stripe_payment_method_id: '', company_name: '' }) }, '+ Add Customer'),
       e('button', { className: 'btn-sm', style: { padding:'8px 16px' }, onClick: onRefresh }, '↻ Sync'),
       e('input', { className: 'search-box', placeholder: 'Search...', value: search, onChange: ev => setSearch(ev.target.value) })
     ),
