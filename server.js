@@ -452,10 +452,6 @@ async function processCharge(user, customer, note = '', utmData = {}) {
     await db.updateCustomer(customer.id, { credit_balance: 0 });
   }
 
-  // Use client's own Stripe keys if configured, otherwise fall back to agency keys
-  const stripeSecret = customer.client_stripe_secret_key || user.stripe_secret_key;
-  const stripePublishable = customer.client_stripe_publishable_key || user.stripe_publishable_key;
-
   if (!customer.card_on_file) {
     await db.updateCustomer(customer.id, { status: 'at_risk' });
     await db.updateCharge(charge.id, {
@@ -473,7 +469,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
 
   // Real Stripe charging
   if (user.processor === 'stripe') {
-    if (!stripeSecret) {
+    if (!user.stripe_secret_key) {
       await db.updateCharge(charge.id, {
         status: 'failed',
         failure_reason: 'No Stripe Secret Key configured'
@@ -486,7 +482,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
       });
       return db.getChargeById(charge.id);
     }
-    if (!stripeSecret.startsWith('sk_')) {
+    if (!user.stripe_secret_key.startsWith('sk_')) {
       await db.updateCharge(charge.id, {
         status: 'failed',
         failure_reason:
@@ -516,7 +512,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
     }
 
     try {
-      const stripeClient = Stripe(stripeSecret);
+      const stripeClient = Stripe(user.stripe_secret_key);
       const piOptions = {
         amount: Math.round(chargeAmount * 100),
         currency: 'usd',
@@ -663,11 +659,9 @@ app.post('/webhook/stripe/:secret', async (req, res) => {
           let paymentMethodId = '';
           if (paypulseUserId) {
             const user = await db.getUserById(paypulseUserId);
-            // Fallback to user's stripe key if client_stripe_secret_key not set
-            const stripeSecret = user.client_stripe_secret_key || user.stripe_secret_key;
-            if (stripeSecret) {
+            if (user && user.stripe_secret_key) {
               try {
-                const stripeClient = Stripe(stripeSecret);
+                const stripeClient = Stripe(user.stripe_secret_key);
                 const session = await stripeClient.checkout.sessions.retrieve(
                   obj.id
                 );
@@ -1118,12 +1112,7 @@ app.get('/api/settings', requireAuth, async (req, res) => {
     ghlWebhookSecret: user.ghl_webhook_secret,
     whopWebhookUrl: `${BASE_URL}/webhook/whop/${user.whop_webhook_secret}`,
     plan: user.plan,
-    monthlyRate: user.monthly_rate,
-    // ── Meta Ads ──
-    metaAdAccountId: user.meta_ad_account_id || '',
-    metaAccessToken: user.meta_access_token
-      ? '••••••••' + user.meta_access_token.slice(-4)
-      : ''
+    monthlyRate: user.monthly_rate
   });
 });
 
@@ -1150,7 +1139,7 @@ app.post('/api/settings', requireAuth, async (req, res) => {
   if (req.body.appointmentTrackingMode !== undefined)
     updates.appointment_tracking_mode =
       req.body.appointmentTrackingMode ? 1 : 0;
-  // ── Meta Ads settings (agency-level) ──
+  // ─── META ADS ACCOUNTS (stored in meta_ad_accounts table) ──
   if (req.body.metaAdAccountId !== undefined)
     updates.meta_ad_account_id = req.body.metaAdAccountId;
   if (req.body.metaAccessToken !== undefined)
@@ -1402,15 +1391,76 @@ app.get('/api/admin/agencies/:id/subscription', requireAuth, requireAdmin, async
   });
 });
 
-// ─── META ADS API ───────────────────────────────────────────────
-app.get('/api/meta/campaigns', requireAuth, async (req, res) => {
+// ─── META AD ACCOUNTS API ───────────────────────────────────────
+app.get('/api/meta-accounts', requireAuth, async (req, res) => {
   try {
-    const user = await db.getUserById(req.user.id);
-    if (!user.meta_ad_account_id || !user.meta_access_token)
-      return res.status(400).json({ error: 'Meta ad account and access token not configured. Go to Settings.' });
+    const accounts = await db.getMetaAdAccountsByUser(req.user.id);
+    // Mask access tokens
+    res.json(accounts.map(a => ({
+      ...a,
+      access_token: a.access_token ? '••••••••' + a.access_token.slice(-4) : ''
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/meta-accounts', requireAuth, async (req, res) => {
+  try {
+    const { name, accountId, accessToken } = req.body;
+    if (!accountId || !accessToken)
+      return res.status(400).json({ error: 'Account ID and access token required' });
+    const account = await db.createMetaAdAccount({
+      user_id: req.user.id,
+      name: name || '',
+      account_id: accountId,
+      access_token: accessToken
+    });
+    res.json({ ...account, access_token: '••••••••' + account.access_token.slice(-4) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/meta-accounts/:id', requireAuth, async (req, res) => {
+  try {
+    const account = await db.getMetaAdAccountById(req.params.id);
+    if (!account || account.user_id !== req.user.id)
+      return res.status(404).json({ error: 'Not found' });
+    const updates = {};
+    if (req.body.name !== undefined) updates.name = req.body.name;
+    if (req.body.accountId !== undefined) updates.account_id = req.body.accountId;
+    if (req.body.accessToken !== undefined && !String(req.body.accessToken).startsWith('•'))
+      updates.access_token = req.body.accessToken;
+    const updated = await db.updateMetaAdAccount(req.params.id, updates);
+    res.json({ ...updated, access_token: updated.access_token ? '••••••••' + updated.access_token.slice(-4) : '' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/meta-accounts/:id', requireAuth, async (req, res) => {
+  try {
+    const account = await db.getMetaAdAccountById(req.params.id);
+    if (!account || account.user_id !== req.user.id)
+      return res.status(404).json({ error: 'Not found' });
+    await db.deleteMetaAdAccount(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── META CAMPAIGNS & SPEND (uses meta_ad_accounts table) ───────
+app.get('/api/meta-accounts/:accountId/campaigns', requireAuth, async (req, res) => {
+  try {
+    const account = await db.getMetaAdAccountsByUser(req.user.id)
+      .then(accounts => accounts.find(a => a.account_id === req.params.accountId || a.id === req.params.accountId));
+    if (!account)
+      return res.status(404).json({ error: 'Meta ad account not found' });
     const data = await db.metaGraphApi(
-      `/${user.meta_ad_account_id}/campaigns`,
-      user.meta_access_token,
+      `/${account.account_id}/campaigns`,
+      account.access_token,
       { fields: 'id,name,status', limit: 100 }
     );
     res.json(data.data || []);
@@ -1419,15 +1469,16 @@ app.get('/api/meta/campaigns', requireAuth, async (req, res) => {
   }
 });
 
-app.get('/api/meta/campaigns/:campaignId/spend', requireAuth, async (req, res) => {
+app.get('/api/meta-accounts/:accountId/campaigns/:campaignId/spend', requireAuth, async (req, res) => {
   try {
-    const user = await db.getUserById(req.user.id);
-    if (!user.meta_access_token)
-      return res.status(400).json({ error: 'Meta access token not configured' });
+    const account = await db.getMetaAdAccountsByUser(req.user.id)
+      .then(accounts => accounts.find(a => a.account_id === req.params.accountId || a.id === req.params.accountId));
+    if (!account)
+      return res.status(404).json({ error: 'Meta ad account not found' });
     const { since, until } = req.query;
     const spend = await db.getMetaCampaignSpend(
       req.params.campaignId,
-      user.meta_access_token,
+      account.access_token,
       since || '7_days_ago',
       until || 'today'
     );

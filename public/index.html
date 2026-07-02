@@ -802,15 +802,6 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
               e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 6 } }, 'Paste the campaign ID from your Meta Ads account. This enables real spend tracking for CPL.')
             ),
             e('div', { className: 'form-group' },
-              e('label', null, 'Client Stripe Secret Key (optional)'),
-              e('input', { type: 'password', value: editModal.client_stripe_secret_key || '', onChange: ev => setEditModal({...editModal, client_stripe_secret_key: ev.target.value}), placeholder: 'sk_live_...' }),
-              e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 6 } }, 'If set, charges go to this client\'s Stripe instead of the agency\'s. Leave blank to use agency keys.')
-            ),
-            e('div', { className: 'form-group' },
-              e('label', null, 'Client Stripe Publishable Key (optional)'),
-              e('input', { value: editModal.client_stripe_publishable_key || '', onChange: ev => setEditModal({...editModal, client_stripe_publishable_key: ev.target.value}), placeholder: 'pk_live_...' })
-            ),
-            e('div', { className: 'form-group' },
               e('label', null, 'Brand Color (hex)'),
               e('input', { value: editModal.client_brand_color || '', onChange: ev => setEditModal({...editModal, client_brand_color: ev.target.value}), placeholder: '#4488ff' })
             ),
@@ -846,8 +837,7 @@ function SettingsPage({ settings, onSave, showToast }) {
         companyName: s.companyName, processor: s.processor,
         stripeSecretKey: s.stripeSecretKey, stripePublishableKey: s.stripePublishableKey,
         whopApiKey: s.whopApiKey, whopCompanyId: s.whopCompanyId,
-        appointmentTrackingMode: s.appointmentTrackingMode,
-        metaAdAccountId: s.metaAdAccountId, metaAccessToken: s.metaAccessToken
+        appointmentTrackingMode: s.appointmentTrackingMode
       }) });
       showToast('Settings saved!', 'success');
       onSave();
@@ -921,15 +911,68 @@ function SettingsPage({ settings, onSave, showToast }) {
         )
       ),
       e('div', { className: 'settings-card' },
-        e('h3', null, 'Meta Ads Integration'),
-        e('div', { className: 'form-group' },
-          e('label', null, 'Meta Ad Account ID'),
-          e('input', { value: s.metaAdAccountId || '', onChange: ev => setS({...s, metaAdAccountId: ev.target.value}), placeholder: 'act_123456789' })
+        e('h3', null, 'Meta Ad Accounts'),
+        e('div', { style: { color: 'var(--text2)', fontSize: 13, marginBottom: 14 } }, 'Add multiple Meta ad accounts. Each client can be linked to a specific campaign.'),
+        (s.metaAccounts || []).map((acct, idx) =>
+          e('div', { key: acct.id || idx, style: { marginBottom: 12, padding: 12, background: 'var(--surface3)', borderRadius: 8 } },
+            e('div', { style: { display: 'flex', gap: 8, marginBottom: 8 } },
+              e('input', { placeholder: 'Account name', value: acct.name || '', onChange: ev => {
+                const next = [...(s.metaAccounts || [])];
+                next[idx] = { ...next[idx], name: ev.target.value };
+                setS({...s, metaAccounts: next});
+              }, style: { flex: 1 } }),
+              e('button', { className: 'btn-sm', style: { background: 'rgba(255,68,68,0.1)', color: 'var(--red)', borderColor: 'rgba(255,68,68,0.3)' }, onClick: async () => {
+                if (acct.id) {
+                  try { await api('/api/meta-accounts/' + acct.id, { method: 'DELETE' }); showToast('Account removed', 'success'); } catch (err) { showToast(err.message, 'error'); }
+                }
+                const next = [...(s.metaAccounts || [])];
+                next.splice(idx, 1);
+                setS({...s, metaAccounts: next});
+              } }, 'Remove')
+            ),
+            e('div', { className: 'form-group', style: { marginBottom: 8 } },
+              e('label', { style: { fontSize: 12 } }, 'Ad Account ID'),
+              e('input', { value: acct.account_id || '', onChange: ev => {
+                const next = [...(s.metaAccounts || [])];
+                next[idx] = { ...next[idx], account_id: ev.target.value };
+                setS({...s, metaAccounts: next});
+              }, placeholder: 'act_123456789', style: { fontFamily: 'monospace', fontSize: 12 } })
+            ),
+            e('div', { className: 'form-group', style: { marginBottom: 0 } },
+              e('label', { style: { fontSize: 12 } }, 'Access Token'),
+              e('input', { type: 'password', value: acct.access_token || '', onChange: ev => {
+                const next = [...(s.metaAccounts || [])];
+                next[idx] = { ...next[idx], access_token: ev.target.value };
+                setS({...s, metaAccounts: next});
+              }, placeholder: 'EAA...' })
+            ),
+            acct.id && e('div', { style: { color: 'var(--accent)', fontSize: 11, marginTop: 6 } }, '✓ Saved')
+          )
         ),
-        e('div', { className: 'form-group' },
-          e('label', null, 'Meta Access Token'),
-          e('input', { type: 'password', value: s.metaAccessToken || '', onChange: ev => setS({...s, metaAccessToken: ev.target.value}), placeholder: 'EAA...' }),
-          e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 6 } }, 'Get from Meta → Business Settings → System Users → Token. Server-side only, never exposed to browser.')
+        e('div', { style: { display: 'flex', gap: 10, marginTop: 10 } },
+          e('button', { className: 'btn-sm', style: { background: 'rgba(68,136,255,0.1)', color: 'var(--blue)', borderColor: 'rgba(68,136,255,0.3)', padding: '8px 16px' }, onClick: async () => {
+            const newAccount = { name: '', account_id: '', access_token: '' };
+            setS({...s, metaAccounts: [...(s.metaAccounts || []), newAccount]});
+          } }, '+ Add Account'),
+          e('button', { className: 'btn-primary', style: { padding: '8px 18px', fontSize: 13 }, onClick: async () => {
+            setSaving(true);
+            try {
+              for (const acct of (s.metaAccounts || [])) {
+                if (!acct.account_id || !acct.access_token) continue;
+                if (acct.id) {
+                  await api('/api/meta-accounts/' + acct.id, { method: 'PATCH', body: JSON.stringify({ name: acct.name, accountId: acct.account_id, accessToken: acct.access_token }) });
+                } else {
+                  const res = await api('/api/meta-accounts', { method: 'POST', body: JSON.stringify({ name: acct.name, accountId: acct.account_id, accessToken: acct.access_token }) });
+                  acct.id = res.id;
+                }
+              }
+              showToast('Meta accounts saved!', 'success');
+              onSave();
+            } catch (err) {
+              showToast(err.message || 'Save failed', 'error');
+            }
+            setSaving(false);
+          } }, saving ? 'Saving...' : 'Save Accounts')
         )
       ),
       e('div', { className: 'settings-card' },

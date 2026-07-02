@@ -41,8 +41,6 @@ async function initSchema() {
         stripe_subscription_id TEXT DEFAULT '',
         ghl_webhook_secret TEXT DEFAULT '',
         whop_webhook_secret TEXT DEFAULT '',
-        meta_ad_account_id TEXT DEFAULT '',
-        meta_access_token TEXT DEFAULT '',
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
       CREATE TABLE IF NOT EXISTS customers (
@@ -64,8 +62,6 @@ async function initSchema() {
         credit_balance REAL DEFAULT 0,
         ghl_location_id TEXT DEFAULT '',
         meta_campaign_id TEXT DEFAULT '',
-        client_stripe_secret_key TEXT DEFAULT '',
-        client_stripe_publishable_key TEXT DEFAULT '',
         client_brand_color TEXT DEFAULT '',
         client_logo_url TEXT DEFAULT '',
         created_at TIMESTAMPTZ DEFAULT NOW()
@@ -122,6 +118,14 @@ async function initSchema() {
         appointments INTEGER DEFAULT 0,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS meta_ad_accounts (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        name TEXT DEFAULT '',
+        account_id TEXT NOT NULL,
+        access_token TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
     `);
   } else {
     sqliteDb.exec(`
@@ -134,10 +138,9 @@ async function initSchema() {
         plan TEXT DEFAULT 'free', monthly_rate REAL DEFAULT 0, active INTEGER DEFAULT 1,
         appointment_tracking_mode INTEGER DEFAULT 0,
         stripe_customer_id TEXT DEFAULT '', stripe_subscription_id TEXT DEFAULT '',
- ghl_webhook_secret TEXT DEFAULT '', whop_webhook_secret TEXT DEFAULT '',
- meta_ad_account_id TEXT DEFAULT '', meta_access_token TEXT DEFAULT '',
- created_at TEXT DEFAULT (datetime('now'))
- );
+        ghl_webhook_secret TEXT DEFAULT '', whop_webhook_secret TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now'))
+      );
       CREATE TABLE IF NOT EXISTS customers (
                 id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
                 company_name TEXT DEFAULT '', email TEXT NOT NULL, phone TEXT DEFAULT '', status TEXT DEFAULT 'new',
@@ -147,8 +150,6 @@ async function initSchema() {
                 credit_balance REAL DEFAULT 0,
                 ghl_location_id TEXT DEFAULT '',
                 meta_campaign_id TEXT DEFAULT '',
-                client_stripe_secret_key TEXT DEFAULT '',
-                client_stripe_publishable_key TEXT DEFAULT '',
                 client_brand_color TEXT DEFAULT '',
                 client_logo_url TEXT DEFAULT '',
                 contact_created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -181,11 +182,19 @@ async function initSchema() {
         leads INTEGER DEFAULT 0, appointments INTEGER DEFAULT 0,
         created_at TEXT DEFAULT (datetime('now'))
       );
+      CREATE TABLE IF NOT EXISTS meta_ad_accounts (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        name TEXT DEFAULT '',
+        account_id TEXT NOT NULL,
+        access_token TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now'))
+      );
     `);
   }
 
   // Migrations: add meta_campaign_id, client_stripe_secret_key, client_stripe_publishable_key, client_brand_color, client_logo_url to customers
-  const customerCols = ['meta_campaign_id', 'client_stripe_secret_key', 'client_stripe_publishable_key', 'client_brand_color', 'client_logo_url', 'contact_created_at', 'last_contacted_at'];
+  const customerCols = ['meta_campaign_id', 'client_brand_color', 'client_logo_url', 'contact_created_at', 'last_contacted_at'];
   for (const col of customerCols) {
     try {
       if (USE_PG) {
@@ -462,6 +471,45 @@ function deleteAdMetric(id) {
   sqliteDb.prepare('DELETE FROM ad_metrics WHERE id = ?').run(id);
 }
 
+// ─── META AD ACCOUNTS ───────────────────────────────────────────
+function createMetaAdAccount(data) {
+  const id = uuid();
+  if (USE_PG) {
+    return pgPool.query(
+      `INSERT INTO meta_ad_accounts (id, user_id, name, account_id, access_token)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [id, data.user_id, data.name || '', data.account_id, data.access_token || '']
+    ).then(() => getMetaAdAccountById(id));
+  }
+  sqliteDb.prepare(
+    `INSERT INTO meta_ad_accounts (id, user_id, name, account_id, access_token)
+     VALUES (?,?,?,?,?)`
+  ).run(id, data.user_id, data.name || '', data.account_id, data.access_token || '');
+  return getMetaAdAccountById(id);
+}
+
+function getMetaAdAccountById(id) { return get('SELECT * FROM meta_ad_accounts WHERE id = ?', [id]); }
+function getMetaAdAccountsByUser(userId) { return all('SELECT * FROM meta_ad_accounts WHERE user_id = ? ORDER BY created_at DESC', [userId]); }
+
+function updateMetaAdAccount(id, updates) {
+  const keys = Object.keys(updates);
+  if (keys.length === 0) return getMetaAdAccountById(id);
+  if (USE_PG) {
+    const setClauses = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
+    return pgPool.query(`UPDATE meta_ad_accounts SET ${setClauses} WHERE id = $${keys.length + 1}`, [...keys.map(k => updates[k]), id]).then(() => getMetaAdAccountById(id));
+  }
+  const setClause = keys.map(k => `${k} = ?`).join(', ');
+  sqliteDb.prepare(`UPDATE meta_ad_accounts SET ${setClause} WHERE id = ?`).run(...keys.map(k => updates[k]), id);
+  return getMetaAdAccountById(id);
+}
+
+function deleteMetaAdAccount(id) {
+  if (USE_PG) {
+    return pgPool.query('DELETE FROM meta_ad_accounts WHERE id = $1', [id]);
+  }
+  sqliteDb.prepare('DELETE FROM meta_ad_accounts WHERE id = ?').run(id);
+}
+
 // ─── STATS ──────────────────────────────────────────────────────
 function getStats(userId) {
   if (USE_PG) {
@@ -540,6 +588,7 @@ module.exports = {
   createAppointment, getAppointmentById, getAppointmentsByUser, updateAppointment,
   addNotification, getNotificationsByUser, markAllRead, getUnreadCount,
   createAdMetric, getAdMetricsByCustomer, getAdMetricsByUser, deleteAdMetric,
+  createMetaAdAccount, getMetaAdAccountById, getMetaAdAccountsByUser, updateMetaAdAccount, deleteMetaAdAccount,
   getStats, getAdminStats,
   ensureAdmin,
 };
