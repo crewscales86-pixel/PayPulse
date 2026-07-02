@@ -496,6 +496,7 @@ async function ensureAdmin() {
 
 module.exports = {
   initSchema,
+  all, run, get,
   createUser, getUserByEmail, getUserById, getUserByGhlSecret, getUserByWhopSecret, updateUser, listUsers,
   createCustomer, getCustomerById, getCustomersByUser, getCustomerByEmailAndUser, getCustomerByLocationId, updateCustomer,
   createCharge, getChargeById, getChargesByUser, updateCharge,
