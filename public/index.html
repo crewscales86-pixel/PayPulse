@@ -1379,13 +1379,14 @@ function App() {
         setAgencies(aRes);
         setAdminStats(sRes);
       } else {
-        const [cRes, nRes, sRes, chRes, mRes, uRes] = await Promise.all([
+        const [cRes, nRes, sRes, chRes, mRes, uRes, maRes] = await Promise.all([
           api('/api/customers'), api('/api/notifications'), api('/api/settings'),
           api('/api/charges'), api('/api/metrics'), api('/api/notifications/unread-count'),
+          api('/api/meta-accounts'),
         ]);
         setCustomers(cRes);
         setNotifications(nRes);
-        setSettings(sRes);
+        setSettings({ ...sRes, metaAccounts: maRes || [] });
         setCharges(chRes);
         setMetrics(mRes);
         setUnreadCount(uRes.count);

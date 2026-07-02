@@ -193,7 +193,7 @@ async function initSchema() {
     `);
   }
 
-  // Migrations: add meta_campaign_id, client_stripe_secret_key, client_stripe_publishable_key, client_brand_color, client_logo_url to customers
+  // Migrations: add meta_campaign_id, client_brand_color, client_logo_url, contact_created_at, last_contacted_at to customers
   const customerCols = ['meta_campaign_id', 'client_brand_color', 'client_logo_url', 'contact_created_at', 'last_contacted_at'];
   for (const col of customerCols) {
     try {

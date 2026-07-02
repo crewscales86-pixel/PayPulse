@@ -1139,11 +1139,6 @@ app.post('/api/settings', requireAuth, async (req, res) => {
   if (req.body.appointmentTrackingMode !== undefined)
     updates.appointment_tracking_mode =
       req.body.appointmentTrackingMode ? 1 : 0;
-  // ─── META ADS ACCOUNTS (stored in meta_ad_accounts table) ──
-  if (req.body.metaAdAccountId !== undefined)
-    updates.meta_ad_account_id = req.body.metaAdAccountId;
-  if (req.body.metaAccessToken !== undefined)
-    updates.meta_access_token = req.body.metaAccessToken;
   res.json(await db.updateUser(req.user.id, updates));
 });
 
