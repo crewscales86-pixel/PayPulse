@@ -452,6 +452,10 @@ async function processCharge(user, customer, note = '', utmData = {}) {
     await db.updateCustomer(customer.id, { credit_balance: 0 });
   }
 
+  // Use client's own Stripe keys if configured, otherwise fall back to agency keys
+  const stripeSecret = customer.client_stripe_secret_key || user.stripe_secret_key;
+  const stripePublishable = customer.client_stripe_publishable_key || user.stripe_publishable_key;
+
   if (!customer.card_on_file) {
     await db.updateCustomer(customer.id, { status: 'at_risk' });
     await db.updateCharge(charge.id, {
@@ -469,7 +473,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
 
   // Real Stripe charging
   if (user.processor === 'stripe') {
-    if (!user.stripe_secret_key) {
+    if (!stripeSecret) {
       await db.updateCharge(charge.id, {
         status: 'failed',
         failure_reason: 'No Stripe Secret Key configured'
@@ -482,7 +486,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
       });
       return db.getChargeById(charge.id);
     }
-    if (!user.stripe_secret_key.startsWith('sk_')) {
+    if (!stripeSecret.startsWith('sk_')) {
       await db.updateCharge(charge.id, {
         status: 'failed',
         failure_reason:
@@ -512,7 +516,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
     }
 
     try {
-      const stripeClient = Stripe(user.stripe_secret_key);
+      const stripeClient = Stripe(stripeSecret);
       const piOptions = {
         amount: Math.round(chargeAmount * 100),
         currency: 'usd',
@@ -659,9 +663,11 @@ app.post('/webhook/stripe/:secret', async (req, res) => {
           let paymentMethodId = '';
           if (paypulseUserId) {
             const user = await db.getUserById(paypulseUserId);
-            if (user && user.stripe_secret_key) {
+            // Fallback to user's stripe key if client_stripe_secret_key not set
+            const stripeSecret = user.client_stripe_secret_key || user.stripe_secret_key;
+            if (stripeSecret) {
               try {
-                const stripeClient = Stripe(user.stripe_secret_key);
+                const stripeClient = Stripe(stripeSecret);
                 const session = await stripeClient.checkout.sessions.retrieve(
                   obj.id
                 );
@@ -1112,7 +1118,12 @@ app.get('/api/settings', requireAuth, async (req, res) => {
     ghlWebhookSecret: user.ghl_webhook_secret,
     whopWebhookUrl: `${BASE_URL}/webhook/whop/${user.whop_webhook_secret}`,
     plan: user.plan,
-    monthlyRate: user.monthly_rate
+    monthlyRate: user.monthly_rate,
+    // ── Meta Ads ──
+    metaAdAccountId: user.meta_ad_account_id || '',
+    metaAccessToken: user.meta_access_token
+      ? '••••••••' + user.meta_access_token.slice(-4)
+      : ''
   });
 });
 
@@ -1124,21 +1135,26 @@ app.post('/api/settings', requireAuth, async (req, res) => {
     updates.processor = req.body.processor;
   if (
     req.body.stripeSecretKey &&
-    !req.body.stripeSecretKey.startsWith('•')
+    !String(req.body.stripeSecretKey).startsWith('•')
   )
     updates.stripe_secret_key = req.body.stripeSecretKey;
   if (req.body.stripePublishableKey !== undefined)
-    updates.stripePublishableKey = req.body.stripePublishableKey;
+    updates.stripe_publishable_key = req.body.stripePublishableKey;
   if (
     req.body.whopApiKey &&
-    !req.body.whopApiKey.startsWith('•')
+    !String(req.body.whopApiKey).startsWith('•')
   )
     updates.whop_api_key = req.body.whopApiKey;
   if (req.body.whopCompanyId !== undefined)
-    updates.whopCompanyId = req.body.whopCompanyId;
+    updates.whop_company_id = req.body.whopCompanyId;
   if (req.body.appointmentTrackingMode !== undefined)
     updates.appointment_tracking_mode =
       req.body.appointmentTrackingMode ? 1 : 0;
+  // ── Meta Ads settings (agency-level) ──
+  if (req.body.metaAdAccountId !== undefined)
+    updates.meta_ad_account_id = req.body.metaAdAccountId;
+  if (req.body.metaAccessToken !== undefined)
+    updates.meta_access_token = req.body.metaAccessToken;
   res.json(await db.updateUser(req.user.id, updates));
 });
 
@@ -1384,6 +1400,41 @@ app.get('/api/admin/agencies/:id/subscription', requireAuth, requireAdmin, async
     stripeCustomerId: user.stripe_customer_id,
     stripeSubscriptionId: user.stripe_subscription_id
   });
+});
+
+// ─── META ADS API ───────────────────────────────────────────────
+app.get('/api/meta/campaigns', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.user.id);
+    if (!user.meta_ad_account_id || !user.meta_access_token)
+      return res.status(400).json({ error: 'Meta ad account and access token not configured. Go to Settings.' });
+    const data = await db.metaGraphApi(
+      `/${user.meta_ad_account_id}/campaigns`,
+      user.meta_access_token,
+      { fields: 'id,name,status', limit: 100 }
+    );
+    res.json(data.data || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/meta/campaigns/:campaignId/spend', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.user.id);
+    if (!user.meta_access_token)
+      return res.status(400).json({ error: 'Meta access token not configured' });
+    const { since, until } = req.query;
+    const spend = await db.getMetaCampaignSpend(
+      req.params.campaignId,
+      user.meta_access_token,
+      since || '7_days_ago',
+      until || 'today'
+    );
+    res.json({ spend });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── SERVE ────────────────────────────────────────────────────────

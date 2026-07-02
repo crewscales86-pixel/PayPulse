@@ -792,6 +792,34 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
             e('input', { value: editModal.stripe_payment_method_id || '', onChange: ev => setEditModal({...editModal, stripe_payment_method_id: ev.target.value}), placeholder: 'pm_...', style: { fontFamily: 'monospace', fontSize: 12 } })
           )
         ),
+        // ── Client Customization (edit only) ──
+        editModal.id !== 'new' && e('div', null,
+          e('div', { style: { marginTop: 24, borderTop: '1px solid var(--border)', paddingTop: 20 } },
+            e('h4', { style: { marginBottom: 14, fontSize: 15, color: 'var(--accent)' } }, 'Client Customization'),
+            e('div', { className: 'form-group' },
+              e('label', null, 'Meta Campaign ID'),
+              e('input', { value: editModal.meta_campaign_id || '', onChange: ev => setEditModal({...editModal, meta_campaign_id: ev.target.value}), placeholder: 'e.g. 1234567890', style: { fontFamily: 'monospace', fontSize: 12 } }),
+              e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 6 } }, 'Paste the campaign ID from your Meta Ads account. This enables real spend tracking for CPL.')
+            ),
+            e('div', { className: 'form-group' },
+              e('label', null, 'Client Stripe Secret Key (optional)'),
+              e('input', { type: 'password', value: editModal.client_stripe_secret_key || '', onChange: ev => setEditModal({...editModal, client_stripe_secret_key: ev.target.value}), placeholder: 'sk_live_...' }),
+              e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 6 } }, 'If set, charges go to this client\'s Stripe instead of the agency\'s. Leave blank to use agency keys.')
+            ),
+            e('div', { className: 'form-group' },
+              e('label', null, 'Client Stripe Publishable Key (optional)'),
+              e('input', { value: editModal.client_stripe_publishable_key || '', onChange: ev => setEditModal({...editModal, client_stripe_publishable_key: ev.target.value}), placeholder: 'pk_live_...' })
+            ),
+            e('div', { className: 'form-group' },
+              e('label', null, 'Brand Color (hex)'),
+              e('input', { value: editModal.client_brand_color || '', onChange: ev => setEditModal({...editModal, client_brand_color: ev.target.value}), placeholder: '#4488ff' })
+            ),
+            e('div', { className: 'form-group' },
+              e('label', null, 'Logo URL'),
+              e('input', { value: editModal.client_logo_url || '', onChange: ev => setEditModal({...editModal, client_logo_url: ev.target.value}), placeholder: 'https://...' })
+            )
+          )
+        ),
         e('div', { className: 'modal-actions' },
           e('button', { className: 'btn-ghost', onClick: () => setEditModal(null) }, 'Cancel'),
           e(Button, { className: 'btn-primary', loading: editModal.saving, onClick: doEdit }, editModal.id === 'new' ? 'Add Customer' : 'Save')
@@ -818,7 +846,8 @@ function SettingsPage({ settings, onSave, showToast }) {
         companyName: s.companyName, processor: s.processor,
         stripeSecretKey: s.stripeSecretKey, stripePublishableKey: s.stripePublishableKey,
         whopApiKey: s.whopApiKey, whopCompanyId: s.whopCompanyId,
-        appointmentTrackingMode: s.appointmentTrackingMode
+        appointmentTrackingMode: s.appointmentTrackingMode,
+        metaAdAccountId: s.metaAdAccountId, metaAccessToken: s.metaAccessToken
       }) });
       showToast('Settings saved!', 'success');
       onSave();
@@ -889,6 +918,18 @@ function SettingsPage({ settings, onSave, showToast }) {
             className: 'toggle ' + (s.appointmentTrackingMode ? 'on' : ''),
             onClick: () => setS({...s, appointmentTrackingMode: !s.appointmentTrackingMode})
           })
+        )
+      ),
+      e('div', { className: 'settings-card' },
+        e('h3', null, 'Meta Ads Integration'),
+        e('div', { className: 'form-group' },
+          e('label', null, 'Meta Ad Account ID'),
+          e('input', { value: s.metaAdAccountId || '', onChange: ev => setS({...s, metaAdAccountId: ev.target.value}), placeholder: 'act_123456789' })
+        ),
+        e('div', { className: 'form-group' },
+          e('label', null, 'Meta Access Token'),
+          e('input', { type: 'password', value: s.metaAccessToken || '', onChange: ev => setS({...s, metaAccessToken: ev.target.value}), placeholder: 'EAA...' }),
+          e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 6 } }, 'Get from Meta → Business Settings → System Users → Token. Server-side only, never exposed to browser.')
         )
       ),
       e('div', { className: 'settings-card' },
