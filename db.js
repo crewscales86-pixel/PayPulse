@@ -131,7 +131,6 @@ async function initSchema() {
         created_at TEXT DEFAULT (datetime('now'))
       );
       CREATE TABLE IF NOT EXISTS customers (
-        CREATE TABLE IF NOT EXISTS customers (
                 id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
                 company_name TEXT DEFAULT '', email TEXT NOT NULL, phone TEXT DEFAULT '', status TEXT DEFAULT 'new',
                 card_on_file INTEGER DEFAULT 0, stripe_customer_id TEXT DEFAULT '', stripe_payment_method_id TEXT DEFAULT '',
@@ -482,7 +481,7 @@ function getAdminStats() {
 }
 
 async function ensureAdmin() {
-  const existing = await get("SELECT * FROM users WHERE role = 'admin' LIMIT 1");
+  const existing = await get("SELECT * FROM users WHERE email = ? LIMIT 1", [process.env.ADMIN_EMAIL || 'admin@paypulse.co']);
   if (!existing) {
     const bcrypt = require('bcrypt');
     const adminEmail = process.env.ADMIN_EMAIL || 'admin@paypulse.co';
