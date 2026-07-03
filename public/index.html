@@ -276,6 +276,19 @@ const e = React.createElement;
 
 const API = window.location.origin.includes('localhost') ? 'http://localhost:3000' : window.location.origin;
 
+// Global error display — catches React crashes and shows the error on screen
+window.addEventListener('error', (ev) => {
+  const root = document.getElementById('root');
+  if (root) {
+    root.innerHTML = `<div style="color:#ff4444;padding:40px;font-family:monospace;font-size:14px;">
+      <h2 style="color:#fff;margin-bottom:12px;">⚠️ Something crashed</h2>
+      <p style="color:#ff8888;margin-bottom:8px;">${ev.message}</p>
+      <pre style="color:var(--text2);font-size:11px;overflow:auto;max-height:300px;">${ev.error?.stack || 'No stack trace'}</pre>
+      <button onclick="localStorage.removeItem('paypulse_token');location.reload()" style="margin-top:16px;padding:10px 20px;background:#00ff88;color:#000;border:none;border-radius:8px;font-weight:700;cursor:pointer;">Clear token & reload</button>
+    </div>`;
+  }
+});
+
 function fmtDate(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -613,6 +626,7 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
   const colKeys = ['new', 'active', 'at_risk', 'paused'];
   const sortableRef = useRef(null);
   useEffect(() => {
+    if (typeof Sortable === 'undefined') return; // CDN not loaded — skip drag
     if (sortableRef.current) {
       sortableRef.current.forEach(s => s.destroy());
     }
