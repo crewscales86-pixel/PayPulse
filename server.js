@@ -962,7 +962,6 @@ app.post('/api/customers/import-stripe', requireAuth, async (req, res) => {
     const imported = [];
     const skipped = [];
     for (const id of customerIds) {
-      const existing = await db.getCustomerByEmailAndUser(null, req.user.id);
       try {
         const sCust = await stripe.customers.retrieve(id);
         if (!sCust) { skipped.push(id); continue; }
@@ -1788,9 +1787,10 @@ app.get('/guide', (req, res) =>
 app.listen(PORT, () => {
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@paypulse.co';
   const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
+  const jwtSecretSet = process.env.JWT_SECRET ? true : false;
   console.log(`\n╔═══════════════════════════════════════════════════════╗`);
   console.log(`║  ⚡ PAYPULSE running at http://localhost:${PORT}           ║`);
   console.log(`╠════════════════════════════════════════════════════════╣`);
-  console.log(`║  Admin:       ${adminEmail} / ${adminPass}`);
+  console.log(`║  Admin:       ${adminEmail} / ${adminPass}${jwtSecretSet ? '' : ' ⚠️  DEFAULT JWT SECRET'}   ║`);
   console.log(`╚═══════════════════════════════════════════════════════╝\n`);
 });

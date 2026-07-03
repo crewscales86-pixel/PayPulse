@@ -1066,7 +1066,6 @@ function SyncFromStripeModal({ onClose, onImported, showToast }) {
 function SettingsPage({ settings, onSave, showToast }) {
   const [s, setS] = useState(settings || {});
   const [saved, setSaved] = useState(false);
-  const [templateInput, setTemplateInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
 
@@ -1093,7 +1092,6 @@ function SettingsPage({ settings, onSave, showToast }) {
     setSaving(false);
   };
 
-  const addTemplate = async () => { if (!templateInput.trim()) return; setTemplateInput(''); };
   const copy = (text) => { navigator.clipboard.writeText(text); };
 
   return e('div', { className: 'page' },
@@ -1169,14 +1167,6 @@ function SettingsPage({ settings, onSave, showToast }) {
             onClick: () => update({appointmentTrackingMode: !s.appointmentTrackingMode})
           })
         )
-      ),
-      e('div', { className: 'settings-card' },
-        e('h3', null, 'Charge Note Templates'),
-        e('div', { style: { display:'flex', gap:10, marginBottom:16 } },
-          e('input', { placeholder: 'e.g. Monthly retainer', value: templateInput, onChange: ev => setTemplateInput(ev.target.value) }),
-          e('button', { className: 'btn-primary', onClick: addTemplate }, 'Add')
-        ),
-        e('div', { style: { color:'#555', fontSize:13 } }, 'No templates yet')
       ),
       e('div', { className: 'settings-card' },
         e('h3', null, 'Webhook URLs'),
