@@ -465,7 +465,7 @@ function Button({ loading, children, className, onClick, disabled, style }) {
 
 function Toast({ toast, onDismiss }) {
   if (!toast) return null;
-  const bg = toast.type === 'error' ? '#ff4444' : toast.type === 'success' ? 'var(--accent)' : 'var(--blue)';
+  const bg = toast.type === 'error' ? '#ff4444' : toast.type === 'success' ? 'var(--accent)' : toast.type === 'warn' ? '#ffaa00' : 'var(--blue)';
   return e('div', {
     style: {
       position: 'fixed', top: 24, right: 24, zIndex: 9999,
@@ -574,11 +574,13 @@ function PaymentDetailModal({ customer, onClose, onRefresh }) {
 
   const saveRate = async () => {
     setSavingRate(true);
-    await api('/api/customers/' + customer.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: parseFloat(newRate) || 147 }) });
-    setSavingRate(false);
-    onRefresh();
-    const updated = await api('/api/customers/' + customer.id + '/payment-details');
-    setDetails(updated);
+    try {
+      await api('/api/customers/' + customer.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: parseFloat(newRate) || 147 }) });
+      setSavingRate(false);
+      onRefresh();
+      const updated = await api('/api/customers/' + customer.id + '/payment-details');
+      setDetails(updated);
+    } catch (err) { setSavingRate(false); showToast(err.message, 'error'); }
   };
 
   const fireCharge = async () => {
@@ -1194,7 +1196,7 @@ function SettingsPage({ settings, onSave, showToast }) {
 
 // ─── INBOX PAGE ─────────────────────────────────────────────────
 function InboxPage({ notifications, onRefresh }) {
-  const markAll = async () => { await api('/api/notifications/read', {method:'POST'}); onRefresh(); };
+  const markAll = async () => { try { await api('/api/notifications/read', {method:'POST'}); onRefresh(); } catch (err) { showToast(err.message, 'error'); } };
 
   const iconFor = (type) => {
     const style = { width:'36px', height:'36px', borderRadius:'8px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'16px', flexShrink:0 };
@@ -1385,14 +1387,18 @@ function AdminPage({ agencies, adminStats, onRefresh }) {
   const [showModal, setShowModal] = useState(null);
 
   const updateAgency = async (id, data) => {
-    await api('/api/admin/agencies/' + id, { method: 'PATCH', body: JSON.stringify(data) });
-    onRefresh();
+    try {
+      await api('/api/admin/agencies/' + id, { method: 'PATCH', body: JSON.stringify(data) });
+      onRefresh();
+    } catch (err) { showToast(err.message, 'error'); }
   };
 
   const deleteAgency = async (id) => {
     if (!confirm('Delete this agency? This cannot be undone.')) return;
-    await api('/api/admin/agencies/' + id, { method: 'DELETE' });
-    onRefresh();
+    try {
+      await api('/api/admin/agencies/' + id, { method: 'DELETE' });
+      onRefresh();
+    } catch (err) { showToast(err.message, 'error'); }
   };
 
   return e('div', { className: 'page' },
@@ -1945,7 +1951,7 @@ function PublicFunnelRenderer({ slug }) {
             ),
             step === 0 && e('div', null,
               e('div', { className: 'pf-headline' }, funnel.headline || 'See if you qualify'),
-              e('div', { className: 'pf-subhead' }, niche || 'Answer a few quick questions.'),
+              e('div', { className: 'pf-subhead' }, (funnel.niche || 'Answer a few quick questions.')),
               e('div', { className: 'pf-options' },
                 e('button', { className: 'pf-btn pf-btn-primary', onClick: () => { setStep(1); }, style: { background: funnel.brand_color || '#00cc6a' } }, 'Get Started →')
               )
