@@ -454,7 +454,7 @@ function CustomerCard({ customer, onCharge, onEdit, onAnalytics, webhookSecret, 
         ? e('span', { className: 'tag tag-green' }, '\u2713 Card')
         : e('span', { className: 'tag tag-red' }, 'No card'),
       locId && e('span', { style: { fontSize: 10, color: 'var(--blue)', fontFamily: 'monospace' } }, '📍' + locId.slice(0, 8) + (locId.length > 8 ? '…' : '')),
-      e('span', { style: { fontSize: 10, color: 'var(--text3)' } }, customer.email)
+      e('span', { style: { fontSize: 10, color: 'var(--text2)' } }, customer.email)
     ),
     e('div', { className: 'cust-actions' },
       e('button', { className: 'btn-sm green', style: { padding: '3px 10px', fontSize: 10 }, onClick: () => onCharge(customer) }, 'Charge'),
@@ -1564,7 +1564,6 @@ function FunnelBuilder({ showToast }) {
     const fid = params.get('id');
     if (fid) {
       setEditId(fid);
-      api('/api/funnels/' + fid + '/leads').catch(() => {}); // prefetch ignore
       fetch(API + '/api/funnels/' + fid, {
         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('paypulse_token'), 'Content-Type': 'application/json' }
       }).then(r => r.json()).then(f => {
@@ -1924,9 +1923,6 @@ function App() {
     { key: 'charges', label: 'Charges' },
     { key: 'metrics', label: 'Metrics' },
   ];
-  
-  const guideLink = e('a', { href: '/guide', target: '_blank', style: { color: 'var(--accent)', textDecoration: 'none', fontWeight: 600, fontSize: 12, cursor: 'pointer' } }, '📖 Guide');
-
   const adminNav = [
     { key: 'admin', label: 'Agencies' },
     { key: 'admin-settings', label: 'Settings' },
