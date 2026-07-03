@@ -1490,12 +1490,12 @@ function FunnelsPage({ showToast }) {
 
   return e('div', { className: 'page' },
     e('div', { className: 'funnels-header' },
-      e('h2', { className: 'page-title', style: { marginBottom: 0 } }, '\\uD83E\\uDD16 Quiz Funnels'),
+      e('h2', { className: 'page-title', style: { marginBottom: 0 } }, '\uD83E\uDD16 Quiz Funnels'),
       e('button', { className: 'btn-primary', style: { width: 'auto' }, onClick: () => { window.location.hash = 'funnel-builder'; } }, '+ New Funnel')
     ),
     funnels.length === 0
       ? e('div', { style: { textAlign: 'center', padding: '60px 20px', color: 'var(--text2)' } },
-          e('div', { style: { fontSize: 48, marginBottom: 16 } }, '\\uD83E\\uDD16'),
+          e('div', { style: { fontSize: 48, marginBottom: 16 } }, '\uD83E\uDD16'),
           e('div', { style: { fontSize: 18, fontWeight: 700, marginBottom: 8 } }, 'No funnels yet'),
           e('div', { style: { fontSize: 14, marginBottom: 20 } }, 'Create your first qualification quiz funnel to capture leads.'),
           e('button', { className: 'btn-primary', style: { width: 'auto' }, onClick: () => { window.location.hash = 'funnel-builder'; } }, 'Create Your First Funnel')
@@ -1613,7 +1613,7 @@ function FunnelBuilder({ showToast }) {
   return e('div', { className: 'page funnel-builder-wrap' },
     e('div', { className: 'funnels-header' },
       e('h2', { className: 'page-title', style: { marginBottom: 0 } }, editId ? 'Edit Funnel' : 'New Funnel'),
-      e('button', { className: 'btn-ghost', onClick: () => { window.location.hash = 'funnels'; } }, '\\u2190 Back')
+      e('button', { className: 'btn-ghost', onClick: () => { window.location.hash = 'funnels'; } }, '\u2190 Back')
     ),
     e('div', { className: 'funnel-builder-form' },
       e('div', { className: 'funnel-form-row' },
@@ -1652,13 +1652,13 @@ function FunnelBuilder({ showToast }) {
       e('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 } },
         e('h3', { style: { fontSize: 14, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--text2)' } }, 'Questions'),
         e('button', { className: 'btn-ai', onClick: aiGenerate, disabled: generating },
-          generating ? '\\u23F3 Generating...' : '\\uD83E\\uDD16 AI Generate'
+          generating ? '\u23F3 Generating...' : '\uD83E\uDD16 AI Generate'
         )
       ),
       questions.map((q, i) => e('div', { key: i, className: 'funnel-question-card' },
         e('div', { className: 'q-header' },
           e('span', { className: 'q-number' }, 'Question ' + (i + 1)),
-          e('span', { className: 'q-remove', onClick: () => removeQuestion(i) }, '\\u2715')
+          e('span', { className: 'q-remove', onClick: () => removeQuestion(i) }, '\u2715')
         ),
         e('input', {
           className: 'q-text',
@@ -1681,7 +1681,7 @@ function FunnelBuilder({ showToast }) {
             opt,
             e('span', { style: { marginLeft: 6, cursor: 'pointer', color: 'var(--danger)' }, onClick: () => {
               const newOpts = [...q.options]; newOpts.splice(oi, 1); updateQuestion(i, 'options', newOpts);
-            } }, '\\u2715')
+            } }, '\u2715')
           )),
           e('span', { style: { cursor: 'pointer', fontSize: 11, color: 'var(--blue)' }, onClick: () => {
             const opt = prompt('Option text:'); if (opt) updateQuestion(i, 'options', [...(q.options||[]), opt]);
@@ -1731,7 +1731,7 @@ function PublicFunnelRenderer({ slug }) {
 
   if (error) return e('div', { className: 'public-funnel' },
     e('div', { className: 'pf-box' },
-      e('div', { style: { fontSize: 48, marginBottom: 16 } }, '\\u274C'),
+      e('div', { style: { fontSize: 48, marginBottom: 16 } }, '\u274C'),
       e('div', { style: { fontSize: 18, fontWeight: 700, marginBottom: 8 } }, 'Funnel Unavailable'),
       e('div', { style: { color: 'var(--text2)', marginBottom: 20 } }, error),
       e('a', { href: '/', style: { color: 'var(--accent)' } }, 'Go Home')
@@ -1743,7 +1743,7 @@ function PublicFunnelRenderer({ slug }) {
   if (success) {
     return e('div', { className: 'public-funnel' },
       e('div', { className: 'pf-box pf-success' },
-        e('div', { className: 'pf-success-icon' }, '\\u2705'),
+        e('div', { className: 'pf-success-icon' }, '\u2705'),
         e('div', { className: 'pf-success-msg' }, successMsg || 'Thanks! We\'ll be in touch soon.'),
         e('div', { className: 'pf-success-sub' }, 'We\'ve received your information.')
       )
