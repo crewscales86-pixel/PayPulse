@@ -7,6 +7,7 @@
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -117,16 +118,22 @@
   .search-box { width: 260px; }
 
   .kanban { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-  .kanban-col { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; min-height: 400px; }
+  .kanban-col { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; min-height: 400px; transition: border-color 0.2s; }
+  .kanban-col.drag-over { border-color: var(--accent); box-shadow: 0 0 0 2px var(--green4); }
   .kanban-col-header { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
   .kanban-col-header .dot { width: 8px; height: 8px; border-radius: 50%; }
   .kanban-col-header .count { margin-left: auto; background: var(--surface3); padding: 2px 10px; border-radius: 10px; font-size: 11px; }
+  .kanban-sortable { min-height: 100px; }
+  .kanban-col-empty { color:#555; font-size:13px; text-align:center; padding:40px 10px; line-height:1.5; }
 
   .cust-card {
     background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 16px;
-    margin-bottom: 12px; transition: 0.15s;
+    margin-bottom: 12px; transition: 0.15s; cursor: grab; position: relative;
   }
-  .cust-card:hover { border-color: #444; }
+  .cust-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
+  .cust-card.sortable-chosen { border-color: var(--accent); box-shadow: 0 8px 24px rgba(0,200,83,0.15); transform: scale(1.02); }
+  .cust-card.sortable-ghost { opacity: 0.4; border-style: dashed; }
+  .cust-card:active { cursor: grabbing; }
   .cust-name { font-weight: 700; font-size: 15px; margin-bottom: 3px; }
   .cust-rate { font-weight: 800; color: var(--blue); font-size: 14px; margin-bottom: 4px; }
   .cust-email { color: var(--text2); font-size: 12px; margin-bottom: 10px; }
@@ -476,7 +483,7 @@ function PaymentDetailModal({ customer, onClose, onRefresh }) {
     e('div', { className: 'modal wide' }, e('h3', null, 'Loading...'))
   );
 
-  const d = details || { charges: [], totalCharged: 0, totalTriggers: 0, creditBalance: 0, failureCount: 0, chargebackCount: 0, ratePerTrigger: customer.rate_per_trigger, cardOnFile: false, metaSpend: 0 };
+  const d = details || { charges: [], totalCharged: 0, totalTriggers: 0, creditBalance: 0, failureCount: 0, chargebackCount: 0, ratePerTrigger: customer.rate_per_trigger, cardOnFile: false };
   const c = d.customer || customer;
 
   return e('div', { className: 'modal-back', onClick: ev => ev.target === ev.currentTarget && onClose() },
@@ -513,26 +520,12 @@ function PaymentDetailModal({ customer, onClose, onRefresh }) {
           )
         ),
         e('div', { className: 'detail-stat' },
-          e('div', { className: 'detail-stat-label' }, 'Card on File'),
-          e('div', { className: 'detail-stat-value ' + (d.cardOnFile ? 'green' : 'red'), style: { fontSize: 14 } },
-            d.cardOnFile ? '✓ Yes' : '✗ No'
-          )
-        ),
-        e('div', { className: 'detail-stat' },
-          e('div', { className: 'detail-stat-label' }, 'Meta Ads Spend (MTD)'),
-          e('div', { className: 'detail-stat-value', style: { fontSize: 14 } },
-            d.metaSpend > 0 ? '$' + d.metaSpend.toFixed(2) : '—'
-          )
-        ),
-        d.metaSpend > 0 && e('div', { className: 'detail-stat' },
-          e('div', { className: 'detail-stat-label' }, 'Cost Per Lead'),
-          e('div', { className: 'detail-stat-value ' + ((d.totalTriggers || 0) > 0 ? (d.metaSpend / d.totalTriggers <= (d.ratePerTrigger || 147) ? 'green' : 'red') : '') },
-            (d.totalTriggers || 0) > 0
-              ? '$' + (d.metaSpend / d.totalTriggers).toFixed(2)
-              : '—'
-          )
+        e('div', { className: 'detail-stat-label' }, 'Card on File'),
+        e('div', { className: 'detail-stat-value ' + (d.cardOnFile ? 'green' : 'red'), style: { fontSize: 14 } },
+          d.cardOnFile ? '✓ Yes' : '✗ No'
         )
-      ),
+        )
+        ),
 
       !d.cardOnFile && e('div', { className: 'detail-section' },
         e('h4', null, 'Card Setup'),
@@ -632,6 +625,37 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
     byStatus[s].push(c);
   });
 
+  // Drag-and-drop kanban
+  const colKeys = ['new', 'active', 'at_risk', 'paused'];
+  useEffect(() => {
+    const sortables = [];
+    colKeys.forEach(key => {
+      const el = document.getElementById('kanban-' + key);
+      if (!el) return;
+      const s = new Sortable(el, {
+        group: 'kanban',
+        animation: 200,
+        easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+        ghostClass: 'sortable-ghost',
+        chosenClass: 'sortable-chosen',
+        dragClass: 'sortable-drag',
+        onEnd: async (evt) => {
+          const customerId = evt.item.dataset.customerId;
+          const newStatus = evt.to.id.replace('kanban-', '');
+          if (!customerId || !newStatus) return;
+          try {
+            await api('/api/customers/' + customerId, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) });
+            onRefresh();
+          } catch (err) {
+            showToast('Failed to update status: ' + err.message, 'error');
+          }
+        }
+      });
+      sortables.push(s);
+    });
+    return () => sortables.forEach(s => s.destroy());
+  }, [customers.length]);
+
   const doCharge = async () => {
     setChargeModal({ ...chargeModal, loading: true });
     try {
@@ -651,7 +675,7 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
         await api('/api/customers', { method: 'POST', body: JSON.stringify({ name: editModal.name, email: editModal.email, rate_per_trigger: editModal.rate_per_trigger, status: editModal.status, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
         showToast('Customer added!', 'success');
       } else {
-        await api('/api/customers/' + editModal.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: editModal.rate_per_trigger, status: editModal.status, name: editModal.name, company_name: editModal.company_name, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '', meta_campaign_id: editModal.meta_campaign_id || '', client_brand_color: editModal.client_brand_color || '', client_logo_url: editModal.client_logo_url || '' }) });
+        await api('/api/customers/' + editModal.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: editModal.rate_per_trigger, status: editModal.status, name: editModal.name, company_name: editModal.company_name, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
         showToast('Customer updated!', 'success');
       }
       setEditModal(null); onRefresh();
@@ -714,17 +738,20 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
             col.label,
             e('span', { className: 'count' }, byStatus[col.key].length)
           ),
-          byStatus[col.key].map(c =>
-            e(CustomerCard, {
-              key: c.id,
-              customer: c,
-              onCharge: setChargeModal,
-              onEdit: setEditModal,
-              webhookSecret: settings?.ghlWebhookSecret,
-              onAnalytics: () => setDetailModal(c)
-            })
-          ),
-          byStatus[col.key].length === 0 && e('div', { style: { color:'#555', fontSize:13, textAlign:'center', padding:40 } }, 'No clients')
+          e('div', { id: 'kanban-' + col.key, className: 'kanban-sortable' },
+            byStatus[col.key].map(c =>
+              e('div', { key: c.id, 'data-customer-id': c.id },
+                e(CustomerCard, {
+                  customer: c,
+                  onCharge: setChargeModal,
+                  onEdit: setEditModal,
+                  webhookSecret: settings?.ghlWebhookSecret,
+                  onAnalytics: () => setDetailModal(c)
+                })
+              )
+            ),
+            byStatus[col.key].length === 0 && e('div', { className: 'kanban-col-empty' }, 'Drop clients here')
+          )
         )
       )
     ),
@@ -806,26 +833,7 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
             e('input', { value: editModal.stripe_payment_method_id || '', onChange: ev => setEditModal({...editModal, stripe_payment_method_id: ev.target.value}), placeholder: 'pm_...', style: { fontFamily: 'monospace', fontSize: 12 } })
           )
         ),
-        // ── Client Customization (edit only) ──
-        editModal.id !== 'new' && e('div', null,
-          e('div', { style: { marginTop: 24, borderTop: '1px solid var(--border)', paddingTop: 20 } },
-            e('h4', { style: { marginBottom: 14, fontSize: 15, color: 'var(--accent)' } }, 'Client Customization'),
-            e('div', { className: 'form-group' },
-              e('label', null, 'Meta Campaign ID'),
-              e('input', { value: editModal.meta_campaign_id || '', onChange: ev => setEditModal({...editModal, meta_campaign_id: ev.target.value}), placeholder: 'e.g. 1234567890', style: { fontFamily: 'monospace', fontSize: 12 } }),
-              e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 6 } }, 'Paste the campaign ID from your Meta Ads account. This enables real spend tracking for CPL.')
-            ),
-            e('div', { className: 'form-group' },
-              e('label', null, 'Brand Color (hex)'),
-              e('input', { value: editModal.client_brand_color || '', onChange: ev => setEditModal({...editModal, client_brand_color: ev.target.value}), placeholder: '#4488ff' })
-            ),
-            e('div', { className: 'form-group' },
-              e('label', null, 'Logo URL'),
-              e('input', { value: editModal.client_logo_url || '', onChange: ev => setEditModal({...editModal, client_logo_url: ev.target.value}), placeholder: 'https://...' })
-            )
-          )
-        ),
-        e('div', { className: 'modal-actions' },
+          e('div', { className: 'modal-actions' },
           e('button', { className: 'btn-ghost', onClick: () => setEditModal(null) }, 'Cancel'),
           e(Button, { className: 'btn-primary', loading: editModal.saving, onClick: doEdit }, editModal.id === 'new' ? 'Add Customer' : 'Save')
         )
@@ -925,72 +933,6 @@ function SettingsPage({ settings, onSave, showToast }) {
             className: 'toggle ' + (s.appointmentTrackingMode ? 'on' : ''),
             onClick: () => update({appointmentTrackingMode: !s.appointmentTrackingMode})
           })
-        )
-      ),
-      e('div', { className: 'settings-card' },
-        e('h3', null, 'Meta Ad Accounts'),
-        e('div', { style: { color: 'var(--text2)', fontSize: 13, marginBottom: 14 } }, 'Add multiple Meta ad accounts. Each client can be linked to a specific campaign.'),
-        (s.metaAccounts || []).map((acct, idx) =>
-          e('div', { key: acct.id || idx, style: { marginBottom: 12, padding: 12, background: 'var(--surface3)', borderRadius: 8 } },
-            e('div', { style: { display: 'flex', gap: 8, marginBottom: 8 } },
-              e('input', { placeholder: 'Account name', value: acct.name || '', onChange: ev => {
-                const next = [...(s.metaAccounts || [])];
-                next[idx] = { ...next[idx], name: ev.target.value };
-                setDirty(true); setS({...s, metaAccounts: next});
-              }, style: { flex: 1 } }),
-              e('button', { className: 'btn-sm', style: { background: 'rgba(255,68,68,0.1)', color: 'var(--red)', borderColor: 'rgba(255,68,68,0.3)' }, onClick: async () => {
-                if (acct.id) {
-                  try { await api('/api/meta-accounts/' + acct.id, { method: 'DELETE' }); showToast('Account removed', 'success'); } catch (err) { showToast(err.message, 'error'); }
-                }
-                const next = [...(s.metaAccounts || [])];
-                next.splice(idx, 1);
-                setDirty(true); setS({...s, metaAccounts: next});
-              } }, 'Remove')
-            ),
-            e('div', { className: 'form-group', style: { marginBottom: 8 } },
-              e('label', { style: { fontSize: 12 } }, 'Ad Account ID'),
-              e('input', { value: acct.account_id || '', onChange: ev => {
-                const next = [...(s.metaAccounts || [])];
-                next[idx] = { ...next[idx], account_id: ev.target.value };
-                setDirty(true); setS({...s, metaAccounts: next});
-              }, placeholder: 'act_123456789', style: { fontFamily: 'monospace', fontSize: 12 } })
-            ),
-            e('div', { className: 'form-group', style: { marginBottom: 0 } },
-              e('label', { style: { fontSize: 12 } }, 'Access Token'),
-              e('input', { type: 'password', value: acct.access_token || '', onChange: ev => {
-                const next = [...(s.metaAccounts || [])];
-                next[idx] = { ...next[idx], access_token: ev.target.value };
-                setDirty(true); setS({...s, metaAccounts: next});
-              }, placeholder: 'EAA...' })
-            ),
-            acct.id && e('div', { style: { color: 'var(--accent)', fontSize: 11, marginTop: 6 } }, '✓ Saved')
-          )
-        ),
-        e('div', { style: { display: 'flex', gap: 10, marginTop: 10 } },
-          e('button', { className: 'btn-sm', style: { background: 'rgba(68,136,255,0.1)', color: 'var(--blue)', borderColor: 'rgba(68,136,255,0.3)', padding: '8px 16px' }, onClick: async () => {
-            const newAccount = { name: '', account_id: '', access_token: '' };
-            setDirty(true); setS({...s, metaAccounts: [...(s.metaAccounts || []), newAccount]});
-          } }, '+ Add Account'),
-          e('button', { className: 'btn-primary', style: { padding: '8px 18px', fontSize: 13 }, onClick: async () => {
-            setSaving(true);
-            try {
-              for (const acct of (s.metaAccounts || [])) {
-                if (!acct.account_id || !acct.access_token) continue;
-                if (acct.id) {
-                  await api('/api/meta-accounts/' + acct.id, { method: 'PATCH', body: JSON.stringify({ name: acct.name, accountId: acct.account_id, accessToken: acct.access_token }) });
-                } else {
-                  const res = await api('/api/meta-accounts', { method: 'POST', body: JSON.stringify({ name: acct.name, accountId: acct.account_id, accessToken: acct.access_token }) });
-                  acct.id = res.id;
-                }
-              }
-              showToast('Meta accounts saved!', 'success');
-              setDirty(false);
-              onSave();
-            } catch (err) {
-              showToast(err.message || 'Save failed', 'error');
-            }
-            setSaving(false);
-          } }, saving ? 'Saving...' : 'Save Accounts')
         )
       ),
       e('div', { className: 'settings-card' },
@@ -1397,14 +1339,13 @@ function App() {
         setAgencies(aRes);
         setAdminStats(sRes);
       } else {
-        const [cRes, nRes, sRes, chRes, mRes, uRes, maRes] = await Promise.all([
+        const [cRes, nRes, sRes, chRes, mRes, uRes] = await Promise.all([
           api('/api/customers'), api('/api/notifications'), api('/api/settings'),
           api('/api/charges'), api('/api/metrics'), api('/api/notifications/unread-count'),
-          api('/api/meta-accounts'),
         ]);
         setCustomers(cRes);
         setNotifications(nRes);
-        setSettings({ ...sRes, metaAccounts: maRes || [] });
+        setSettings(sRes);
         setCharges(chRes);
         setMetrics(mRes);
         setUnreadCount(uRes.count);

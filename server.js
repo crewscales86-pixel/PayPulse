@@ -992,23 +992,6 @@ app.get('/api/customers/:id/payment-details', requireAuth, async (req, res) => {
     const webhookUrl = c.ghl_location_id
       ? `${BASE_URL}/webhook/ghl/${user.ghl_webhook_secret}/${c.ghl_location_id}`
       : null;
-    // Meta Ads spend for this customer's campaign
-    let metaSpend = 0;
-    try {
-      if (c.meta_campaign_id && user.meta_access_token) {
-        const accounts = await db.getMetaAdAccountsByUser(req.user.id);
-        const token = accounts?.[0]?.access_token || user.meta_access_token;
-        if (token) {
-          const now = new Date();
-          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-          const since = monthStart.toISOString().split('T')[0];
-          const until = now.toISOString().split('T')[0];
-          metaSpend = await db.getMetaCampaignSpend(c.meta_campaign_id, token, since, until);
-        }
-      }
-    } catch (e) {
-      metaSpend = 0; // silent fail — no Meta config set up yet
-    }
     const lastCharge =
       charges.length > 0 ? charges[0].created_at : null;
     const failureCount = charges.filter(ch => ch.status === 'failed').length;
@@ -1027,8 +1010,7 @@ app.get('/api/customers/:id/payment-details', requireAuth, async (req, res) => {
       ratePerTrigger: c.rate_per_trigger,
       cardOnFile: !!c.card_on_file,
       ghlLocationId: c.ghl_location_id,
-      webhookUrl,
-      metaSpend
+      webhookUrl
     });
   } catch (err) {
     console.error('Error in payment-details endpoint:', err);
@@ -1402,103 +1384,6 @@ app.get('/api/admin/agencies/:id/subscription', requireAuth, requireAdmin, async
     stripeCustomerId: user.stripe_customer_id,
     stripeSubscriptionId: user.stripe_subscription_id
   });
-});
-
-// ─── META AD ACCOUNTS API ───────────────────────────────────────
-app.get('/api/meta-accounts', requireAuth, async (req, res) => {
-  try {
-    const accounts = await db.getMetaAdAccountsByUser(req.user.id);
-    // Mask access tokens
-    res.json(accounts.map(a => ({
-      ...a,
-      access_token: a.access_token ? '••••••••' + a.access_token.slice(-4) : ''
-    })));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/meta-accounts', requireAuth, async (req, res) => {
-  try {
-    const { name, accountId, accessToken } = req.body;
-    if (!accountId || !accessToken)
-      return res.status(400).json({ error: 'Account ID and access token required' });
-    const account = await db.createMetaAdAccount({
-      user_id: req.user.id,
-      name: name || '',
-      account_id: accountId,
-      access_token: accessToken
-    });
-    res.json({ ...account, access_token: '••••••••' + account.access_token.slice(-4) });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.patch('/api/meta-accounts/:id', requireAuth, async (req, res) => {
-  try {
-    const account = await db.getMetaAdAccountById(req.params.id);
-    if (!account || account.user_id !== req.user.id)
-      return res.status(404).json({ error: 'Not found' });
-    const updates = {};
-    if (req.body.name !== undefined) updates.name = req.body.name;
-    if (req.body.accountId !== undefined) updates.account_id = req.body.accountId;
-    if (req.body.accessToken !== undefined && !String(req.body.accessToken).startsWith('•'))
-      updates.access_token = req.body.accessToken;
-    const updated = await db.updateMetaAdAccount(req.params.id, updates);
-    res.json({ ...updated, access_token: updated.access_token ? '••••••••' + updated.access_token.slice(-4) : '' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.delete('/api/meta-accounts/:id', requireAuth, async (req, res) => {
-  try {
-    const account = await db.getMetaAdAccountById(req.params.id);
-    if (!account || account.user_id !== req.user.id)
-      return res.status(404).json({ error: 'Not found' });
-    await db.deleteMetaAdAccount(req.params.id);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─── META CAMPAIGNS & SPEND (uses meta_ad_accounts table) ───────
-app.get('/api/meta-accounts/:accountId/campaigns', requireAuth, async (req, res) => {
-  try {
-    const account = await db.getMetaAdAccountsByUser(req.user.id)
-      .then(accounts => accounts.find(a => a.account_id === req.params.accountId || a.id === req.params.accountId));
-    if (!account)
-      return res.status(404).json({ error: 'Meta ad account not found' });
-    const data = await db.metaGraphApi(
-      `/${account.account_id}/campaigns`,
-      account.access_token,
-      { fields: 'id,name,status', limit: 100 }
-    );
-    res.json(data.data || []);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/meta-accounts/:accountId/campaigns/:campaignId/spend', requireAuth, async (req, res) => {
-  try {
-    const account = await db.getMetaAdAccountsByUser(req.user.id)
-      .then(accounts => accounts.find(a => a.account_id === req.params.accountId || a.id === req.params.accountId));
-    if (!account)
-      return res.status(404).json({ error: 'Meta ad account not found' });
-    const { since, until } = req.query;
-    const spend = await db.getMetaCampaignSpend(
-      req.params.campaignId,
-      account.access_token,
-      since || '7_days_ago',
-      until || 'today'
-    );
-    res.json({ spend });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
 });
 
 // ─── SERVE ────────────────────────────────────────────────────────
