@@ -1646,7 +1646,7 @@ app.post('/api/funnels/generate-questions', requireAuth, async (req, res) => {
       return res.json([
         { question: `Are you actively looking for ${niche} services right now?`, type: 'yesno', options: null },
         { question: `How soon do you need ${niche} help?`, type: 'choice', options: ['ASAP', 'Within a week', 'Within a month', 'Just browsing'] },
-        { question: `What is your approximate monthly budget for ${niche}?`, type: 'choice', options: ['Under $500', '$500-$1,000', '$1,000-$5,000', '$5,000+'] },
+        { question: `What is your approximate budget for ${niche}?`, type: 'choice', options: ['Under $1,000', '$1,000-$2,500', '$2,500-$5,000', '$5,000+'] },
         { question: `Have you used ${niche} services before?`, type: 'yesno', options: null },
       ]);
     }
@@ -1660,7 +1660,7 @@ app.post('/api/funnels/generate-questions', requireAuth, async (req, res) => {
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1000,
-        system: 'You are a quiz funnel question generator for local service businesses. Generate exactly 4 short yes/no or multiple choice qualification questions based on the given niche. Return ONLY a JSON array of objects with fields: question (string), type ("yesno"|"choice"), options (array of strings, null for yesno).',
+        system: 'You are a quiz funnel question generator for local service businesses (contractors, trades, home services). Generate exactly 4 short yes/no or multiple choice qualification questions based on the given niche. These are project-based services — people buy one-time jobs, not subscriptions. Use "budget" not "monthly budget". Keep dollar amounts realistic for home services. Return ONLY a JSON array of objects with fields: question (string), type ("yesno"|"choice"), options (array of strings, null for yesno).',
         messages: [{ role: 'user', content: `Generate 4 qualification questions for a ${niche} business quiz funnel.` }]
       })
     });
