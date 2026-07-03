@@ -40,7 +40,7 @@ function requireAuth(req, res, next) {
   }
 }
 function requireAdmin(req, res, next) {
-  if (!req.user || req.user.role !== 'admin')
+  if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'subadmin'))
     return res.status(403).json({ error: 'Admin only' });
   next();
 }
@@ -1510,6 +1510,36 @@ app.delete('/api/ad-metrics/:id', requireAuth, async (req, res) => {
   }
 });
 
+// ─── ADMIN: SUB ADMIN MANAGEMENT ───────────────────────────────
+app.get('/api/admin/subadmins', requireAuth, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Full admin only' });
+    const users = await db.all("SELECT * FROM users WHERE role = 'subadmin' ORDER BY created_at DESC");
+    res.json(users.map(u => ({ id: u.id, name: u.name, email: u.email, agencyCount: 0 })));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/admin/subadmins', requireAuth, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Full admin only' });
+    const { name, email, password } = req.body;
+    if (!name || !email || !password) return res.status(400).json({ error: 'Name, email, and password required' });
+    const existing = await db.getUserByEmail(email);
+    if (existing) return res.status(409).json({ error: 'Email already registered' });
+    const hash = await bcrypt.hash(password, 10);
+    const user = await db.createUser({ email, password_hash: hash, name, role: 'subadmin', company_name: '', plan: 'admin' });
+    res.json({ id: user.id, name: user.name, email: user.email, role: 'subadmin' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/admin/subadmins/:id', requireAuth, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Full admin only' });
+    await db.run("DELETE FROM users WHERE id = ? AND role = 'subadmin'", [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── ADMIN: CREATE AGENCY ───────────────────────────────────────
 app.post('/api/admin/agencies', requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -1560,215 +1590,7 @@ app.get('/api/admin/agencies/:id/subscription', requireAuth, requireAdmin, async
   });
 });
 
-// ─── QUIZ FUNNEL ROUTES ─────────────────────────────────────────
-app.get('/api/funnels', requireAuth, async (req, res) => {
-  try {
-    const funnels = await db.getUserFunnels(req.user.id);
-    // Parse questions JSON for each funnel
-    const parsed = funnels.map(f => ({ ...f, questions: JSON.parse(f.questions || '[]') }));
-    res.json(parsed);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
 
-// Get single funnel by ID
-app.get('/api/funnels/:id', requireAuth, async (req, res) => {
-  try {
-    const funnel = await db.getFunnelById(req.params.id);
-    if (!funnel) return res.status(404).json({ error: 'Not found' });
-    if (funnel.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
-    funnel.questions = JSON.parse(funnel.questions || '[]');
-    res.json(funnel);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.post('/api/funnels', requireAuth, async (req, res) => {
-  try {
-    const { name, niche, headline, questions, ghl_calendar_id, ghl_private_token, ghl_webhook_url, meta_pixel_id, success_message, brand_color } = req.body;
-    if (!name) return res.status(400).json({ error: 'Name is required' });
-    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Math.random().toString(36).slice(2, 6);
-    const funnel = await db.createFunnel({
-      user_id: req.user.id, name, niche: niche || '', slug,
-      headline: headline || '', questions: questions || [],
-      ghl_calendar_id: ghl_calendar_id || '', ghl_private_token: ghl_private_token || '',
-      ghl_webhook_url: ghl_webhook_url || '', meta_pixel_id: meta_pixel_id || '',
-      success_message: success_message || '', brand_color: brand_color || '#00ff88'
-    });
-    funnel.questions = JSON.parse(funnel.questions || '[]');
-    res.status(201).json(funnel);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.patch('/api/funnels/:id', requireAuth, async (req, res) => {
-  try {
-    const existing = await db.getFunnelById(req.params.id);
-    if (!existing) return res.status(404).json({ error: 'Not found' });
-    if (existing.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
-    const { name, niche, headline, questions, ghl_calendar_id, ghl_private_token, ghl_webhook_url, meta_pixel_id, success_message, brand_color, active } = req.body;
-    const updates = {};
-    if (name !== undefined) updates.name = name;
-    if (niche !== undefined) updates.niche = niche;
-    if (headline !== undefined) updates.headline = headline;
-    if (questions !== undefined) updates.questions = questions;
-    if (ghl_calendar_id !== undefined) updates.ghl_calendar_id = ghl_calendar_id;
-    if (ghl_private_token !== undefined) updates.ghl_private_token = ghl_private_token;
-    if (ghl_webhook_url !== undefined) updates.ghl_webhook_url = ghl_webhook_url;
-    if (meta_pixel_id !== undefined) updates.meta_pixel_id = meta_pixel_id;
-    if (success_message !== undefined) updates.success_message = success_message;
-    if (brand_color !== undefined) updates.brand_color = brand_color;
-    if (active !== undefined) updates.active = active;
-    const funnel = await db.updateFunnel(req.params.id, updates);
-    funnel.questions = JSON.parse(funnel.questions || '[]');
-    res.json(funnel);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.delete('/api/funnels/:id', requireAuth, async (req, res) => {
-  try {
-    const existing = await db.getFunnelById(req.params.id);
-    if (!existing) return res.status(404).json({ error: 'Not found' });
-    if (existing.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
-    await db.deleteFunnel(req.params.id);
-    res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.post('/api/funnels/:id/toggle', requireAuth, async (req, res) => {
-  try {
-    const existing = await db.getFunnelById(req.params.id);
-    if (!existing) return res.status(404).json({ error: 'Not found' });
-    if (existing.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
-    const funnel = await db.updateFunnel(req.params.id, { active: existing.active ? 0 : 1 });
-    funnel.questions = JSON.parse(funnel.questions || '[]');
-    res.json(funnel);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.post('/api/funnels/generate-questions', requireAuth, async (req, res) => {
-  try {
-    const { niche } = req.body;
-    if (!niche) return res.status(400).json({ error: 'Niche is required' });
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      // Fallback questions
-      return res.json([
-        { question: `Are you actively looking for ${niche} services right now?`, type: 'yesno', options: null },
-        { question: `How soon do you need ${niche} help?`, type: 'choice', options: ['ASAP', 'Within a week', 'Within a month', 'Just browsing'] },
-        { question: `What is your approximate budget for ${niche}?`, type: 'choice', options: ['Under $1,000', '$1,000-$2,500', '$2,500-$5,000', '$5,000+'] },
-        { question: `Have you used ${niche} services before?`, type: 'yesno', options: null },
-      ]);
-    }
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        system: 'You are a quiz funnel question generator for local service businesses (contractors, trades, home services). Generate exactly 4 short yes/no or multiple choice qualification questions based on the given niche. These are project-based services — people buy one-time jobs, not subscriptions. Use "budget" not "monthly budget". Keep dollar amounts realistic for home services. Return ONLY a JSON array of objects with fields: question (string), type ("yesno"|"choice"), options (array of strings, null for yesno).',
-        messages: [{ role: 'user', content: `Generate 4 qualification questions for a ${niche} business quiz funnel.` }]
-      })
-    });
-    const data = await response.json();
-    const text = data.content?.[0]?.text || '[]';
-    const questions = JSON.parse(text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim());
-    res.json(Array.isArray(questions) ? questions : []);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// Public funnel endpoint (no auth) — submit lead
-app.post('/api/f/:slug/submit', async (req, res) => {
-  try {
-    const funnel = await db.getFunnelBySlug(req.params.slug);
-    if (!funnel) return res.status(404).json({ error: 'Funnel not found' });
-    if (!funnel.active) return res.status(403).json({ error: 'Funnel not active' });
-    const { name, email, phone, answers, fbc, fbp } = req.body;
-    if (!name || !email) return res.status(400).json({ error: 'Name and email required' });
-    const leadId = await db.createFunnelLead({
-      funnel_id: funnel.id, answers: answers || {}, score: 0, name, email, phone: phone || ''
-    });
-
-    // Fire Meta CAPI event if pixel ID is configured
-    const capiPromise = (funnel.meta_pixel_id && process.env.META_ACCESS_TOKEN)
-      ? fetch(`https://graph.facebook.com/v18.0/${funnel.meta_pixel_id}/events`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            data: [{
-              event_name: 'Lead',
-              event_time: Math.floor(Date.now() / 1000),
-              action_source: 'website',
-              event_source_url: req.get('Referer') || '',
-              user_data: {
-                em: [Buffer.from(email.toLowerCase().trim()).toString('base64')],
-                ph: phone ? [Buffer.from(phone.replace(/[^0-9]/g, '')).toString('base64')] : [],
-                fn: [Buffer.from(name.toLowerCase().trim().split(' ')[0]).toString('base64')]
-              },
-              ...(fbc ? { fbc } : {}),
-              ...(fbp ? { fbp } : {})
-            }]
-          })
-        }).catch(e => console.error('Meta CAPI error:', e.message))
-      : Promise.resolve();
-
-    // Forward lead to GHL webhook if configured
-    if (funnel.ghl_webhook_url) {
-      try {
-        await fetch(funnel.ghl_webhook_url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            event: 'quiz_funnel.lead',
-            funnel_name: funnel.name,
-            funnel_slug: funnel.slug,
-            name, email, phone: phone || '',
-            answers: answers || {},
-            score: 0,
-            lead_id: leadId,
-            fbc: fbc || '',
-            fbp: fbp || ''
-          })
-        });
-      } catch (e) {
-        console.error('GHL webhook failed:', e.message);
-      }
-    }
-
-    await capiPromise;
-
-    res.json({ success: true, leadId, metaPixelId: funnel.meta_pixel_id || '', successMessage: funnel.success_message || 'Thanks! We\'ll be in touch soon.' });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// Get funnel by slug (public — for the renderer)
-app.get('/api/f/:slug', async (req, res) => {
-  try {
-    const funnel = await db.getFunnelBySlug(req.params.slug);
-    if (!funnel) return res.status(404).json({ error: 'Funnel not found' });
-    if (!funnel.active) return res.status(403).json({ error: 'Funnel not active' });
-    funnel.questions = JSON.parse(funnel.questions || '[]');
-    res.json(funnel);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// Get leads for a specific funnel
-app.get('/api/funnels/:id/leads', requireAuth, async (req, res) => {
-  try {
-    const existing = await db.getFunnelById(req.params.id);
-    if (!existing) return res.status(404).json({ error: 'Not found' });
-    if (existing.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
-    const leads = await db.getFunnelLeads(req.params.id);
-    const parsed = leads.map(l => ({ ...l, answers: JSON.parse(l.answers || '{}') }));
-    res.json(parsed);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// Serve the public funnel renderer
-app.get('/f/*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
 
 // ─── SERVE ────────────────────────────────────────────────────────
 app.get('/', (req, res) =>

@@ -231,42 +231,7 @@
   .feature-title { font-size: 13px; font-weight: 800; margin-bottom: 4px; }
   .feature-desc { font-size: 11px; color: var(--text2); line-height: 1.5; }
 
-  /* ── CASINO WHEEL ANIMATION ───────────────────── */
-  .casino-stage {
-    background: radial-gradient(ellipse at center, rgba(0,200,83,0.15), transparent 70%);
-    padding: 40px; text-align: center; border-radius: 14px; border: 1px solid var(--border); margin: 24px 0;
-  }
-  .wheel {
-    width: 200px; height: 200px; border-radius: 50%; border: 4px solid var(--green);
-    margin: 0 auto 20px; position: relative; overflow: hidden;
-    background: conic-gradient(
-      #ff3b3b 0deg 40deg, #ffd700 40deg 80deg, #00c853 80deg 120deg,
-      #00b4ff 120deg 160deg, #a855f7 160deg 200deg, #ff6b35 200deg 240deg,
-      #ff3b3b 240deg 280deg, #ffd700 280deg 320deg, #00b4ff 320deg 360deg
-    );
-    transition: transform 4s cubic-bezier(0.18, 0.89, 0.21, 1);
-  }
-  .wheel.spinning { transform: rotate(2160deg); }
-  .wheel-pointer {
-    width: 0; height: 0; border-left: 12px solid transparent; border-right: 12px solid transparent;
-    border-top: 20px solid var(--green); margin: 0 auto -10px; position: relative; z-index: 2;
-  }
-  .wheel-center {
-    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
-    width: 40px; height: 40px; background: #000; border: 3px solid var(--green); border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-  }
 
-  /* ── MASCOT CUTSCENE ─────────────────────────── */
-  .mascot-demo {
-    background: radial-gradient(ellipse at center, rgba(0,200,83,0.18), rgba(0,0,0,0.5) 70%);
-    padding: 60px 40px; border-radius: 14px; text-align: center; margin: 24px 0;
-    border: 1px solid var(--border); overflow: hidden; position: relative;
-  }
-  .mascot-char { font-size: 100px; line-height: 1; animation: bounce 2s infinite; display: inline-block; }
-  @keyframes bounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
-  .mascot-msg { font-size: 30px; font-weight: 900; color: #fff; margin-top: 20px; text-shadow: 0 4px 20px rgba(0,200,83,0.8); }
-  .mascot-sub { font-size: 12px; color: var(--green); margin-top: 8px; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 800; }
 
   /* ── TROUBLESHOOTING ACCORDION ─────────────── */
   .trouble-item {
@@ -351,7 +316,7 @@
     <div>PAYPULSE GUIDE</div>
   </div>
   <div class="progress"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
-  <div class="step-counter">Step <strong id="stepNum">1</strong> of <strong id="stepTotal">14</strong></div>
+  <div class="step-counter">Step <strong id="stepNum">1</strong> of <strong id="stepTotal">12</strong></div>
 </div>
 
 <div class="stage">
@@ -400,11 +365,6 @@
       <div class="choice-icon">📊</div>
       <div class="choice-name">Track everything</div>
       <div class="choice-desc">CPL, CPBC, conversions, revenue per client — all in one dashboard.</div>
-    </div>
-    <div class="choice" style="cursor:default;">
-      <div class="choice-icon">🎯</div>
-      <div class="choice-name">Build quiz funnels</div>
-      <div class="choice-desc">Drop-in qualification funnels with adaptive logic and Meta Pixel integration.</div>
     </div>
   </div>
 
@@ -868,131 +828,9 @@
 </div>
 
 <!-- ════════════════════════════════════════════
-     SCENE 11 — FUNNEL BUILDER
+     SCENE 11 — TROUBLESHOOTING
      ════════════════════════════════════════════ -->
 <div class="scene" data-scene="11">
-  <div class="story-num">SCENE 10 · FUNNELS</div>
-  <div class="story-title">Build quiz funnels</div>
-  <div class="story-subtitle">
-    PayPulse has a built-in quiz funnel builder. You write a niche, click "AI Generate Questions", and get a 4-question qualifier funnel ready to deploy.
-  </div>
-
-  <div class="mockup-wrap">
-    <div class="mockup-bar">
-      <div class="mockup-dots"><span></span><span></span><span></span></div>
-      <div class="mockup-url">PayPulse.app · /funnels</div>
-    </div>
-    <div class="mockup-content">
-      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;">
-        <div style="background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:16px;">
-          <div style="font-size:14px;font-weight:900;margin-bottom:8px;">🏠 Roofing — Atlanta</div>
-          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px;">
-            <span style="font-size:9px;padding:3px 8px;background:var(--bg2);border-radius:100px;color:var(--text2);">4 Qs</span>
-            <span style="font-size:9px;padding:3px 8px;background:var(--green4);border-radius:100px;color:var(--green);">📅 Calendar</span>
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;font-size:9px;">
-            <button style="padding:6px;background:transparent;border:1px solid var(--green3);color:var(--green);border-radius:5px;font-weight:700;letter-spacing:0.08em;">PREVIEW</button>
-            <button style="padding:6px;background:transparent;border:1px solid var(--blue2);color:var(--blue);border-radius:5px;font-weight:700;letter-spacing:0.08em;">EDIT</button>
-            <button style="padding:6px;background:transparent;border:1px solid var(--purple2);color:var(--purple);border-radius:5px;font-weight:700;letter-spacing:0.08em;">LEADS</button>
-          </div>
-        </div>
-        <div style="background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:16px;">
-          <div style="font-size:14px;font-weight:900;margin-bottom:8px;">🪟 Window Replacement</div>
-          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px;">
-            <span style="font-size:9px;padding:3px 8px;background:var(--bg2);border-radius:100px;color:var(--text2);">5 Qs</span>
-            <span style="font-size:9px;padding:3px 8px;background:var(--green4);border-radius:100px;color:var(--green);">📅 Calendar</span>
-          </div>
-          <div style="font-size:11px;color:var(--text3);">82 leads · avg score 74</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="instructions">
-    <div class="inst-title">📍 Build a Funnel</div>
-    <ol class="inst-list">
-      <li>Go to <strong>Funnels</strong> tab</li>
-      <li>Click <strong>+ New Funnel</strong></li>
-      <li>Give it a name and niche ("Roofing — Atlanta")</li>
-      <li>Click <strong>AI Generate Questions</strong> — Claude AI writes 4 qualifying questions for your niche</li>
-      <li>Add your headline, GHL Calendar ID (for inline booking)</li>
-      <li>Customize colors, success page, redirect URL</li>
-      <li>Save — you'll get a public URL like <code>PayPulse.app/f/roofing-atlanta</code> ready to drive Meta ads to</li>
-    </ol>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════
-     SCENE 12 — ADAPTIVE / CASINO / MASCOT
-     ════════════════════════════════════════════ -->
-<div class="scene" data-scene="12">
-  <div class="story-num">SCENE 11 · POWER FEATURES</div>
-  <div class="story-title">Adaptive, Casino & Mascot modes</div>
-  <div class="story-subtitle">
-    Three optional modes that boost funnel performance. Toggle them in the funnel builder.
-  </div>
-
-  <!-- ADAPTIVE -->
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;margin:20px 0;">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-      <div style="font-size:32px;">🧠</div>
-      <div>
-        <div style="font-size:18px;font-weight:900;">Adaptive Funnel <span style="font-size:11px;font-weight:700;color:var(--yellow);background:var(--yellow2);padding:2px 10px;border-radius:100px;">Coming Soon</span></div>
-        <div style="font-size:12px;color:var(--text2);">Auto-adjusts based on the assigned client's performance</div>
-      </div>
-    </div>
-    <div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px;">
-      Every 72 hours, PayPulse compares this funnel's CPL/CPBC vs. the customer's target. If things are bad, it auto-reduces questions to lower friction. If CPL is fine but bookings are expensive, it boosts the intent value sent to Meta — telling Meta to optimize harder for quality.
-    </div>
-    <div style="background:var(--bg2);border-radius:8px;padding:12px;font-size:11px;color:var(--text3);">
-      <strong style="color:var(--green);">RULE 1:</strong> CPL > 30% over target AND CPBC > 20% over → reduce questions (light or heavy depending on severity)<br>
-      <strong style="color:var(--green);">RULE 2:</strong> CPL ±20% but CPBC > 30% over → boost intent value to Meta (1.0–2.0x multiplier)
-    </div>
-  </div>
-
-  <!-- CASINO -->
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;margin:20px 0;">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-      <div style="font-size:32px;">🎰</div>
-      <div>
-        <div style="font-size:18px;font-weight:900;">Casino Mode <span style="font-size:11px;font-weight:700;color:var(--yellow);background:var(--yellow2);padding:2px 10px;border-radius:100px;">Coming Soon</span></div>
-        <div style="font-size:12px;color:var(--text2);">Spin-the-wheel game before drop-off questions</div>
-      </div>
-    </div>
-    <div class="casino-stage">
-      <div class="wheel-pointer"></div>
-      <div id="demoWheel" class="wheel" onclick="this.classList.toggle('spinning')"><div class="wheel-center" style="font-size:18px;">🎰</div></div>
-      <div style="font-size:11px;color:var(--text2);margin-top:8px;">Click the wheel to spin →</div>
-    </div>
-    <div style="font-size:13px;color:var(--text2);line-height:1.7;">
-      Wheel shows enticing values (80% off, 65% off, 50% off...) but always lands within your chosen range (e.g. 5–15% off). The mentee gets max conversion psychology, the client gets an honest discount.
-    </div>
-  </div>
-
-  <!-- MASCOT -->
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;margin:20px 0;">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-      <div style="font-size:32px;">👷</div>
-      <div>
-        <div style="font-size:18px;font-weight:900;">Mascot Mode <span style="font-size:11px;font-weight:700;color:var(--yellow);background:var(--yellow2);padding:2px 10px;border-radius:100px;">Coming Soon</span></div>
-        <div style="font-size:12px;color:var(--text2);">Full-screen cutscene between every question</div>
-      </div>
-    </div>
-    <div class="mascot-demo">
-      <div class="mascot-char">👷</div>
-      <div class="mascot-msg">YOU'RE CRUSHING IT!</div>
-      <div class="mascot-sub">⚡ KEEP GOING</div>
-    </div>
-    <div style="font-size:13px;color:var(--text2);line-height:1.7;">
-      After each answer, a full-screen takeover plays for 1.6 seconds — character flies in, motivating message pops, confetti bursts, next question loads. Boosts engagement, reduces drop-off. 24 preset characters + custom messages.
-    </div>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════
-     SCENE 13 — TROUBLESHOOTING
-     ════════════════════════════════════════════ -->
-<div class="scene" data-scene="13">
   <div class="story-num">SCENE 12 · TROUBLESHOOTING</div>
   <div class="story-title">Common issues & fixes</div>
   <div class="story-subtitle">
@@ -1068,9 +906,9 @@
 </div>
 
 <!-- ════════════════════════════════════════════
-     SCENE 14 — FINISH
+     SCENE 12 — FINISH
      ════════════════════════════════════════════ -->
-<div class="scene" data-scene="14">
+<div class="scene" data-scene="12">
   <div style="text-align:center;padding:60px 20px;">
     <div class="finish-icon">🎉</div>
     <div style="font-size:14px;font-weight:800;color:var(--green);letter-spacing:0.25em;margin-bottom:14px;">YOU'RE READY</div>
@@ -1128,10 +966,10 @@ const SECTIONS = [
   { n: 8, name: 'Dashboard' },
   { n: 9, name: 'Customer settings' },
   { n: 10, name: 'Fire a charge' },
-  { n: 11, name: 'Funnels' },
-  { n: 12, name: 'Power features' },
-  { n: 13, name: 'Troubleshooting' },
-  { n: 14, name: 'Done!' },
+  
+  
+  { n: 11, name: 'Troubleshooting' },
+  { n: 12, name: 'Done!' },
 ];
 
 let currentScene = 1;
@@ -1143,7 +981,7 @@ const PROC_NAMES = { whop: 'Whop', stripe: 'Stripe' };
 function init() {
   applyProcessor(chosenProcessor);
   buildSectionMenu();
-  if (savedScene > 1 && savedScene <= 14) {
+  if (savedScene > 1 && savedScene <= 12) {
     if (confirm('Resume from where you left off (step ' + savedScene + ')?')) {
       goToScene(savedScene);
       return;
@@ -1166,7 +1004,7 @@ function updateMenu() {
 }
 
 function goToScene(n) {
-  if (n < 1 || n > 14) return;
+  if (n < 1 || n > 12) return;
   currentScene = n;
   document.querySelectorAll('.scene').forEach(s => s.classList.remove('active'));
 
@@ -1180,18 +1018,18 @@ function goToScene(n) {
   if (target) target.classList.add('active');
 
   // Update progress bar
-  document.getElementById('progressBar').style.width = ((n-1)/13 * 100) + '%';
+  document.getElementById('progressBar').style.width = ((n-1)/11 * 100) + '%';
   document.getElementById('stepNum').textContent = n;
 
   // Hide nav row on scenes 1 and 14
   const navRow = document.getElementById('navRow');
-  navRow.style.display = (n === 1 || n === 14) ? 'none' : '';
+  navRow.style.display = (n === 1 || n === 12) ? 'none' : '';
 
   // Update prev button state
   document.getElementById('btnPrev').classList.toggle('btn-disabled', n === 1);
 
   // Update next button label
-  document.getElementById('btnNext').textContent = n === 13 ? 'Finish →' : 'Next →';
+  document.getElementById('btnNext').textContent = n === 11 ? 'Finish →' : 'Next →';
 
   // Save progress
   localStorage.setItem('fc_guide_scene', n);

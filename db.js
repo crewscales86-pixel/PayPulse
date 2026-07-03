@@ -237,84 +237,6 @@ async function initSchema() {
     } catch (e) { /* ignore migration errors */ }
   }
 
-  // ─── QUIZ FUNNELS SCHEMA ─────────────────────────────────────
-  if (USE_PG) {
-    await pgPool.query(`
-      CREATE TABLE IF NOT EXISTS quiz_funnels (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        niche TEXT DEFAULT '',
-        slug TEXT UNIQUE NOT NULL,
-        headline TEXT DEFAULT '',
-        questions TEXT DEFAULT '[]',
-        ghl_calendar_id TEXT DEFAULT '',
-        ghl_private_token TEXT DEFAULT '',
-        ghl_webhook_url TEXT DEFAULT '',
-        meta_pixel_id TEXT DEFAULT '',
-        success_message TEXT DEFAULT '',
-        brand_color TEXT DEFAULT '#00ff88',
-        active INTEGER DEFAULT 1,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE TABLE IF NOT EXISTS funnel_leads (
-        id TEXT PRIMARY KEY,
-        funnel_id TEXT NOT NULL,
-        answers TEXT DEFAULT '{}',
-        score REAL DEFAULT 0,
-        name TEXT DEFAULT '',
-        email TEXT DEFAULT '',
-        phone TEXT DEFAULT '',
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
-  } else {
-    sqliteDb.exec(`
-      CREATE TABLE IF NOT EXISTS quiz_funnels (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        niche TEXT DEFAULT '',
-        slug TEXT UNIQUE NOT NULL,
-        headline TEXT DEFAULT '',
-        questions TEXT DEFAULT '[]',
-        ghl_calendar_id TEXT DEFAULT '',
-        ghl_private_token TEXT DEFAULT '',
-        ghl_webhook_url TEXT DEFAULT '',
-        meta_pixel_id TEXT DEFAULT '',
-        success_message TEXT DEFAULT '',
-        brand_color TEXT DEFAULT '#00ff88',
-        active INTEGER DEFAULT 1,
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-      CREATE TABLE IF NOT EXISTS funnel_leads (
-        id TEXT PRIMARY KEY,
-        funnel_id TEXT NOT NULL,
-        answers TEXT DEFAULT '{}',
-        score REAL DEFAULT 0,
-        name TEXT DEFAULT '',
-        email TEXT DEFAULT '',
-        phone TEXT DEFAULT '',
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-    `);
-  }
-
-  // Migration: add ghl_webhook_url to quiz_funnels for existing DBs
-  try {
-    if (USE_PG) {
-      await pgPool.query(`ALTER TABLE quiz_funnels ADD COLUMN IF NOT EXISTS ghl_webhook_url TEXT DEFAULT ''`);
-      await pgPool.query(`ALTER TABLE quiz_funnels ADD COLUMN IF NOT EXISTS meta_pixel_id TEXT DEFAULT ''`);
-    } else {
-      const funnelCols = sqliteDb.prepare("PRAGMA table_info(quiz_funnels)").all();
-      if (!funnelCols.find(c => c.name === 'ghl_webhook_url')) {
-        sqliteDb.exec(`ALTER TABLE quiz_funnels ADD COLUMN ghl_webhook_url TEXT DEFAULT ''`);
-      }
-      if (!funnelCols.find(c => c.name === 'meta_pixel_id')) {
-        sqliteDb.exec(`ALTER TABLE quiz_funnels ADD COLUMN meta_pixel_id TEXT DEFAULT ''`);
-      }
-    }
-  } catch (e) { /* ignore */ }
 }
 
 // ─── HELPERS ────────────────────────────────────────────────────
@@ -627,65 +549,7 @@ async function ensureAdmin() {
   }
 }
 
-// ─── QUIZ FUNNELS ────────────────────────────────────────────────
-function createFunnel(data) {
-  const id = uuid();
-  const slug = data.slug || id.slice(0, 8);
-  const now = USE_PG ? 'NOW()' : "datetime('now')";
-  const cols = ['id','user_id','name','niche','slug','headline','questions','ghl_calendar_id','ghl_private_token','ghl_webhook_url','meta_pixel_id','success_message','brand_color','active'];
-  const vals = [id, data.user_id, data.name, data.niche||'', slug, data.headline||'', JSON.stringify(data.questions||[]), data.ghl_calendar_id||'', data.ghl_private_token||'', data.ghl_webhook_url||'', data.meta_pixel_id||'', data.success_message||'', data.brand_color||'#00ff88', data.active!==undefined ? (data.active?1:0) : 1];
-  const placeholders = vals.map(() => '?').join(',');
-  const pgPlaceholders = vals.map((_,i) => `$${i+1}`).join(',');
-  if (USE_PG) {
-    return pgPool.query(`INSERT INTO quiz_funnels (${cols.join(',')}) VALUES (${pgPlaceholders})`, vals).then(() => getFunnelById(id));
-  }
-  sqliteDb.prepare(`INSERT INTO quiz_funnels (${cols.join(',')}) VALUES (${placeholders})`).run(...vals);
-  return getFunnelById(id);
-}
-function getFunnelById(id) { return get('SELECT * FROM quiz_funnels WHERE id = ?', [id]); }
-function getUserFunnels(userId) { return all('SELECT * FROM quiz_funnels WHERE user_id = ? ORDER BY created_at DESC', [userId]); }
-function getFunnelBySlug(slug) { return get('SELECT * FROM quiz_funnels WHERE slug = ?', [slug]); }
-function updateFunnel(id, updates) {
-  const keys = Object.keys(updates);
-  if (keys.length === 0) return getFunnelById(id);
-  const data = {};
-  for (const k of keys) {
-    if (k === 'questions') data[k] = JSON.stringify(updates[k]);
-    else if (k === 'active') data[k] = updates[k] ? 1 : 0;
-    else data[k] = updates[k];
-  }
-  const finalKeys = Object.keys(data);
-  if (USE_PG) {
-    const setClauses = finalKeys.map((k, i) => `${k} = $${i + 1}`).join(', ');
-    return pgPool.query(`UPDATE quiz_funnels SET ${setClauses} WHERE id = $${finalKeys.length + 1}`, [...finalKeys.map(k => data[k]), id]).then(() => getFunnelById(id));
-  }
-  const setClause = finalKeys.map(k => `${k} = ?`).join(', ');
-  sqliteDb.prepare(`UPDATE quiz_funnels SET ${setClause} WHERE id = ?`).run(...finalKeys.map(k => data[k]), id);
-  return getFunnelById(id);
-}
-function deleteFunnel(id) {
-  if (USE_PG) {
-    return pgPool.query('DELETE FROM quiz_funnels WHERE id = $1', [id]).then(() => pgPool.query('DELETE FROM funnel_leads WHERE funnel_id = $1', [id]));
-  }
-  sqliteDb.prepare('DELETE FROM quiz_funnels WHERE id = ?').run(id);
-  sqliteDb.prepare('DELETE FROM funnel_leads WHERE funnel_id = ?').run(id);
-}
 
-// ─── FUNNEL LEADS ──────────────────────────────────────────────
-function createFunnelLead(data) {
-  const id = uuid();
-  const cols = ['id','funnel_id','answers','score','name','email','phone'];
-  const vals = [id, data.funnel_id, JSON.stringify(data.answers||{}), data.score||0, data.name||'', data.email||'', data.phone||''];
-  if (USE_PG) {
-    const pgPlaceholders = vals.map((_,i) => `$${i+1}`).join(',');
-    return pgPool.query(`INSERT INTO funnel_leads (${cols.join(',')}) VALUES (${pgPlaceholders})`, vals).then(() => id);
-  }
-  sqliteDb.prepare(`INSERT INTO funnel_leads (${cols.join(',')}) VALUES (${vals.map(()=>'?').join(',')})`).run(...vals);
-  return id;
-}
-function getFunnelLeads(funnelId) {
-  return all('SELECT * FROM funnel_leads WHERE funnel_id = ? ORDER BY created_at DESC', [funnelId]);
-}
 
 module.exports = {
   initSchema,
@@ -698,6 +562,4 @@ module.exports = {
   createAdMetric, getAdMetricsByCustomer, getAdMetricsByUser, deleteAdMetric,
   getStats, getAdminStats,
   ensureAdmin,
-  createFunnel, getFunnelById, getUserFunnels, getFunnelBySlug, updateFunnel, deleteFunnel,
-  createFunnelLead, getFunnelLeads,
 };
