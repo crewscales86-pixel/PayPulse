@@ -1137,7 +1137,7 @@ function InboxPage({ notifications, onRefresh }) {
             e('div', { className: 'notif-body' }, n.body),
             e('div', { className: 'notif-time' }, fmtDate(n.created_at))
           ),
-          e('button', { className: 'notif-view' }, 'View')
+          e('button', { className: 'notif-view', onClick: () => { window.location.hash = 'customers'; } }, 'View')
         )
       ),
       notifications.length === 0 && e('div', { style: { padding: 40, textAlign:'center', color:'#555' } }, 'No notifications yet')
@@ -1509,6 +1509,10 @@ function FunnelsPage({ showToast }) {
               e('span', null, (f.questions ? f.questions.length : 0) + ' questions'),
               e('span', { style: { color: f.active ? 'var(--accent)' : 'var(--danger)' } }, f.active ? 'Active' : 'Inactive')
             ),
+            f.active && e('div', { style: { fontSize: 11, color: 'var(--text2)', marginBottom: 8, fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 6 } },
+              e('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 } }, window.location.origin + '/f/' + f.slug),
+              e('button', { style: { background: 'var(--surface3)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 8px', fontSize: 10, fontWeight: 600, cursor: 'pointer', color: 'var(--accent)' }, onClick: () => { navigator.clipboard.writeText(window.location.origin + '/f/' + f.slug); } }, 'Copy')
+            ),
             e('div', { className: 'funnel-card-actions' },
               e('button', { className: 'btn-sm green', onClick: () => { window.location.hash = 'funnel-builder?id=' + f.id; } }, 'Edit'),
               e('button', { className: 'btn-sm', onClick: () => viewLeads(f.id) }, 'Leads'),
@@ -1526,7 +1530,12 @@ function FunnelsPage({ showToast }) {
                     e('td', null, l.name),
                     e('td', null, l.email),
                     e('td', null, l.phone || '—'),
-                    e('td', { className: 'answer-cell' }, JSON.stringify(l.answers)),
+                    e('td', { className: 'answer-cell' }, (() => {
+                      const a = l.answers || {};
+                      const keys = Object.keys(a);
+                      if (keys.length === 0) return '—';
+                      return keys.map(k => k.slice(0, 20) + ': ' + a[k]).join(' | ');
+                    })()),
                     e('td', null, fmtDate(l.created_at))
                   )))
                 )

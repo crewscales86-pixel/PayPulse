@@ -1213,6 +1213,8 @@ app.patch('/api/appointments/:id', requireAuth, async (req, res) => {
   if (oldStatus !== updated.status && updated.status === 'no_show') {
     const customer = await db.getCustomerById(updated.customer_id);
     if (customer) {
+      const currentCredit = parseFloat(customer.credit_balance) || 0;
+      const rate = parseFloat(customer.rate_per_trigger) || 147;
       await db.updateCustomer(customer.id, {
         credit_balance: currentCredit + rate
       });

@@ -137,23 +137,38 @@ async function initSchema() {
   } else {
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS users (
-                id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
-                company_name TEXT DEFAULT '', email TEXT NOT NULL, phone TEXT DEFAULT '', status TEXT DEFAULT 'new',
-                card_on_file INTEGER DEFAULT 0, stripe_customer_id TEXT DEFAULT '', stripe_payment_method_id TEXT DEFAULT '',
-                whop_member_id TEXT DEFAULT '', whop_payment_method_id TEXT DEFAULT '', rate_per_trigger REAL DEFAULT 147,
-                total_charged REAL DEFAULT 0, total_triggers INTEGER DEFAULT 0,
-                credit_balance REAL DEFAULT 0,
-                ghl_location_id TEXT DEFAULT '',
-                contact_created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_contacted_at TIMESTAMP NULL,
+                id TEXT PRIMARY KEY, name TEXT NOT NULL,
+                company_name TEXT DEFAULT '', email TEXT NOT NULL, password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'agency', processor TEXT DEFAULT 'stripe',
+                plan TEXT DEFAULT 'free', monthly_rate REAL DEFAULT 0, active INTEGER DEFAULT 1,
+                stripe_secret_key TEXT DEFAULT '', stripe_publishable_key TEXT DEFAULT '',
+                stripe_customer_id TEXT DEFAULT '', stripe_subscription_id TEXT DEFAULT '',
+                whop_api_key TEXT DEFAULT '', whop_company_id TEXT DEFAULT '',
+                appointment_tracking_mode INTEGER DEFAULT 0,
+                ghl_webhook_secret TEXT DEFAULT '', whop_webhook_secret TEXT DEFAULT '',
+                failed_charge_webhook_url TEXT DEFAULT '',
                 created_at TEXT DEFAULT (datetime('now'))
               );
+      CREATE TABLE IF NOT EXISTS customers (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
+        company_name TEXT DEFAULT '', email TEXT NOT NULL, phone TEXT DEFAULT '', status TEXT DEFAULT 'new',
+        card_on_file INTEGER DEFAULT 0, stripe_customer_id TEXT DEFAULT '', stripe_payment_method_id TEXT DEFAULT '',
+        whop_member_id TEXT DEFAULT '', whop_payment_method_id TEXT DEFAULT '', rate_per_trigger REAL DEFAULT 147,
+        total_charged REAL DEFAULT 0, total_triggers INTEGER DEFAULT 0,
+        credit_balance REAL DEFAULT 0,
+        ghl_location_id TEXT DEFAULT '',
+        contact_created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_contacted_at TIMESTAMP NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
       CREATE TABLE IF NOT EXISTS charges (
         id TEXT PRIMARY KEY, user_id TEXT NOT NULL, customer_id TEXT NOT NULL,
         customer_name TEXT DEFAULT '', customer_email TEXT DEFAULT '',
         amount REAL NOT NULL, processor TEXT DEFAULT 'stripe',
         status TEXT DEFAULT 'pending', stripe_charge_id TEXT DEFAULT '',
         failure_reason TEXT DEFAULT '', note TEXT DEFAULT '',
+        utm_source TEXT DEFAULT '', utm_medium TEXT DEFAULT '',
+        utm_campaign TEXT DEFAULT '', gclid TEXT DEFAULT '',
         created_at TEXT DEFAULT (datetime('now'))
       );
       CREATE TABLE IF NOT EXISTS appointments (
@@ -206,6 +221,20 @@ async function initSchema() {
     }
   } catch (e) {
     // ignore
+  }
+
+  // Migration: add utm columns to charges for SQLite
+  if (!USE_PG) {
+    try {
+      const chargeCols = sqliteDb.prepare("PRAGMA table_info(charges)").all();
+      const hasUtmSource = chargeCols.find(c => c.name === 'utm_source');
+      if (!hasUtmSource) {
+        sqliteDb.exec(`ALTER TABLE charges ADD COLUMN utm_source TEXT DEFAULT ''`);
+        sqliteDb.exec(`ALTER TABLE charges ADD COLUMN utm_medium TEXT DEFAULT ''`);
+        sqliteDb.exec(`ALTER TABLE charges ADD COLUMN utm_campaign TEXT DEFAULT ''`);
+        sqliteDb.exec(`ALTER TABLE charges ADD COLUMN gclid TEXT DEFAULT ''`);
+      }
+    } catch (e) { /* ignore migration errors */ }
   }
 
   // ─── QUIZ FUNNELS SCHEMA ─────────────────────────────────────
@@ -391,17 +420,19 @@ function createCharge(data) {
   const id = uuid();
   if (USE_PG) {
     return pgPool.query(
-      `INSERT INTO charges (id, user_id, customer_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, failure_reason, note)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      `INSERT INTO charges (id, user_id, customer_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, failure_reason, note, utm_source, utm_medium, utm_campaign, gclid)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [id, data.user_id, data.customer_id, data.customer_name, data.customer_email, data.amount,
-       data.processor, data.status, data.stripe_charge_id || '', data.failure_reason || '', data.note || '']
+       data.processor, data.status, data.stripe_charge_id || '', data.failure_reason || '', data.note || '',
+       data.utm_source || '', data.utm_medium || '', data.utm_campaign || '', data.gclid || '']
     ).then(() => getChargeById(id));
   }
   sqliteDb.prepare(
-    `INSERT INTO charges (id, user_id, customer_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, failure_reason, note)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO charges (id, user_id, customer_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, failure_reason, note, utm_source, utm_medium, utm_campaign, gclid)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(id, data.user_id, data.customer_id, data.customer_name, data.customer_email, data.amount,
-    data.processor, data.status, data.stripe_charge_id || '', data.failure_reason || '', data.note || '');
+    data.processor, data.status, data.stripe_charge_id || '', data.failure_reason || '', data.note || '',
+    data.utm_source || '', data.utm_medium || '', data.utm_campaign || '', data.gclid || '');
   return getChargeById(id);
 }
 
