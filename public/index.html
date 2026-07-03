@@ -1584,6 +1584,7 @@ function FunnelBuilder({ showToast }) {
   const [headline, setHeadline] = useState('');
   const [ghlCalendarId, setGhlCalendarId] = useState('');
   const [ghlWebhookUrl, setGhlWebhookUrl] = useState('');
+  const [metaPixelId, setMetaPixelId] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [brandColor, setBrandColor] = useState('#00ff88');
   const [active, setActive] = useState(true);
@@ -1602,7 +1603,7 @@ function FunnelBuilder({ showToast }) {
         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('paypulse_token'), 'Content-Type': 'application/json' }
       }).then(r => r.json()).then(f => {
         setName(f.name); setNiche(f.niche || ''); setHeadline(f.headline || '');
-        setGhlCalendarId(f.ghl_calendar_id || ''); setGhlWebhookUrl(f.ghl_webhook_url || ''); setSuccessMessage(f.success_message || '');
+        setGhlCalendarId(f.ghl_calendar_id || ''); setGhlWebhookUrl(f.ghl_webhook_url || ''); setMetaPixelId(f.meta_pixel_id || ''); setSuccessMessage(f.success_message || '');
         setBrandColor(f.brand_color || '#00ff88'); setActive(!!f.active);
         if (f.questions && Array.isArray(f.questions)) setQuestions(f.questions);
         setLoaded(true);
@@ -1637,7 +1638,7 @@ function FunnelBuilder({ showToast }) {
     if (!niche.trim()) { showToast('Niche/description is required', 'error'); return; }
     setSaving(true);
     try {
-      const body = { name: name.trim(), niche: niche.trim(), headline, ghl_calendar_id: ghlCalendarId, ghl_webhook_url: ghlWebhookUrl, success_message: successMessage, brand_color: brandColor, active, questions };
+      const body = { name: name.trim(), niche: niche.trim(), headline, ghl_calendar_id: ghlCalendarId, ghl_webhook_url: ghlWebhookUrl, meta_pixel_id: metaPixelId, success_message: successMessage, brand_color: brandColor, active, questions };
       if (editId) {
         await api('/api/funnels/' + editId, { method: 'PATCH', body: JSON.stringify(body) });
         showToast('Funnel updated', 'success');
@@ -1691,6 +1692,21 @@ function FunnelBuilder({ showToast }) {
         e('input', { placeholder: 'https://services.leadconnectorhq.com/hooks/...', value: ghlWebhookUrl, onChange: ev => setGhlWebhookUrl(ev.target.value) }),
         e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 6 } },
           'When a lead completes this funnel, their name, email, phone, and answers will be POSTed to this URL. Create a webhook in GHL (Settings → Webhooks) and paste it here.'
+        )
+      ),
+      e('div', { className: 'form-group' },
+        e('label', null, 'Meta Pixel ID'),
+        e('input', { placeholder: 'e.g. 123456789012345', value: metaPixelId, onChange: ev => setMetaPixelId(ev.target.value) }),
+        e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 6 } },
+          'When a lead submits, a ',
+          e('code', { style: { background: 'var(--surface3)', padding: '1px 5px', borderRadius: 3, fontSize: 10 } }, 'Lead'),
+          ' event fires via both the browser Pixel and server-side Conversions API. Also captures ',
+          e('code', { style: { background: 'var(--surface3)', padding: '1px 5px', borderRadius: 3, fontSize: 10 } }, 'fbc'),
+          '/',
+          e('code', { style: { background: 'var(--surface3)', padding: '1px 5px', borderRadius: 3, fontSize: 10 } }, 'fbp'),
+          ' from URL params. Server CAPI requires ',
+          e('code', { style: { background: 'var(--surface3)', padding: '1px 5px', borderRadius: 3, fontSize: 10 } }, 'META_ACCESS_TOKEN'),
+          ' env var.'
         )
       ),
       e('div', { className: 'form-group', style: { display: 'flex', alignItems: 'center', gap: 12 } },
@@ -1762,6 +1778,33 @@ function PublicFunnelRenderer({ slug }) {
   const [success, setSuccess] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
+  // Capture fbc/fbp from URL for Meta tracking
+  const urlParams = new URLSearchParams(window.location.search);
+  const fbcParam = urlParams.get('fbclid') ? 'fb.1.' + Date.now() + '.' + urlParams.get('fbclid') : (urlParams.get('fbc') || '');
+  const fbpParam = urlParams.get('fbp') || '';
+
+  // Inject Meta Pixel when funnel loads
+  useEffect(() => {
+    if (!funnel || !funnel.meta_pixel_id) return;
+    const pixelId = funnel.meta_pixel_id;
+    if (document.getElementById('fb-pixel-' + pixelId)) return;
+    const script = document.createElement('script');
+    script.id = 'fb-pixel-' + pixelId;
+    script.innerHTML = `
+      !function(f,b,e,v,n,t,s)
+      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+      n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t,s)}(window, document,'script',
+      'https://connect.facebook.net/en_US/fbevents.js');
+      fbq('init', '${pixelId}');
+      fbq('track', 'PageView');
+    `;
+    document.head.appendChild(script);
+  }, [funnel]);
+
   useEffect(() => {
     if (!slug) { setError('Invalid funnel URL'); setLoading(false); return; }
     fetch(API + '/api/f/' + slug)
@@ -1822,12 +1865,16 @@ function PublicFunnelRenderer({ slug }) {
       const res = await fetch(API + '/api/f/' + slug + '/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, phone, answers })
+        body: JSON.stringify({ name, email, phone, answers, fbc: fbcParam, fbp: fbpParam })
       });
       const data = await res.json();
       if (data.success) {
         setSuccess(true);
         setSuccessMsg(data.successMessage);
+        // Fire Meta Pixel Lead event
+        if (typeof fbq !== 'undefined') {
+          fbq('track', 'Lead');
+        }
       } else {
         setError(data.error || 'Submission failed');
       }

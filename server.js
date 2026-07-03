@@ -1590,14 +1590,14 @@ app.get('/api/funnels/:id', requireAuth, async (req, res) => {
 
 app.post('/api/funnels', requireAuth, async (req, res) => {
   try {
-    const { name, niche, headline, questions, ghl_calendar_id, ghl_private_token, ghl_webhook_url, success_message, brand_color } = req.body;
+    const { name, niche, headline, questions, ghl_calendar_id, ghl_private_token, ghl_webhook_url, meta_pixel_id, success_message, brand_color } = req.body;
     if (!name) return res.status(400).json({ error: 'Name is required' });
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Math.random().toString(36).slice(2, 6);
     const funnel = await db.createFunnel({
       user_id: req.user.id, name, niche: niche || '', slug,
       headline: headline || '', questions: questions || [],
       ghl_calendar_id: ghl_calendar_id || '', ghl_private_token: ghl_private_token || '',
-      ghl_webhook_url: ghl_webhook_url || '',
+      ghl_webhook_url: ghl_webhook_url || '', meta_pixel_id: meta_pixel_id || '',
       success_message: success_message || '', brand_color: brand_color || '#00ff88'
     });
     funnel.questions = JSON.parse(funnel.questions || '[]');
@@ -1610,7 +1610,7 @@ app.patch('/api/funnels/:id', requireAuth, async (req, res) => {
     const existing = await db.getFunnelById(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
     if (existing.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
-    const { name, niche, headline, questions, ghl_calendar_id, ghl_private_token, ghl_webhook_url, success_message, brand_color, active } = req.body;
+    const { name, niche, headline, questions, ghl_calendar_id, ghl_private_token, ghl_webhook_url, meta_pixel_id, success_message, brand_color, active } = req.body;
     const updates = {};
     if (name !== undefined) updates.name = name;
     if (niche !== undefined) updates.niche = niche;
@@ -1619,6 +1619,7 @@ app.patch('/api/funnels/:id', requireAuth, async (req, res) => {
     if (ghl_calendar_id !== undefined) updates.ghl_calendar_id = ghl_calendar_id;
     if (ghl_private_token !== undefined) updates.ghl_private_token = ghl_private_token;
     if (ghl_webhook_url !== undefined) updates.ghl_webhook_url = ghl_webhook_url;
+    if (meta_pixel_id !== undefined) updates.meta_pixel_id = meta_pixel_id;
     if (success_message !== undefined) updates.success_message = success_message;
     if (brand_color !== undefined) updates.brand_color = brand_color;
     if (active !== undefined) updates.active = active;
@@ -1690,11 +1691,34 @@ app.post('/api/f/:slug/submit', async (req, res) => {
     const funnel = await db.getFunnelBySlug(req.params.slug);
     if (!funnel) return res.status(404).json({ error: 'Funnel not found' });
     if (!funnel.active) return res.status(403).json({ error: 'Funnel not active' });
-    const { name, email, phone, answers } = req.body;
+    const { name, email, phone, answers, fbc, fbp } = req.body;
     if (!name || !email) return res.status(400).json({ error: 'Name and email required' });
     const leadId = await db.createFunnelLead({
       funnel_id: funnel.id, answers: answers || {}, score: 0, name, email, phone: phone || ''
     });
+
+    // Fire Meta CAPI event if pixel ID is configured
+    const capiPromise = (funnel.meta_pixel_id && process.env.META_ACCESS_TOKEN)
+      ? fetch(`https://graph.facebook.com/v18.0/${funnel.meta_pixel_id}/events`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            data: [{
+              event_name: 'Lead',
+              event_time: Math.floor(Date.now() / 1000),
+              action_source: 'website',
+              event_source_url: req.get('Referer') || '',
+              user_data: {
+                em: [Buffer.from(email.toLowerCase().trim()).toString('base64')],
+                ph: phone ? [Buffer.from(phone.replace(/[^0-9]/g, '')).toString('base64')] : [],
+                fn: [Buffer.from(name.toLowerCase().trim().split(' ')[0]).toString('base64')]
+              },
+              ...(fbc ? { fbc } : {}),
+              ...(fbp ? { fbp } : {})
+            }]
+          })
+        }).catch(e => console.error('Meta CAPI error:', e.message))
+      : Promise.resolve();
 
     // Forward lead to GHL webhook if configured
     if (funnel.ghl_webhook_url) {
@@ -1709,7 +1733,9 @@ app.post('/api/f/:slug/submit', async (req, res) => {
             name, email, phone: phone || '',
             answers: answers || {},
             score: 0,
-            lead_id: leadId
+            lead_id: leadId,
+            fbc: fbc || '',
+            fbp: fbp || ''
           })
         });
       } catch (e) {
@@ -1717,7 +1743,9 @@ app.post('/api/f/:slug/submit', async (req, res) => {
       }
     }
 
-    res.json({ success: true, leadId, successMessage: funnel.success_message || 'Thanks! We\'ll be in touch soon.' });
+    await capiPromise;
+
+    res.json({ success: true, leadId, metaPixelId: funnel.meta_pixel_id || '', successMessage: funnel.success_message || 'Thanks! We\'ll be in touch soon.' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
