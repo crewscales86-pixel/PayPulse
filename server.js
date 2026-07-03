@@ -1048,6 +1048,20 @@ app.post('/api/customers/:id/charge', requireAuth, async (req, res) => {
   res.json(charge);
 });
 
+// Test failed charge alert webhook (no real charge — just tests the GHL webhook)
+app.post('/api/customers/:id/test-fail-alert', requireAuth, async (req, res) => {
+  try {
+    const customer = await db.getCustomerById(req.params.id);
+    if (!customer || customer.user_id !== req.user.id)
+      return res.status(404).json({ error: 'Not found' });
+    const user = await db.getUserById(req.user.id);
+    if (!user.failed_charge_webhook_url)
+      return res.status(400).json({ error: 'No Failed Charge Webhook URL set in Settings' });
+    await fireFailWebhook(user, customer, parseFloat(customer.rate_per_trigger) || 75, 'Test — simulated card decline');
+    res.json({ success: true, message: `Test alert sent for ${customer.name}` });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── STRIPE CARD SETUP ───────────────────────────────────────────
 app.post('/api/customers/:id/setup-card', requireAuth, async (req, res) => {
   try {

@@ -861,6 +861,18 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
             'Click "Get Card" to generate a $1 Stripe Checkout link. Send it to your client — their card is saved automatically.'
           )
         ),
+        editModal.id !== 'new' && settings?.failedChargeWebhookUrl && e('div', { style: { marginTop: 12 } },
+          e('button', {
+            className: 'btn-sm',
+            style: { color: 'var(--warn)', borderColor: 'rgba(255,170,0,0.3)', background: 'rgba(255,170,0,0.08)' },
+            onClick: async () => {
+              try {
+                await api('/api/customers/' + editModal.id + '/test-fail-alert', { method: 'POST' });
+                showToast('Test fail alert sent to GHL!', 'success');
+              } catch (err) { showToast(err.message, 'error'); }
+            }
+          }, 'Test Fail Alert →')
+        ),
           e('div', { className: 'modal-actions' },
           e('button', { className: 'btn-ghost', onClick: () => setEditModal(null) }, 'Cancel'),
           e(Button, { className: 'btn-primary', loading: editModal.saving, onClick: doEdit }, editModal.id === 'new' ? 'Add Customer' : 'Save')

@@ -707,11 +707,6 @@
       <div class="feature-desc">Red badge = can't be charged yet. They need to make a payment first.</div>
     </div>
     <div class="feature-tile">
-      <div class="feature-emoji">🧠</div>
-      <div class="feature-title">Adaptive Ready</div>
-      <div class="feature-desc">Purple tag means daily ad spend, CPL & CPBC targets are set. Adaptive funnels can use them.</div>
-    </div>
-    <div class="feature-tile">
       <div class="feature-emoji">↔️</div>
       <div class="feature-title">Drag to move</div>
       <div class="feature-desc">Drag a card between columns to change pipeline stage.</div>
@@ -889,19 +884,6 @@
     </div>
   </div>
 
-  <div class="trouble-item" onclick="this.classList.toggle('open')">
-    <div class="trouble-q">AI question generation returns nothing</div>
-    <div class="trouble-a">
-      PayPulse needs an <code>ANTHROPIC_API_KEY</code> environment variable set in Railway. If it's missing, the funnel builder shows fallback default questions instead.<br><br>
-      Get a key from <strong>console.anthropic.com/settings/keys</strong> and add it in Railway → Variables.
-    </div>
-  </div>
-
-  <div class="trouble-item" onclick="this.classList.toggle('open')">
-    <div class="trouble-q">Funnel disappeared from the dashboard</div>
-    <div class="trouble-a">
-      Funnels have an <code>active</code> flag. If it got toggled to false, the funnel still exists but is hidden. Re-activate it in the Funnels tab by clicking the <strong>Activate</strong> button on the card.<br><br>
-    </div>
   </div>
 </div>
 
@@ -966,8 +948,6 @@ const SECTIONS = [
   { n: 8, name: 'Dashboard' },
   { n: 9, name: 'Customer settings' },
   { n: 10, name: 'Fire a charge' },
-  
-  
   { n: 11, name: 'Troubleshooting' },
   { n: 12, name: 'Done!' },
 ];
