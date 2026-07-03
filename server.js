@@ -911,7 +911,9 @@ app.get('/api/stripe/customers', requireAuth, async (req, res) => {
     let hasMore = true;
     let startingAfter = null;
     while (hasMore && customers.length < 200) {
-      const list = await stripe.customers.list({ limit: 100, starting_after: startingAfter });
+      const params = { limit: 100 };
+      if (startingAfter) params.starting_after = startingAfter;
+      const list = await stripe.customers.list(params);
       customers.push(...list.data.map(c => ({
         id: c.id,
         name: c.name || c.email?.split('@')[0] || 'Unknown',
