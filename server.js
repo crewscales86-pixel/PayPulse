@@ -613,7 +613,85 @@ async function processCharge(user, customer, note = '', utmData = {}) {
     return db.getChargeById(charge.id);
   }
 
-  // Whop or no Stripe key — simulated charge
+  // Whop processor — real API call
+  if (customer.whop_member_id && customer.whop_payment_method_id) {
+    try {
+      const response = await fetch('https://api.whop.com/v1/payments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${user.whop_api_key}`
+        },
+        body: JSON.stringify({
+          company_id: user.whop_company_id,
+          member_id: customer.whop_member_id,
+          payment_method_id: customer.whop_payment_method_id,
+          total: chargeAmount,
+          plan: { currency: 'usd' },
+          metadata: { paypulse_customer_id: customer.id }
+        })
+      });
+
+      if (response.ok) {
+        const payment = await response.json();
+        await db.updateCharge(charge.id, {
+          status: 'succeeded',
+          stripe_charge_id: payment.id
+        });
+        await db.updateCustomer(customer.id, {
+          total_charged:
+            (parseFloat(customer.total_charged) || 0) + chargeAmount,
+          total_triggers:
+            (parseInt(customer.total_triggers) || 0) + 1
+        });
+        await db.addNotification({
+          user_id: user.id,
+          type: 'success',
+          title: `Charge successful — ${customer.name}`,
+          body: `$${chargeAmount.toFixed(2)} charged via Whop. Payment: ${payment.id}`
+        });
+      } else {
+        const errorBody = await response.text();
+        let failureReason;
+        try {
+          const errJson = JSON.parse(errorBody);
+          failureReason = errJson.error || errJson.message || errorBody;
+        } catch {
+          failureReason = errorBody;
+        }
+        await db.updateCharge(charge.id, {
+          status: 'failed',
+          failure_reason: failureReason
+        });
+        await db.updateCustomer(customer.id, { status: 'at_risk' });
+        await db.addNotification({
+          user_id: user.id,
+          type: 'fail',
+          title: `Charge failed — ${customer.name}`,
+          body: `Whop error: ${failureReason}`
+        });
+        fireFailWebhook(user, customer, chargeAmount, failureReason);
+      }
+    } catch (fetchErr) {
+      console.error('Whop charge error:', fetchErr);
+      const reason = fetchErr.message || 'Whop network error';
+      await db.updateCharge(charge.id, {
+        status: 'failed',
+        failure_reason: reason
+      });
+      await db.updateCustomer(customer.id, { status: 'at_risk' });
+      await db.addNotification({
+        user_id: user.id,
+        type: 'fail',
+        title: `Charge failed — ${customer.name}`,
+        body: `Whop error: ${reason}`
+      });
+      fireFailWebhook(user, customer, chargeAmount, reason);
+    }
+    return db.getChargeById(charge.id);
+  }
+
+  // Fallback — simulated charge (no Whop payment method configured)
   await db.updateCharge(charge.id, {
     status: 'succeeded',
     stripe_charge_id: `sim_${uuidv4().slice(0,8)}`
@@ -822,6 +900,35 @@ app.get('/api/customers', requireAuth, async (req, res) => {
   res.json(await db.getCustomersByUser(req.user.id));
 });
 
+// ─── STRIPE CUSTOMER SYNC ───────────────────────────────────────
+app.get('/api/stripe/customers', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.user.id);
+    if (!user.stripe_secret_key)
+      return res.status(400).json({ error: 'Set your Stripe Secret Key in Settings first' });
+    const stripe = Stripe(user.stripe_secret_key);
+    const customers = [];
+    let hasMore = true;
+    let startingAfter = null;
+    while (hasMore && customers.length < 200) {
+      const list = await stripe.customers.list({ limit: 100, starting_after: startingAfter });
+      customers.push(...list.data.map(c => ({
+        id: c.id,
+        name: c.name || c.email?.split('@')[0] || 'Unknown',
+        email: c.email || '',
+        phone: c.phone || '',
+        card_on_file: c.invoice_settings?.default_payment_method ? true : false,
+        created: c.created
+      })));
+      hasMore = list.has_more;
+      startingAfter = list.data[list.data.length - 1]?.id;
+    }
+    res.json(customers);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/customers', requireAuth, async (req, res) => {
   try {
     const c = await db.createCustomer({
@@ -835,6 +942,44 @@ app.post('/api/customers', requireAuth, async (req, res) => {
       body: `${c.email} added manually.`
     });
     res.json(c);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── IMPORT STRIPE CUSTOMERS ────────────────────────────────────
+app.post('/api/customers/import-stripe', requireAuth, async (req, res) => {
+  try {
+    const { customerIds } = req.body;
+    if (!customerIds || !customerIds.length)
+      return res.status(400).json({ error: 'No customer IDs provided' });
+    const user = await db.getUserById(req.user.id);
+    if (!user.stripe_secret_key)
+      return res.status(400).json({ error: 'Set Stripe Secret Key first' });
+    const stripe = Stripe(user.stripe_secret_key);
+    const imported = [];
+    const skipped = [];
+    for (const id of customerIds) {
+      const existing = await db.getCustomerByEmailAndUser(null, req.user.id);
+      try {
+        const sCust = await stripe.customers.retrieve(id);
+        if (!sCust) { skipped.push(id); continue; }
+        const existingByEmail = sCust.email ? await db.getCustomerByEmailAndUser(sCust.email, req.user.id) : null;
+        if (existingByEmail) { skipped.push(sCust.email); continue; }
+        const c = await db.createCustomer({
+          user_id: req.user.id,
+          name: sCust.name || sCust.email?.split('@')[0] || id.slice(-8),
+          email: sCust.email || '',
+          phone: sCust.phone || '',
+          stripe_customer_id: sCust.id,
+          stripe_payment_method_id: sCust.invoice_settings?.default_payment_method || '',
+          card_on_file: sCust.invoice_settings?.default_payment_method ? 1 : 0,
+          status: 'new'
+        });
+        imported.push(c);
+      } catch (e) { skipped.push(id); }
+    }
+    res.json({ imported: imported.length, skipped: skipped.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1418,9 +1563,159 @@ app.get('/api/admin/agencies/:id/subscription', requireAuth, requireAdmin, async
   });
 });
 
+// ─── QUIZ FUNNEL ROUTES ─────────────────────────────────────────
+app.get('/api/funnels', requireAuth, async (req, res) => {
+  try {
+    const funnels = await db.getUserFunnels(req.user.id);
+    // Parse questions JSON for each funnel
+    const parsed = funnels.map(f => ({ ...f, questions: JSON.parse(f.questions || '[]') }));
+    res.json(parsed);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/funnels', requireAuth, async (req, res) => {
+  try {
+    const { name, niche, headline, questions, ghl_calendar_id, ghl_private_token, success_message, brand_color } = req.body;
+    if (!name) return res.status(400).json({ error: 'Name is required' });
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Math.random().toString(36).slice(2, 6);
+    const funnel = await db.createFunnel({
+      user_id: req.user.id, name, niche: niche || '', slug,
+      headline: headline || '', questions: questions || [],
+      ghl_calendar_id: ghl_calendar_id || '', ghl_private_token: ghl_private_token || '',
+      success_message: success_message || '', brand_color: brand_color || '#00ff88'
+    });
+    funnel.questions = JSON.parse(funnel.questions || '[]');
+    res.status(201).json(funnel);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.patch('/api/funnels/:id', requireAuth, async (req, res) => {
+  try {
+    const existing = await db.getFunnelById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    if (existing.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    const { name, niche, headline, questions, ghl_calendar_id, ghl_private_token, success_message, brand_color, active } = req.body;
+    const updates = {};
+    if (name !== undefined) updates.name = name;
+    if (niche !== undefined) updates.niche = niche;
+    if (headline !== undefined) updates.headline = headline;
+    if (questions !== undefined) updates.questions = questions;
+    if (ghl_calendar_id !== undefined) updates.ghl_calendar_id = ghl_calendar_id;
+    if (ghl_private_token !== undefined) updates.ghl_private_token = ghl_private_token;
+    if (success_message !== undefined) updates.success_message = success_message;
+    if (brand_color !== undefined) updates.brand_color = brand_color;
+    if (active !== undefined) updates.active = active;
+    const funnel = await db.updateFunnel(req.params.id, updates);
+    funnel.questions = JSON.parse(funnel.questions || '[]');
+    res.json(funnel);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/funnels/:id', requireAuth, async (req, res) => {
+  try {
+    const existing = await db.getFunnelById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    if (existing.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    await db.deleteFunnel(req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/funnels/:id/toggle', requireAuth, async (req, res) => {
+  try {
+    const existing = await db.getFunnelById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    if (existing.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    const funnel = await db.updateFunnel(req.params.id, { active: existing.active ? 0 : 1 });
+    funnel.questions = JSON.parse(funnel.questions || '[]');
+    res.json(funnel);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/funnels/generate-questions', requireAuth, async (req, res) => {
+  try {
+    const { niche } = req.body;
+    if (!niche) return res.status(400).json({ error: 'Niche is required' });
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      // Fallback questions
+      return res.json([
+        { question: `Are you actively looking for ${niche} services right now?`, type: 'yesno', options: null },
+        { question: `How soon do you need ${niche} help?`, type: 'choice', options: ['ASAP', 'Within a week', 'Within a month', 'Just browsing'] },
+        { question: `What is your approximate monthly budget for ${niche}?`, type: 'choice', options: ['Under $500', '$500-$1,000', '$1,000-$5,000', '$5,000+'] },
+        { question: `Have you used ${niche} services before?`, type: 'yesno', options: null },
+      ]);
+    }
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        system: 'You are a quiz funnel question generator for local service businesses. Generate exactly 4 short yes/no or multiple choice qualification questions based on the given niche. Return ONLY a JSON array of objects with fields: question (string), type ("yesno"|"choice"), options (array of strings, null for yesno).',
+        messages: [{ role: 'user', content: `Generate 4 qualification questions for a ${niche} business quiz funnel.` }]
+      })
+    });
+    const data = await response.json();
+    const text = data.content?.[0]?.text || '[]';
+    const questions = JSON.parse(text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim());
+    res.json(Array.isArray(questions) ? questions : []);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Public funnel endpoint (no auth) — submit lead
+app.post('/api/f/:slug/submit', async (req, res) => {
+  try {
+    const funnel = await db.getFunnelBySlug(req.params.slug);
+    if (!funnel) return res.status(404).json({ error: 'Funnel not found' });
+    if (!funnel.active) return res.status(403).json({ error: 'Funnel not active' });
+    const { name, email, phone, answers } = req.body;
+    if (!name || !email) return res.status(400).json({ error: 'Name and email required' });
+    const leadId = await db.createFunnelLead({
+      funnel_id: funnel.id, answers: answers || {}, score: 0, name, email, phone: phone || ''
+    });
+    res.json({ success: true, leadId, successMessage: funnel.success_message || 'Thanks! We\'ll be in touch soon.' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Get funnel by slug (public — for the renderer)
+app.get('/api/f/:slug', async (req, res) => {
+  try {
+    const funnel = await db.getFunnelBySlug(req.params.slug);
+    if (!funnel) return res.status(404).json({ error: 'Funnel not found' });
+    if (!funnel.active) return res.status(403).json({ error: 'Funnel not active' });
+    funnel.questions = JSON.parse(funnel.questions || '[]');
+    res.json(funnel);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Get leads for a specific funnel
+app.get('/api/funnels/:id/leads', requireAuth, async (req, res) => {
+  try {
+    const existing = await db.getFunnelById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    if (existing.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    const leads = await db.getFunnelLeads(req.params.id);
+    const parsed = leads.map(l => ({ ...l, answers: JSON.parse(l.answers || '{}') }));
+    res.json(parsed);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Serve the public funnel renderer
+app.get('/f/*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 // ─── SERVE ────────────────────────────────────────────────────────
 app.get('/', (req, res) =>
   res.sendFile(path.join(__dirname, 'public', 'index.html'))
+);
+app.get('/guide', (req, res) =>
+  res.sendFile(path.join(__dirname, 'public', 'guide.html'))
 );
 
 app.listen(PORT, () => {

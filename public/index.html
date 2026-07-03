@@ -266,6 +266,55 @@
     from { transform: translateX(100%); opacity: 0; }
     to { transform: translateX(0); opacity: 1; }
   }
+
+  /* ─── QUIZ FUNNELS ─────────────────────────────────────────── */
+  .funnels-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  .funnels-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .funnel-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; transition: 0.15s; }
+  .funnel-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .funnel-card-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .funnel-card-niche { color: var(--text2); font-size: 12px; margin-bottom: 8px; }
+  .funnel-card-meta { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; font-size: 12px; color: var(--text2); }
+  .funnel-card-meta .slug { font-family: monospace; color: var(--blue); }
+  .funnel-card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .funnel-leads-table { margin-top: 20px; }
+  .funnel-leads-table td { font-size: 12px; }
+  .funnel-leads-table .answer-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Funnel Builder Form */
+  .funnel-builder-wrap { max-width: 800px; margin: 0 auto; }
+  .funnel-builder-form { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+  .funnel-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .funnel-form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .funnel-question-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+  .funnel-question-card .q-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .funnel-question-card .q-number { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); font-weight: 700; }
+  .funnel-question-card .q-text { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .funnel-question-card .q-type { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+  .funnel-question-card .q-type.yesno { background: rgba(68,136,255,0.1); color: var(--blue); }
+  .funnel-question-card .q-type.choice { background: rgba(170,102,255,0.1); color: var(--purple); }
+  .funnel-question-card .q-options { margin-top: 8px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .funnel-question-card .q-option { padding: 3px 10px; border-radius: 6px; background: var(--surface3); font-size: 11px; color: var(--text2); }
+  .funnel-question-card .q-remove { color: var(--danger); cursor: pointer; font-size: 16px; padding: 4px; }
+  .btn-ai { padding: 10px 20px; border-radius: 8px; background: linear-gradient(135deg, var(--purple), var(--blue)); color: #fff; font-weight: 700; font-size: 13px; border: none; display: flex; align-items: center; gap: 8px; }
+
+  /* Public Funnel Renderer */
+  .public-funnel { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; text-align: center; }
+  .pf-box { width: 100%; max-width: 520px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 40px; }
+  .pf-progress { width: 100%; height: 4px; background: var(--surface3); border-radius: 2px; margin-bottom: 32px; overflow: hidden; }
+  .pf-progress-bar { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
+  .pf-headline { font-size: 26px; font-weight: 800; margin-bottom: 12px; line-height: 1.3; }
+  .pf-subtitle { color: var(--text2); font-size: 15px; margin-bottom: 32px; }
+  .pf-question { font-size: 18px; font-weight: 700; margin-bottom: 24px; line-height: 1.4; }
+  .pf-option { display: block; width: 100%; padding: 14px 20px; margin-bottom: 10px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-size: 15px; font-weight: 600; text-align: left; cursor: pointer; transition: 0.15s; }
+  .pf-option:hover { border-color: var(--accent); background: rgba(0,255,136,0.05); }
+  .pf-option.selected { border-color: var(--accent); background: rgba(0,255,136,0.1); }
+  .pf-contact-form { text-align: left; }
+  .pf-contact-form .form-group { margin-bottom: 16px; }
+  .pf-success { text-align: center; }
+  .pf-success-icon { font-size: 64px; margin-bottom: 16px; }
+  .pf-success-msg { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+  .pf-success-sub { color: var(--text2); font-size: 14px; }
 </style>
 </head>
 <body>
@@ -607,6 +656,7 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
   const [editModal, setEditModal] = useState(null);
   const [detailModal, setDetailModal] = useState(null);
   const [note, setNote] = useState('');
+  const [syncModal, setSyncModal] = useState(false);
 
   const processors = { all: 'All', whop: 'Whop', stripe: 'Stripe' };
 
@@ -716,6 +766,7 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
       e('div', { className: 'nav-spacer' }),
       e('button', { className: 'btn-primary', style: { padding:'8px 18px', fontSize:13 }, onClick: () => setEditModal({ id: 'new', name: '', email: '', rate_per_trigger: 147, status: 'new', ghl_location_id: '', stripe_customer_id: '', stripe_payment_method_id: '', company_name: '' }) }, '+ Add Customer'),
       e('button', { className: 'btn-sm', style: { padding:'8px 16px' }, onClick: onRefresh }, '↻ Sync'),
+      e('button', { className: 'btn-sm', style: { padding:'8px 16px', background:'rgba(0,180,255,0.1)', color:'var(--blue)', borderColor:'rgba(0,180,255,0.3)' }, onClick: () => setSyncModal(true) }, '⬇ Stripe'),
       e('input', { className: 'search-box', placeholder: 'Search...', value: search, onChange: ev => setSearch(ev.target.value) })
     ),
     e('div', { className: 'filters', style: { marginBottom:24 } },
@@ -782,6 +833,11 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
       onClose: () => setDetailModal(null),
       onRefresh
     }),
+    syncModal && e(SyncFromStripeModal, {
+      onClose: () => setSyncModal(false),
+      onImported: onRefresh,
+      showToast
+    }),
     editModal && e('div', { className: 'modal-back', onClick: ev => ev.target === ev.currentTarget && setEditModal(null) },
       e('div', { className: 'modal' },
         e('h3', null, editModal.id === 'new' ? 'Add Customer' : 'Edit ' + editModal.name),
@@ -837,6 +893,78 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
           e('div', { className: 'modal-actions' },
           e('button', { className: 'btn-ghost', onClick: () => setEditModal(null) }, 'Cancel'),
           e(Button, { className: 'btn-primary', loading: editModal.saving, onClick: doEdit }, editModal.id === 'new' ? 'Add Customer' : 'Save')
+        )
+      )
+    )
+  );
+}
+
+// ─── SYNC FROM STRIPE MODAL ────────────────────────────────────
+function SyncFromStripeModal({ onClose, onImported, showToast }) {
+  const [customers, setCustomers] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState({});
+  const [importing, setImporting] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const list = await api('/api/stripe/customers');
+      setCustomers(list);
+    } catch (err) { showToast(err.message, 'error'); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const toggle = (id) => setSelected(prev => ({ ...prev, [id]: !prev[id] }));
+
+  const doImport = async () => {
+    const ids = Object.entries(selected).filter(([,v]) => v).map(([k]) => k);
+    if (!ids.length) { showToast('Select at least one customer', 'warn'); return; }
+    setImporting(true);
+    try {
+      const res = await api('/api/customers/import-stripe', { method: 'POST', body: JSON.stringify({ customerIds: ids }) });
+      showToast(`✓ ${res.imported} imported · ${res.skipped} skipped`, 'success');
+      onImported(); onClose();
+    } catch (err) { showToast(err.message, 'error'); }
+    setImporting(false);
+  };
+
+  const allSelected = customers && selected && Object.keys(selected).filter(k => selected[k]).length === customers.length;
+
+  return e('div', { className: 'modal-back', onClick: ev => ev.target === ev.currentTarget && onClose() },
+    e('div', { className: 'modal wide', style: { maxHeight: '80vh', display: 'flex', flexDirection: 'column' } },
+      e('h3', null, 'Import from Stripe'),
+      e('div', { style: { color: 'var(--text2)', fontSize: 13, marginBottom: 16 } },
+        customers ? `Found ${customers.length} Stripe customers` : 'Loading...'
+      ),
+      loading && e('div', { style: { textAlign: 'center', padding: 40, color: 'var(--text2)' } }, 'Loading...'),
+      !loading && customers && e('div', { style: { flex: 1, overflow: 'auto', marginBottom: 16 } },
+        e('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer' }, onClick: () => {
+          const all = {};
+          customers.forEach(c => { all[c.id] = !allSelected; });
+          setSelected(all);
+        } },
+          e('input', { type: 'checkbox', checked: !!allSelected, readOnly: true, style: { accentColor: 'var(--accent)' } }),
+          e('strong', { style: { fontSize: 12 } }, allSelected ? 'Deselect all' : 'Select all')
+        ),
+        customers.map(c =>
+          e('div', { key: c.id, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer' }, onClick: () => toggle(c.id) },
+            e('input', { type: 'checkbox', checked: !!selected[c.id], readOnly: true, style: { accentColor: 'var(--accent)' } }),
+            e('div', { style: { flex: 1 } },
+              e('div', { style: { fontWeight: 600, fontSize: 13 } }, c.name),
+              e('div', { style: { color: 'var(--text2)', fontSize: 11 } }, c.email)
+            ),
+            c.card_on_file
+              ? e('span', { className: 'tag tag-green', style: { fontSize: 9 } }, '✓ Card')
+              : e('span', { className: 'tag tag-red', style: { fontSize: 9 } }, 'No card')
+          )
+        )
+      ),
+      !loading && customers && e('div', { className: 'modal-actions' },
+        e('button', { className: 'btn-ghost', onClick: onClose }, 'Cancel'),
+        e(Button, { className: 'btn-primary', loading: importing, onClick: doImport },
+          importing ? 'Importing...' : `Import ${Object.values(selected).filter(Boolean).length} Selected`
         )
       )
     )
@@ -1312,7 +1440,410 @@ function AdminSettingsPage({ user, onSave }) {
   );
 }
 
-// ─── APP ──────────────────────────────────────────────────────────
+// ─── QUIZ FUNNELS ──────────────────────────────────────────────────
+function FunnelsPage({ showToast }) {
+  const [funnels, setFunnels] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState(null);
+  const [leads, setLeads] = useState([]);
+  const [leadsLoading, setLeadsLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await api('/api/funnels');
+      setFunnels(data);
+    } catch (err) { showToast(err.message, 'error'); }
+    setLoading(false);
+  }, [showToast]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const toggleFunnel = async (id) => {
+    try {
+      const updated = await api('/api/funnels/' + id + '/toggle', { method: 'POST' });
+      setFunnels(funnels.map(f => f.id === id ? updated : f));
+      showToast(updated.active ? 'Funnel activated' : 'Funnel deactivated', 'success');
+    } catch (err) { showToast(err.message, 'error'); }
+  };
+
+  const deleteFunnel = async (id) => {
+    if (!confirm('Delete this funnel and all its leads?')) return;
+    try {
+      await api('/api/funnels/' + id, { method: 'DELETE' });
+      setFunnels(funnels.filter(f => f.id !== id));
+      showToast('Funnel deleted', 'success');
+    } catch (err) { showToast(err.message, 'error'); }
+  };
+
+  const viewLeads = async (id) => {
+    if (expandedId === id) { setExpandedId(null); return; }
+    setExpandedId(id);
+    setLeadsLoading(true);
+    try {
+      const data = await api('/api/funnels/' + id + '/leads');
+      setLeads(data);
+    } catch (err) { showToast(err.message, 'error'); }
+    setLeadsLoading(false);
+  };
+
+  if (loading) return e('div', { className: 'page' }, e('h2', { className: 'page-title' }, 'Loading...'));
+
+  return e('div', { className: 'page' },
+    e('div', { className: 'funnels-header' },
+      e('h2', { className: 'page-title', style: { marginBottom: 0 } }, '\\uD83E\\uDD16 Quiz Funnels'),
+      e('button', { className: 'btn-primary', style: { width: 'auto' }, onClick: () => { window.location.hash = 'funnel-builder'; } }, '+ New Funnel')
+    ),
+    funnels.length === 0
+      ? e('div', { style: { textAlign: 'center', padding: '60px 20px', color: 'var(--text2)' } },
+          e('div', { style: { fontSize: 48, marginBottom: 16 } }, '\\uD83E\\uDD16'),
+          e('div', { style: { fontSize: 18, fontWeight: 700, marginBottom: 8 } }, 'No funnels yet'),
+          e('div', { style: { fontSize: 14, marginBottom: 20 } }, 'Create your first qualification quiz funnel to capture leads.'),
+          e('button', { className: 'btn-primary', style: { width: 'auto' }, onClick: () => { window.location.hash = 'funnel-builder'; } }, 'Create Your First Funnel')
+        )
+      : e('div', { className: 'funnels-grid' },
+          funnels.map(f => e('div', { key: f.id, className: 'funnel-card' },
+            e('div', { className: 'funnel-card-name' }, f.name),
+            f.niche && e('div', { className: 'funnel-card-niche' }, f.niche),
+            e('div', { className: 'funnel-card-meta' },
+              e('span', { className: 'slug' }, '/' + f.slug),
+              e('span', null, (f.questions ? f.questions.length : 0) + ' questions'),
+              e('span', { style: { color: f.active ? 'var(--accent)' : 'var(--danger)' } }, f.active ? 'Active' : 'Inactive')
+            ),
+            e('div', { className: 'funnel-card-actions' },
+              e('button', { className: 'btn-sm green', onClick: () => { window.location.hash = 'funnel-builder?id=' + f.id; } }, 'Edit'),
+              e('button', { className: 'btn-sm', onClick: () => viewLeads(f.id) }, 'Leads'),
+              e('button', { className: 'btn-sm', style: { background: f.active ? 'rgba(255,170,0,0.1)' : 'rgba(0,255,136,0.1)', color: f.active ? 'var(--warn)' : 'var(--accent)' }, onClick: () => toggleFunnel(f.id) }, f.active ? 'Deactivate' : 'Activate'),
+              e('button', { className: 'btn-sm', style: { color: 'var(--danger)' }, onClick: () => deleteFunnel(f.id) }, 'Delete'),
+            ),
+            expandedId === f.id && e('div', { className: 'funnel-leads-table' },
+              leadsLoading ? e('div', { style: { padding: 12, color: 'var(--text2)' } }, 'Loading...')
+              : leads.length === 0 ? e('div', { style: { padding: 12, color: 'var(--text2)' } }, 'No leads yet')
+              : e('table', null,
+                  e('thead', null, e('tr', null,
+                    e('th', null, 'Name'), e('th', null, 'Email'), e('th', null, 'Phone'), e('th', null, 'Answers'), e('th', null, 'Date')
+                  )),
+                  e('tbody', null, leads.map(l => e('tr', { key: l.id },
+                    e('td', null, l.name),
+                    e('td', null, l.email),
+                    e('td', null, l.phone || '—'),
+                    e('td', { className: 'answer-cell' }, JSON.stringify(l.answers)),
+                    e('td', null, fmtDate(l.created_at))
+                  )))
+                )
+            )
+          ))
+        )
+  );
+}
+
+function FunnelBuilder({ showToast }) {
+  const [name, setName] = useState('');
+  const [niche, setNiche] = useState('');
+  const [headline, setHeadline] = useState('');
+  const [ghlCalendarId, setGhlCalendarId] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [brandColor, setBrandColor] = useState('#00ff88');
+  const [active, setActive] = useState(true);
+  const [questions, setQuestions] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
+    const fid = params.get('id');
+    if (fid) {
+      setEditId(fid);
+      api('/api/funnels/' + fid + '/leads').catch(() => {}); // prefetch ignore
+      fetch(API + '/api/funnels/' + fid, {
+        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('paypulse_token'), 'Content-Type': 'application/json' }
+      }).then(r => r.json()).then(f => {
+        setName(f.name); setNiche(f.niche || ''); setHeadline(f.headline || '');
+        setGhlCalendarId(f.ghl_calendar_id || ''); setSuccessMessage(f.success_message || '');
+        setBrandColor(f.brand_color || '#00ff88'); setActive(!!f.active);
+        if (f.questions && Array.isArray(f.questions)) setQuestions(f.questions);
+        setLoaded(true);
+      }).catch(() => { showToast('Failed to load funnel', 'error'); setLoaded(true); });
+    } else {
+      setLoaded(true);
+    }
+  }, [showToast]);
+
+  const aiGenerate = async () => {
+    if (!niche.trim()) { showToast('Enter a niche/description first', 'error'); return; }
+    setGenerating(true);
+    try {
+      const data = await api('/api/funnels/generate-questions', { method: 'POST', body: JSON.stringify({ niche: niche.trim() }) });
+      setQuestions(data);
+      showToast('Generated ' + data.length + ' questions', 'success');
+    } catch (err) { showToast(err.message, 'error'); }
+    setGenerating(false);
+  };
+
+  const removeQuestion = (idx) => {
+    setQuestions(questions.filter((_, i) => i !== idx));
+  };
+
+  const updateQuestion = (idx, field, value) => {
+    const updated = questions.map((q, i) => i === idx ? { ...q, [field]: value } : q);
+    setQuestions(updated);
+  };
+
+  const saveFunnel = async () => {
+    if (!name.trim()) { showToast('Name is required', 'error'); return; }
+    if (!niche.trim()) { showToast('Niche/description is required', 'error'); return; }
+    setSaving(true);
+    try {
+      const body = { name: name.trim(), niche: niche.trim(), headline, ghl_calendar_id: ghlCalendarId, success_message: successMessage, brand_color: brandColor, active, questions };
+      if (editId) {
+        await api('/api/funnels/' + editId, { method: 'PATCH', body: JSON.stringify(body) });
+        showToast('Funnel updated', 'success');
+      } else {
+        await api('/api/funnels', { method: 'POST', body: JSON.stringify(body) });
+        showToast('Funnel created', 'success');
+      }
+      window.location.hash = 'funnels';
+    } catch (err) { showToast(err.message, 'error'); }
+    setSaving(false);
+  };
+
+  if (!loaded) return e('div', { className: 'page' }, e('h2', { className: 'page-title' }, 'Loading...'));
+
+  return e('div', { className: 'page funnel-builder-wrap' },
+    e('div', { className: 'funnels-header' },
+      e('h2', { className: 'page-title', style: { marginBottom: 0 } }, editId ? 'Edit Funnel' : 'New Funnel'),
+      e('button', { className: 'btn-ghost', onClick: () => { window.location.hash = 'funnels'; } }, '\\u2190 Back')
+    ),
+    e('div', { className: 'funnel-builder-form' },
+      e('div', { className: 'funnel-form-row' },
+        e('div', { className: 'form-group' },
+          e('label', null, 'Funnel Name'),
+          e('input', { placeholder: 'e.g. Roofing Qualification Quiz', value: name, onChange: ev => setName(ev.target.value) })
+        ),
+        e('div', { className: 'form-group' },
+          e('label', null, 'Niche / Description'),
+          e('input', { placeholder: 'e.g. Roofing, HVAC, Landscaping', value: niche, onChange: ev => setNiche(ev.target.value) })
+        )
+      ),
+      e('div', { className: 'form-group' },
+        e('label', null, 'Headline (shown to quiz takers)'),
+        e('input', { placeholder: 'e.g. See if you qualify for a free roof inspection', value: headline, onChange: ev => setHeadline(ev.target.value) })
+      ),
+      e('div', { className: 'funnel-form-row-3' },
+        e('div', { className: 'form-group' },
+          e('label', null, 'GHL Calendar ID'),
+          e('input', { placeholder: 'Optional', value: ghlCalendarId, onChange: ev => setGhlCalendarId(ev.target.value) })
+        ),
+        e('div', { className: 'form-group' },
+          e('label', null, 'Success Message'),
+          e('input', { placeholder: 'Thanks! We\'ll be in touch.', value: successMessage, onChange: ev => setSuccessMessage(ev.target.value) })
+        ),
+        e('div', { className: 'form-group' },
+          e('label', null, 'Brand Color'),
+          e('input', { type: 'color', value: brandColor, onChange: ev => setBrandColor(ev.target.value), style: { height: 42, padding: 4 } })
+        )
+      ),
+      e('div', { className: 'form-group', style: { display: 'flex', alignItems: 'center', gap: 12 } },
+        e('label', { style: { marginBottom: 0 } }, 'Active'),
+        e('div', { className: 'toggle' + (active ? ' on' : ''), onClick: () => setActive(!active) })
+      ),
+      e('hr', { style: { border: 'none', borderTop: '1px solid var(--border)', margin: '20px 0' } }),
+      e('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 } },
+        e('h3', { style: { fontSize: 14, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--text2)' } }, 'Questions'),
+        e('button', { className: 'btn-ai', onClick: aiGenerate, disabled: generating },
+          generating ? '\\u23F3 Generating...' : '\\uD83E\\uDD16 AI Generate'
+        )
+      ),
+      questions.map((q, i) => e('div', { key: i, className: 'funnel-question-card' },
+        e('div', { className: 'q-header' },
+          e('span', { className: 'q-number' }, 'Question ' + (i + 1)),
+          e('span', { className: 'q-remove', onClick: () => removeQuestion(i) }, '\\u2715')
+        ),
+        e('input', {
+          className: 'q-text',
+          style: { background: 'transparent', border: 'none', padding: '4px 0', fontSize: 14, fontWeight: 600, width: '100%' },
+          value: q.question, onChange: ev => updateQuestion(i, 'question', ev.target.value)
+        }),
+        e('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 } },
+          e('span', { className: 'q-type ' + q.type }, q.type || 'yesno'),
+          e('select', {
+            value: q.type || 'yesno',
+            onChange: ev => updateQuestion(i, 'type', ev.target.value),
+            style: { padding: '2px 8px', fontSize: 11, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)' }
+          },
+            e('option', { value: 'yesno' }, 'Yes/No'),
+            e('option', { value: 'choice' }, 'Multiple Choice')
+          )
+        ),
+        q.type === 'choice' && e('div', { className: 'q-options' },
+          (q.options || []).map((opt, oi) => e('span', { key: oi, className: 'q-option' },
+            opt,
+            e('span', { style: { marginLeft: 6, cursor: 'pointer', color: 'var(--danger)' }, onClick: () => {
+              const newOpts = [...q.options]; newOpts.splice(oi, 1); updateQuestion(i, 'options', newOpts);
+            } }, '\\u2715')
+          )),
+          e('span', { style: { cursor: 'pointer', fontSize: 11, color: 'var(--blue)' }, onClick: () => {
+            const opt = prompt('Option text:'); if (opt) updateQuestion(i, 'options', [...(q.options||[]), opt]);
+          } }, '+ Add option')
+        )
+      )),
+      questions.length === 0 && e('div', { style: { textAlign: 'center', padding: 24, color: 'var(--text2)' } },
+        'No questions yet. Click AI Generate or add manually.'
+      ),
+      e('button', { className: 'btn-primary', onClick: saveFunnel, disabled: saving, style: { marginTop: 20 } },
+        saving ? 'Saving...' : (editId ? 'Update Funnel' : 'Save Funnel')
+      )
+    )
+  );
+}
+
+// ─── PUBLIC FUNNEL RENDERER (no auth) ─────────────────────────────
+function PublicFunnelRenderer({ slug }) {
+  const [funnel, setFunnel] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const [selectedOption, setSelectedOption] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [success, setSuccess] = useState(false);
+  const [successMsg, setSuccessMsg] = useState('');
+
+  useEffect(() => {
+    if (!slug) { setError('Invalid funnel URL'); setLoading(false); return; }
+    fetch(API + '/api/f/' + slug)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { setError(data.error); return; }
+        setFunnel(data);
+      })
+      .catch(() => setError('Could not load funnel'))
+      .finally(() => setLoading(false));
+  }, [slug]);
+
+  if (loading) return e('div', { className: 'public-funnel' },
+    e('div', { style: { color: 'var(--text2)' } }, 'Loading...')
+  );
+
+  if (error) return e('div', { className: 'public-funnel' },
+    e('div', { className: 'pf-box' },
+      e('div', { style: { fontSize: 48, marginBottom: 16 } }, '\\u274C'),
+      e('div', { style: { fontSize: 18, fontWeight: 700, marginBottom: 8 } }, 'Funnel Unavailable'),
+      e('div', { style: { color: 'var(--text2)', marginBottom: 20 } }, error),
+      e('a', { href: '/', style: { color: 'var(--accent)' } }, 'Go Home')
+    )
+  );
+
+  if (!funnel) return null;
+
+  if (success) {
+    return e('div', { className: 'public-funnel' },
+      e('div', { className: 'pf-box pf-success' },
+        e('div', { className: 'pf-success-icon' }, '\\u2705'),
+        e('div', { className: 'pf-success-msg' }, successMsg || 'Thanks! We\'ll be in touch soon.'),
+        e('div', { className: 'pf-success-sub' }, 'We\'ve received your information.')
+      )
+    );
+  }
+
+  const questions = funnel.questions || [];
+  const totalSteps = questions.length + 1; // questions + contact form
+  const progress = (step / totalSteps) * 100;
+  const isLastQuestion = step === questions.length - 1;
+
+  const answerQuestion = () => {
+    if (step < questions.length) {
+      const q = questions[step];
+      if (q.type === 'yesno' && !selectedOption) return;
+      if (q.type === 'choice' && !selectedOption) return;
+      setAnswers({ ...answers, [q.question]: selectedOption });
+      setSelectedOption(null);
+      setStep(step + 1);
+    }
+  };
+
+  const submitLead = async () => {
+    if (!name.trim() || !email.trim()) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(API + '/api/f/' + slug + '/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, phone, answers })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSuccess(true);
+        setSuccessMsg(data.successMessage);
+      } else {
+        setError(data.error || 'Submission failed');
+      }
+    } catch (err) {
+      setError('Could not submit');
+    }
+    setSubmitting(false);
+  };
+
+  return e('div', { className: 'public-funnel', style: { '--pf-color': funnel.brand_color || '#00ff88' } },
+    e('div', { className: 'pf-box' },
+      e('div', { className: 'pf-progress' },
+        e('div', { className: 'pf-progress-bar', style: { width: progress + '%', background: funnel.brand_color || '#00ff88' } })
+      ),
+      step < questions.length
+        ? e('div', null,
+            e('h1', { className: 'pf-headline' }, step === 0 ? (funnel.headline || 'Qualification Quiz') : ''),
+            step === 0 && funnel.niche && e('div', { className: 'pf-subtitle' }, funnel.niche),
+            e('div', { className: 'pf-question' }, questions[step].question),
+            questions[step].type === 'yesno'
+              ? e('div', null,
+                  e('button', { className: 'pf-option' + (selectedOption === 'Yes' ? ' selected' : ''), onClick: () => setSelectedOption('Yes') }, 'Yes'),
+                  e('button', { className: 'pf-option' + (selectedOption === 'No' ? ' selected' : ''), onClick: () => setSelectedOption('No') }, 'No')
+                )
+              : e('div', null,
+                  (questions[step].options || []).map((opt, oi) =>
+                    e('button', {
+                      key: oi,
+                      className: 'pf-option' + (selectedOption === opt ? ' selected' : ''),
+                      onClick: () => setSelectedOption(opt)
+                    }, opt)
+                  )
+                ),
+            e('button', {
+              className: 'btn-primary',
+              style: { marginTop: 20, opacity: selectedOption ? 1 : 0.4, background: funnel.brand_color || 'var(--accent)', color: '#000' },
+              disabled: !selectedOption,
+              onClick: answerQuestion
+            }, isLastQuestion ? 'Next' : 'Next')
+          )
+        : e('div', { className: 'pf-contact-form' },
+            e('h2', { style: { fontSize: 20, fontWeight: 700, marginBottom: 8 } }, 'Almost done!'),
+            e('p', { style: { color: 'var(--text2)', marginBottom: 20 } }, 'Enter your details and we\'ll be in touch.'),
+            e('div', { className: 'form-group' },
+              e('label', null, 'Name *'),
+              e('input', { placeholder: 'Your name', value: name, onChange: ev => setName(ev.target.value) })
+            ),
+            e('div', { className: 'form-group' },
+              e('label', null, 'Email *'),
+              e('input', { type: 'email', placeholder: 'you@email.com', value: email, onChange: ev => setEmail(ev.target.value) })
+            ),
+            e('div', { className: 'form-group' },
+              e('label', null, 'Phone'),
+              e('input', { placeholder: '(555) 123-4567', value: phone, onChange: ev => setPhone(ev.target.value) })
+            ),
+            e('button', {
+              className: 'btn-primary',
+              style: { background: funnel.brand_color || 'var(--accent)', color: '#000' },
+              disabled: submitting || !name.trim() || !email.trim(),
+              onClick: submitLead
+            }, submitting ? 'Submitting...' : 'Submit')
+          )
+    )
+  );
+}
 function App() {
   const [token, setToken] = useState(localStorage.getItem('paypulse_token'));
   const [user, setUser] = useState(null);
@@ -1379,10 +1910,13 @@ function App() {
 
   const agencyNav = [
     { key: 'customers', label: 'Customers' },
+    { key: 'funnels', label: 'Funnels' },
     { key: 'settings', label: 'Settings' },
     { key: 'charges', label: 'Charges' },
     { key: 'metrics', label: 'Metrics' },
   ];
+  
+  const guideLink = e('a', { href: '/guide', target: '_blank', style: { color: 'var(--accent)', textDecoration: 'none', fontWeight: 600, fontSize: 12, cursor: 'pointer' } }, '📖 Guide');
 
   const adminNav = [
     { key: 'admin', label: 'Agencies' },
@@ -1404,18 +1938,17 @@ function App() {
           onClick: () => { window.location.hash = item.key; }
         }, item.label)
       ),
+      e('div', { key: 'guide', className: 'nav-link', style: { cursor: 'pointer' }, onClick: () => window.open('/guide', '_blank') }, '📖 Guide'),
       e('div', { className: 'nav-spacer' }),
       !isAdmin && e('button', { className: 'inbox-btn', onClick: () => { window.location.hash = 'inbox'; } },
         '\uD83D\uDD14',
         unreadCount > 0 && e('span', { className: 'badge' }, unreadCount)
       ),
-      e('div', { className: 'nav-link', style: { opacity: 0.6, cursor: 'default' } }, '\u2B50'),
-      e('div', { className: 'nav-link', style: { fontSize: 12, color: user?.subscription?.hasStripe ? 'var(--accent)' : 'var(--text2)' } },
-        user?.subscription?.hasStripe ? '\u25CF Pro' : user?.subscription?.plan || 'Free'
-      ),
       e('div', { className: 'nav-link', style: { opacity: 0.5, cursor: 'pointer' }, onClick: logout }, 'Sign Out')
     ),
     !isAdmin && page === 'customers' && e(CustomersPage, { customers, onRefresh: refresh, settings, showToast }),
+    !isAdmin && page === 'funnels' && e(FunnelsPage, { showToast }),
+    !isAdmin && page === 'funnel-builder' && e(FunnelBuilder, { showToast }),
     !isAdmin && page === 'settings' && e(SettingsPage, { settings, onSave: refresh, showToast }),
     !isAdmin && page === 'inbox' && e(InboxPage, { notifications, onRefresh: refresh, showToast }),
     !isAdmin && page === 'charges' && e(ChargesPage, { charges, showToast }),
@@ -1427,7 +1960,13 @@ function App() {
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(e(App));
+const pathname = window.location.pathname;
+const funnelMatch = pathname.match(/^\/f\/([^\/]+)/);
+if (funnelMatch) {
+  root.render(e(PublicFunnelRenderer, { slug: funnelMatch[1] }));
+} else {
+  root.render(e(App));
+}
 </script>
 </body>
 </html>
