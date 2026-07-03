@@ -406,7 +406,7 @@ function createCustomer(data) {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [id, data.user_id, data.name, data.company_name || '', data.email, data.phone || '', data.status || 'new',
        data.card_on_file ? 1 : (data.stripe_payment_method_id || data.whop_payment_method_id ? 1 : 0), data.stripe_customer_id || '', data.stripe_payment_method_id || '',
-       data.whop_member_id || '', data.whop_payment_method_id || '', data.rate_per_trigger || 147, data.ghl_location_id || '']
+       data.whop_member_id || '', data.whop_payment_method_id || '', data.rate_per_trigger !== undefined ? data.rate_per_trigger : 147, data.ghl_location_id || '']
     ).then(() => getCustomerById(id));
   }
   sqliteDb.prepare(
@@ -414,7 +414,7 @@ function createCustomer(data) {
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(id, data.user_id, data.name, data.company_name || '', data.email, data.phone || '', data.status || 'new',
     data.card_on_file ? 1 : (data.stripe_payment_method_id || data.whop_payment_method_id ? 1 : 0), data.stripe_customer_id || '', data.stripe_payment_method_id || '',
-    data.whop_member_id || '', data.whop_payment_method_id || '', data.rate_per_trigger || 147, data.ghl_location_id || '');
+    data.whop_member_id || '', data.whop_payment_method_id || '', data.rate_per_trigger !== undefined ? data.rate_per_trigger : 147, data.ghl_location_id || '');
   return getCustomerById(id);
 }
 

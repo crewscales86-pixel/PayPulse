@@ -857,7 +857,7 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
         e('span', { className: 'tag tag-green', style: { borderRadius:10 } }, customers.length)
       ),
       e('div', { className: 'nav-spacer' }),
-      e('button', { className: 'btn-primary', style: { padding:'8px 18px', fontSize:13 }, onClick: () => setEditModal({ id: 'new', name: '', email: '', rate_per_trigger: 147, status: 'new', ghl_location_id: '', stripe_customer_id: '', stripe_payment_method_id: '', company_name: '' }) }, '+ Add Customer'),
+      e('button', { className: 'btn-primary', style: { padding:'8px 18px', fontSize:13 }, onClick: () => setEditModal({ id: 'new', name: '', email: '', rate_per_trigger: 0, status: 'new', ghl_location_id: '', card_on_file: false }) }, '+ Add Customer'),
       e('button', { className: 'btn-sm', style: { padding:'8px 16px' }, onClick: onRefresh }, '↻ Sync'),
       e('button', { className: 'btn-sm', style: { padding:'8px 16px', background:'rgba(0,180,255,0.1)', color:'var(--blue)', borderColor:'rgba(0,180,255,0.3)' }, onClick: () => setSyncModal(true) }, '⬇ Stripe'),
       e('input', { className: 'search-box', placeholder: 'Search...', value: search, onChange: ev => setSearch(ev.target.value) })
@@ -932,23 +932,19 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
       showToast
     }),
     editModal && e('div', { className: 'modal-back', onClick: ev => ev.target === ev.currentTarget && setEditModal(null) },
-      e('div', { className: 'modal' },
+      e('div', { className: 'modal wide' },
         e('h3', null, editModal.id === 'new' ? 'Add Customer' : 'Edit ' + editModal.name),
         e('div', { className: 'form-group' },
           e('label', null, 'Name'),
           e('input', { value: editModal.name, onChange: ev => setEditModal({...editModal, name: ev.target.value}) })
         ),
         e('div', { className: 'form-group' },
-          e('label', null, 'Company Name'),
-          e('input', { value: editModal.company_name || '', onChange: ev => setEditModal({...editModal, company_name: ev.target.value}), placeholder: 'e.g. Mike Plumbing Inc.' })
-        ),
-        e('div', { className: 'form-group' },
           e('label', null, 'Email'),
           e('input', { type: 'email', value: editModal.email || '', onChange: ev => setEditModal({...editModal, email: ev.target.value}) })
         ),
         e('div', { className: 'form-group' },
-          e('label', null, 'Rate per Trigger ($)'),
-          e('input', { type: 'number', value: editModal.rate_per_trigger, onChange: ev => setEditModal({...editModal, rate_per_trigger: parseFloat(ev.target.value)||147}) })
+          e('label', null, 'Billing Amount per Trigger ($) — set any amount'),
+          e('input', { type: 'number', min: 1, step: 0.01, value: editModal.rate_per_trigger, onChange: ev => setEditModal({...editModal, rate_per_trigger: parseFloat(ev.target.value) || 0}) })
         ),
         e('div', { className: 'form-group' },
           e('label', null, 'Status'),
@@ -960,27 +956,47 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
           )
         ),
         e('div', { className: 'form-group' },
-          e('label', null, 'GHL Location ID'),
-          e('input', { placeholder: 'e.g. vQ3xK7mNpR (from GHL sub-account URL)', value: editModal.ghl_location_id || '', onChange: ev => setEditModal({...editModal, ghl_location_id: ev.target.value}) }),
-          e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 6 } },
-            'Find this in GHL → Settings → Location ID. Paste the per-client webhook URL below into the sub-account\'s outbound webhook action.'
-          )
+          e('label', null, 'GHL Location ID (for auto-billing webhook)'),
+          e('input', { placeholder: 'e.g. vQ3xK7mNpR', value: editModal.ghl_location_id || '', onChange: ev => setEditModal({...editModal, ghl_location_id: ev.target.value}) })
         ),
-        editModal.ghl_location_id && settings?.ghlWebhookSecret && e('div', { className: 'form-group' },
-          e('label', null, 'Per-Client Webhook URL \u2014 Paste into this client\'s GHL Sub-Account'),
-          e('div', { style: { padding: '10px 14px', background: 'var(--surface3)', borderRadius: 8, fontFamily: 'monospace', fontSize: 12, color: 'var(--blue)', wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: 8 } },
-            e('span', { style: { flex: 1 } }, window.location.origin + '/webhook/ghl/' + settings.ghlWebhookSecret + '/' + editModal.ghl_location_id),
-            e('button', { onClick: () => { navigator.clipboard.writeText(window.location.origin + '/webhook/ghl/' + settings.ghlWebhookSecret + '/' + editModal.ghl_location_id); }, style: { background: 'var(--accent)', color: '#000', border: 'none', borderRadius: 4, padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0 } }, 'Copy')
-          )
-        ),
-        editModal.id !== 'new' && e('div', null,
-          e('div', { className: 'form-group' },
-            e('label', null, 'Stripe Customer ID (manual paste)'),
-            e('input', { value: editModal.stripe_customer_id || '', onChange: ev => setEditModal({...editModal, stripe_customer_id: ev.target.value}), placeholder: 'cus_...', style: { fontFamily: 'monospace', fontSize: 12 } })
+        editModal.ghl_location_id && settings?.ghlWebhookSecret && e('div', { style: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 10, padding: 16, marginBottom: 16 } },
+          e('div', { style: { fontSize: 12, fontWeight: 700, color: 'var(--accent)', marginBottom: 8 } }, '⚡ Auto-Billing Webhook'),
+          e('div', { style: { fontSize: 12, color: 'var(--text2)', marginBottom: 10, lineHeight: 1.5 } },
+            'Paste this URL into this client\\'s ',
+            e('strong', null, 'GHL Sub-Account → Settings → Webhooks → Outbound Webhook'),
+            '. Trigger on ',
+            e('strong', null, '"Appointment Booked"'),
+            '. PayPulse will auto-charge $' + (editModal.rate_per_trigger || 'X') + ' to their card.'
           ),
-          e('div', { className: 'form-group' },
-            e('label', null, 'Stripe Payment Method ID (manual paste)'),
-            e('input', { value: editModal.stripe_payment_method_id || '', onChange: ev => setEditModal({...editModal, stripe_payment_method_id: ev.target.value}), placeholder: 'pm_...', style: { fontFamily: 'monospace', fontSize: 12 } })
+          e('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
+            e('code', { style: { flex: 1, background: 'var(--surface3)', padding: '8px 12px', borderRadius: 6, fontSize: 11, color: 'var(--blue)', wordBreak: 'break-all', fontFamily: 'monospace' } },
+              window.location.origin + '/webhook/ghl/' + settings.ghlWebhookSecret + '/' + editModal.ghl_location_id
+            ),
+            e('button', { onClick: () => { navigator.clipboard.writeText(window.location.origin + '/webhook/ghl/' + settings.ghlWebhookSecret + '/' + editModal.ghl_location_id); showToast('Copied!', 'success'); }, style: { background: 'var(--accent)', color: '#000', border: 'none', borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', flexShrink: 0 } }, 'Copy')
+          )
+        ),
+        editModal.ghl_location_id && !settings?.ghlWebhookSecret && e('div', { style: { color: 'var(--warn)', fontSize: 12, marginBottom: 16 } },
+          '⚠️ Go to Settings → Webhooks to find your webhook URL first.'
+        ),
+        editModal.id !== 'new' && e('div', { style: { borderTop: '1px solid var(--border)', paddingTop: 16, marginBottom: 16 } },
+          e('div', { style: { fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 10 } }, 'Payment'),
+          e('div', { style: { display: 'flex', gap: 10, alignItems: 'center' } },
+            editModal.card_on_file
+              ? e('span', { className: 'tag tag-green', style: { fontSize: 12, padding: '5px 12px' } }, '✓ Card saved')
+              : e('span', { className: 'tag tag-red', style: { fontSize: 12, padding: '5px 12px' } }, 'No card on file'),
+            e('button', {
+              className: 'btn-sm',
+              style: { background: 'rgba(68,136,255,0.1)', color: 'var(--blue)', borderColor: 'rgba(68,136,255,0.3)', padding: '6px 16px', fontSize: 11 },
+              onClick: async () => {
+                try {
+                  const data = await api('/api/customers/' + editModal.id + '/setup-card', { method: 'POST' });
+                  window.open(data.url, '_blank');
+                } catch (err) { showToast(err.message, 'error'); }
+              }
+            }, '💳 Get Card')
+          ),
+          e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 8 } },
+            'Click "Get Card" to generate a $1 Stripe Checkout link. Send it to your client — their card is saved automatically.'
           )
         ),
           e('div', { className: 'modal-actions' },
