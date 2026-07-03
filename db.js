@@ -250,6 +250,7 @@ async function initSchema() {
         questions TEXT DEFAULT '[]',
         ghl_calendar_id TEXT DEFAULT '',
         ghl_private_token TEXT DEFAULT '',
+        ghl_webhook_url TEXT DEFAULT '',
         success_message TEXT DEFAULT '',
         brand_color TEXT DEFAULT '#00ff88',
         active INTEGER DEFAULT 1,
@@ -278,6 +279,7 @@ async function initSchema() {
         questions TEXT DEFAULT '[]',
         ghl_calendar_id TEXT DEFAULT '',
         ghl_private_token TEXT DEFAULT '',
+        ghl_webhook_url TEXT DEFAULT '',
         success_message TEXT DEFAULT '',
         brand_color TEXT DEFAULT '#00ff88',
         active INTEGER DEFAULT 1,
@@ -295,6 +297,18 @@ async function initSchema() {
       );
     `);
   }
+
+  // Migration: add ghl_webhook_url to quiz_funnels for existing DBs
+  try {
+    if (USE_PG) {
+      await pgPool.query(`ALTER TABLE quiz_funnels ADD COLUMN IF NOT EXISTS ghl_webhook_url TEXT DEFAULT ''`);
+    } else {
+      const funnelCols = sqliteDb.prepare("PRAGMA table_info(quiz_funnels)").all();
+      if (!funnelCols.find(c => c.name === 'ghl_webhook_url')) {
+        sqliteDb.exec(`ALTER TABLE quiz_funnels ADD COLUMN ghl_webhook_url TEXT DEFAULT ''`);
+      }
+    }
+  } catch (e) { /* ignore */ }
 }
 
 // ─── HELPERS ────────────────────────────────────────────────────
@@ -612,8 +626,8 @@ function createFunnel(data) {
   const id = uuid();
   const slug = data.slug || id.slice(0, 8);
   const now = USE_PG ? 'NOW()' : "datetime('now')";
-  const cols = ['id','user_id','name','niche','slug','headline','questions','ghl_calendar_id','ghl_private_token','success_message','brand_color','active'];
-  const vals = [id, data.user_id, data.name, data.niche||'', slug, data.headline||'', JSON.stringify(data.questions||[]), data.ghl_calendar_id||'', data.ghl_private_token||'', data.success_message||'', data.brand_color||'#00ff88', data.active!==undefined ? (data.active?1:0) : 1];
+  const cols = ['id','user_id','name','niche','slug','headline','questions','ghl_calendar_id','ghl_private_token','ghl_webhook_url','success_message','brand_color','active'];
+  const vals = [id, data.user_id, data.name, data.niche||'', slug, data.headline||'', JSON.stringify(data.questions||[]), data.ghl_calendar_id||'', data.ghl_private_token||'', data.ghl_webhook_url||'', data.success_message||'', data.brand_color||'#00ff88', data.active!==undefined ? (data.active?1:0) : 1];
   const placeholders = vals.map(() => '?').join(',');
   const pgPlaceholders = vals.map((_,i) => `$${i+1}`).join(',');
   if (USE_PG) {

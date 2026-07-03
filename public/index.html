@@ -298,23 +298,56 @@
   .funnel-question-card .q-remove { color: var(--danger); cursor: pointer; font-size: 16px; padding: 4px; }
   .btn-ai { padding: 10px 20px; border-radius: 8px; background: linear-gradient(135deg, var(--purple), var(--blue)); color: #fff; font-weight: 700; font-size: 13px; border: none; display: flex; align-items: center; gap: 8px; }
 
-  /* Public Funnel Renderer */
-  .public-funnel { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; text-align: center; }
-  .pf-box { width: 100%; max-width: 520px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 40px; }
-  .pf-progress { width: 100%; height: 4px; background: var(--surface3); border-radius: 2px; margin-bottom: 32px; overflow: hidden; }
-  .pf-progress-bar { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
-  .pf-headline { font-size: 26px; font-weight: 800; margin-bottom: 12px; line-height: 1.3; }
-  .pf-subtitle { color: var(--text2); font-size: 15px; margin-bottom: 32px; }
-  .pf-question { font-size: 18px; font-weight: 700; margin-bottom: 24px; line-height: 1.4; }
-  .pf-option { display: block; width: 100%; padding: 14px 20px; margin-bottom: 10px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-size: 15px; font-weight: 600; text-align: left; cursor: pointer; transition: 0.15s; }
-  .pf-option:hover { border-color: var(--accent); background: rgba(0,255,136,0.05); }
-  .pf-option.selected { border-color: var(--accent); background: rgba(0,255,136,0.1); }
+  /* Updated Public Funnel Renderer — high-converting landing */
+  .public-funnel {
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 40px 20px; text-align: center;
+    background: linear-gradient(135deg, var(--bg) 0%, #0f0f0f 50%, #0a0a0a 100%);
+  }
+  .pf-box {
+    width: 100%; max-width: 520px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 48px 40px;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.4);
+    position: relative;
+    overflow: hidden;
+  }
+  .pf-box::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 4px;
+    background: linear-gradient(90deg, var(--pf-color, #00ff88), #00cc6a);
+  }
+  .pf-progress { width: 100%; height: 6px; background: var(--surface3); border-radius: 3px; margin-bottom: 36px; overflow: hidden; }
+  .pf-progress-bar { height: 100%; border-radius: 3px; transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+  .pf-headline { font-size: 28px; font-weight: 800; margin-bottom: 8px; line-height: 1.3; }
+  .pf-subtitle { color: var(--text2); font-size: 15px; margin-bottom: 36px; }
+  .pf-question { font-size: 20px; font-weight: 700; margin-bottom: 28px; line-height: 1.4; }
+  .pf-options { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
+  .pf-option {
+    display: block; width: 100%; padding: 16px 24px;
+    border-radius: 12px;
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    color: var(--text);
+    font-size: 15px; font-weight: 600;
+    text-align: left; cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .pf-option:hover { border-color: var(--pf-color, #00ff88); background: rgba(0,255,136,0.04); transform: translateY(-1px); }
+  .pf-option.selected { border-color: var(--pf-color, #00ff88); background: rgba(0,255,136,0.08); }
+  .pf-step-counter { color: var(--text2); font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px; }
+  .pf-next { margin-top: 8px; }
   .pf-contact-form { text-align: left; }
-  .pf-contact-form .form-group { margin-bottom: 16px; }
+  .pf-contact-form h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .pf-contact-form p { color: var(--text2); margin-bottom: 24px; }
+  .pf-contact-form .form-group { margin-bottom: 18px; }
   .pf-success { text-align: center; }
-  .pf-success-icon { font-size: 64px; margin-bottom: 16px; }
-  .pf-success-msg { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
-  .pf-success-sub { color: var(--text2); font-size: 14px; }
+  .pf-success-icon { font-size: 72px; margin-bottom: 20px; display: block; }
+  .pf-success-msg { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+  .pf-success-sub { color: var(--text2); font-size: 15px; }
 </style>
 </head>
 <body>
@@ -1550,6 +1583,7 @@ function FunnelBuilder({ showToast }) {
   const [niche, setNiche] = useState('');
   const [headline, setHeadline] = useState('');
   const [ghlCalendarId, setGhlCalendarId] = useState('');
+  const [ghlWebhookUrl, setGhlWebhookUrl] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [brandColor, setBrandColor] = useState('#00ff88');
   const [active, setActive] = useState(true);
@@ -1568,7 +1602,7 @@ function FunnelBuilder({ showToast }) {
         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('paypulse_token'), 'Content-Type': 'application/json' }
       }).then(r => r.json()).then(f => {
         setName(f.name); setNiche(f.niche || ''); setHeadline(f.headline || '');
-        setGhlCalendarId(f.ghl_calendar_id || ''); setSuccessMessage(f.success_message || '');
+        setGhlCalendarId(f.ghl_calendar_id || ''); setGhlWebhookUrl(f.ghl_webhook_url || ''); setSuccessMessage(f.success_message || '');
         setBrandColor(f.brand_color || '#00ff88'); setActive(!!f.active);
         if (f.questions && Array.isArray(f.questions)) setQuestions(f.questions);
         setLoaded(true);
@@ -1603,7 +1637,7 @@ function FunnelBuilder({ showToast }) {
     if (!niche.trim()) { showToast('Niche/description is required', 'error'); return; }
     setSaving(true);
     try {
-      const body = { name: name.trim(), niche: niche.trim(), headline, ghl_calendar_id: ghlCalendarId, success_message: successMessage, brand_color: brandColor, active, questions };
+      const body = { name: name.trim(), niche: niche.trim(), headline, ghl_calendar_id: ghlCalendarId, ghl_webhook_url: ghlWebhookUrl, success_message: successMessage, brand_color: brandColor, active, questions };
       if (editId) {
         await api('/api/funnels/' + editId, { method: 'PATCH', body: JSON.stringify(body) });
         showToast('Funnel updated', 'success');
@@ -1650,6 +1684,13 @@ function FunnelBuilder({ showToast }) {
         e('div', { className: 'form-group' },
           e('label', null, 'Brand Color'),
           e('input', { type: 'color', value: brandColor, onChange: ev => setBrandColor(ev.target.value), style: { height: 42, padding: 4 } })
+        )
+      ),
+      e('div', { className: 'form-group' },
+        e('label', null, 'GHL Webhook URL (lead submissions POST here)'),
+        e('input', { placeholder: 'https://services.leadconnectorhq.com/hooks/...', value: ghlWebhookUrl, onChange: ev => setGhlWebhookUrl(ev.target.value) }),
+        e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 6 } },
+          'When a lead completes this funnel, their name, email, phone, and answers will be POSTed to this URL. Create a webhook in GHL (Settings → Webhooks) and paste it here.'
         )
       ),
       e('div', { className: 'form-group', style: { display: 'flex', alignItems: 'center', gap: 12 } },
@@ -1803,51 +1844,54 @@ function PublicFunnelRenderer({ slug }) {
       ),
       step < questions.length
         ? e('div', null,
+            step === 0 && e('div', { className: 'pf-step-counter' }, 'Qualification Quiz'),
+            step > 0 && e('div', { className: 'pf-step-counter' }, 'Question ' + (step + 1) + ' of ' + questions.length),
             e('h1', { className: 'pf-headline' }, step === 0 ? (funnel.headline || 'Qualification Quiz') : ''),
             step === 0 && funnel.niche && e('div', { className: 'pf-subtitle' }, funnel.niche),
-            e('div', { className: 'pf-question' }, questions[step].question),
-            questions[step].type === 'yesno'
-              ? e('div', null,
-                  e('button', { className: 'pf-option' + (selectedOption === 'Yes' ? ' selected' : ''), onClick: () => setSelectedOption('Yes') }, 'Yes'),
-                  e('button', { className: 'pf-option' + (selectedOption === 'No' ? ' selected' : ''), onClick: () => setSelectedOption('No') }, 'No')
-                )
-              : e('div', null,
-                  (questions[step].options || []).map((opt, oi) =>
+            step === 0 && e('div', { className: 'pf-subtitle', style: { fontSize: 13, marginTop: -20 } }, 'Answer ' + questions.length + ' quick questions to see if you qualify.'),
+            step > 0 && e('div', { className: 'pf-question' }, questions[step].question),
+            step > 0 && e('div', { className: 'pf-options' },
+              questions[step].type === 'yesno'
+                ? e('div', { className: 'pf-options' },
+                    e('button', { className: 'pf-option' + (selectedOption === 'Yes' ? ' selected' : ''), onClick: () => setSelectedOption('Yes') }, 'Yes'),
+                    e('button', { className: 'pf-option' + (selectedOption === 'No' ? ' selected' : ''), onClick: () => setSelectedOption('No') }, 'No')
+                  )
+                : (questions[step].options || []).map((opt, oi) =>
                     e('button', {
                       key: oi,
                       className: 'pf-option' + (selectedOption === opt ? ' selected' : ''),
                       onClick: () => setSelectedOption(opt)
                     }, opt)
                   )
-                ),
-            e('button', {
-              className: 'btn-primary',
-              style: { marginTop: 20, opacity: selectedOption ? 1 : 0.4, background: funnel.brand_color || 'var(--accent)', color: '#000' },
+            ),
+            step > 0 && e('button', {
+              className: 'btn-primary pf-next',
+              style: { opacity: selectedOption ? 1 : 0.4, background: funnel.brand_color || 'var(--accent)', color: '#000' },
               disabled: !selectedOption,
               onClick: answerQuestion
-            }, isLastQuestion ? 'Next' : 'Next')
+            }, isLastQuestion ? 'See Results →' : 'Continue →')
           )
         : e('div', { className: 'pf-contact-form' },
-            e('h2', { style: { fontSize: 20, fontWeight: 700, marginBottom: 8 } }, 'Almost done!'),
-            e('p', { style: { color: 'var(--text2)', marginBottom: 20 } }, 'Enter your details and we\'ll be in touch.'),
+            e('h2', null, 'You qualify! Enter your details'),
+            e('p', null, 'We\'ll be in touch shortly to discuss your project.'),
             e('div', { className: 'form-group' },
-              e('label', null, 'Name *'),
-              e('input', { placeholder: 'Your name', value: name, onChange: ev => setName(ev.target.value) })
+              e('label', null, 'Your Name *'),
+              e('input', { placeholder: 'John Smith', value: name, onChange: ev => setName(ev.target.value) })
             ),
             e('div', { className: 'form-group' },
-              e('label', null, 'Email *'),
-              e('input', { type: 'email', placeholder: 'you@email.com', value: email, onChange: ev => setEmail(ev.target.value) })
+              e('label', null, 'Email Address *'),
+              e('input', { type: 'email', placeholder: 'john@email.com', value: email, onChange: ev => setEmail(ev.target.value) })
             ),
             e('div', { className: 'form-group' },
-              e('label', null, 'Phone'),
-              e('input', { placeholder: '(555) 123-4567', value: phone, onChange: ev => setPhone(ev.target.value) })
+              e('label', null, 'Phone Number'),
+              e('input', { type: 'tel', placeholder: '(555) 123-4567', value: phone, onChange: ev => setPhone(ev.target.value) })
             ),
             e('button', {
               className: 'btn-primary',
-              style: { background: funnel.brand_color || 'var(--accent)', color: '#000' },
+              style: { background: funnel.brand_color || 'var(--accent)', color: '#000', marginTop: 8 },
               disabled: submitting || !name.trim() || !email.trim(),
               onClick: submitLead
-            }, submitting ? 'Submitting...' : 'Submit')
+            }, submitting ? 'Submitting...' : 'Submit →')
           )
     )
   );

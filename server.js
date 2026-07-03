@@ -1577,15 +1577,27 @@ app.get('/api/funnels', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Get single funnel by ID
+app.get('/api/funnels/:id', requireAuth, async (req, res) => {
+  try {
+    const funnel = await db.getFunnelById(req.params.id);
+    if (!funnel) return res.status(404).json({ error: 'Not found' });
+    if (funnel.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    funnel.questions = JSON.parse(funnel.questions || '[]');
+    res.json(funnel);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.post('/api/funnels', requireAuth, async (req, res) => {
   try {
-    const { name, niche, headline, questions, ghl_calendar_id, ghl_private_token, success_message, brand_color } = req.body;
+    const { name, niche, headline, questions, ghl_calendar_id, ghl_private_token, ghl_webhook_url, success_message, brand_color } = req.body;
     if (!name) return res.status(400).json({ error: 'Name is required' });
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Math.random().toString(36).slice(2, 6);
     const funnel = await db.createFunnel({
       user_id: req.user.id, name, niche: niche || '', slug,
       headline: headline || '', questions: questions || [],
       ghl_calendar_id: ghl_calendar_id || '', ghl_private_token: ghl_private_token || '',
+      ghl_webhook_url: ghl_webhook_url || '',
       success_message: success_message || '', brand_color: brand_color || '#00ff88'
     });
     funnel.questions = JSON.parse(funnel.questions || '[]');
@@ -1598,7 +1610,7 @@ app.patch('/api/funnels/:id', requireAuth, async (req, res) => {
     const existing = await db.getFunnelById(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
     if (existing.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
-    const { name, niche, headline, questions, ghl_calendar_id, ghl_private_token, success_message, brand_color, active } = req.body;
+    const { name, niche, headline, questions, ghl_calendar_id, ghl_private_token, ghl_webhook_url, success_message, brand_color, active } = req.body;
     const updates = {};
     if (name !== undefined) updates.name = name;
     if (niche !== undefined) updates.niche = niche;
@@ -1606,6 +1618,7 @@ app.patch('/api/funnels/:id', requireAuth, async (req, res) => {
     if (questions !== undefined) updates.questions = questions;
     if (ghl_calendar_id !== undefined) updates.ghl_calendar_id = ghl_calendar_id;
     if (ghl_private_token !== undefined) updates.ghl_private_token = ghl_private_token;
+    if (ghl_webhook_url !== undefined) updates.ghl_webhook_url = ghl_webhook_url;
     if (success_message !== undefined) updates.success_message = success_message;
     if (brand_color !== undefined) updates.brand_color = brand_color;
     if (active !== undefined) updates.active = active;
@@ -1682,6 +1695,28 @@ app.post('/api/f/:slug/submit', async (req, res) => {
     const leadId = await db.createFunnelLead({
       funnel_id: funnel.id, answers: answers || {}, score: 0, name, email, phone: phone || ''
     });
+
+    // Forward lead to GHL webhook if configured
+    if (funnel.ghl_webhook_url) {
+      try {
+        await fetch(funnel.ghl_webhook_url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event: 'quiz_funnel.lead',
+            funnel_name: funnel.name,
+            funnel_slug: funnel.slug,
+            name, email, phone: phone || '',
+            answers: answers || {},
+            score: 0,
+            lead_id: leadId
+          })
+        });
+      } catch (e) {
+        console.error('GHL webhook failed:', e.message);
+      }
+    }
+
     res.json({ success: true, leadId, successMessage: funnel.success_message || 'Thanks! We\'ll be in touch soon.' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
