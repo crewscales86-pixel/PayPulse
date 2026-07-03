@@ -298,56 +298,114 @@
   .funnel-question-card .q-remove { color: var(--danger); cursor: pointer; font-size: 16px; padding: 4px; }
   .btn-ai { padding: 10px 20px; border-radius: 8px; background: linear-gradient(135deg, var(--purple), var(--blue)); color: #fff; font-weight: 700; font-size: 13px; border: none; display: flex; align-items: center; gap: 8px; }
 
-  /* Updated Public Funnel Renderer — high-converting landing */
+  /* ── PUBLIC FUNNEL LANDING ──────────────────────── */
   .public-funnel {
     min-height: 100vh; display: flex; flex-direction: column;
     align-items: center; justify-content: center;
-    padding: 40px 20px; text-align: center;
-    background: linear-gradient(135deg, var(--bg) 0%, #0f0f0f 50%, #0a0a0a 100%);
+    padding: 24px; text-align: center;
+    background: #f8f9fa;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
-  .pf-box {
-    width: 100%; max-width: 520px;
-    background: var(--surface);
-    border: 1px solid var(--border);
+  .pf-card {
+    width: 100%; max-width: 500px;
+    background: #ffffff;
     border-radius: 20px;
-    padding: 48px 40px;
-    box-shadow: 0 24px 64px rgba(0,0,0,0.4);
+    padding: 40px 36px;
+    box-shadow: 0 2px 40px rgba(0,0,0,0.08);
     position: relative;
-    overflow: hidden;
+    text-align: left;
+    color: #1a1a1a;
   }
-  .pf-box::before {
-    content: '';
-    position: absolute; top: 0; left: 0; right: 0; height: 4px;
-    background: linear-gradient(90deg, var(--pf-color, #00ff88), #00cc6a);
+  .pf-step-label {
+    font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1.5px; color: #888;
+    margin-bottom: 8px;
   }
-  .pf-progress { width: 100%; height: 6px; background: var(--surface3); border-radius: 3px; margin-bottom: 36px; overflow: hidden; }
-  .pf-progress-bar { height: 100%; border-radius: 3px; transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
-  .pf-headline { font-size: 28px; font-weight: 800; margin-bottom: 8px; line-height: 1.3; }
-  .pf-subtitle { color: var(--text2); font-size: 15px; margin-bottom: 36px; }
-  .pf-question { font-size: 20px; font-weight: 700; margin-bottom: 28px; line-height: 1.4; }
+  .pf-progress-track {
+    width: 100%; height: 4px;
+    background: #e8e8e8; border-radius: 2px;
+    margin-bottom: 32px; overflow: hidden;
+  }
+  .pf-progress-fill {
+    height: 100%; border-radius: 2px;
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .pf-headline {
+    font-size: 26px; font-weight: 800;
+    margin-bottom: 8px; line-height: 1.3;
+    color: #1a1a1a;
+  }
+  .pf-subhead {
+    font-size: 15px; color: #666;
+    line-height: 1.6; margin-bottom: 28px;
+  }
+  .pf-question-text {
+    font-size: 20px; font-weight: 700;
+    margin-bottom: 24px; line-height: 1.4;
+    color: #1a1a1a;
+  }
   .pf-options { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
-  .pf-option {
-    display: block; width: 100%; padding: 16px 24px;
+  .pf-opt {
+    display: block; width: 100%; padding: 16px 20px;
     border-radius: 12px;
-    background: var(--surface2);
-    border: 2px solid var(--border);
-    color: var(--text);
-    font-size: 15px; font-weight: 600;
+    background: #f5f5f5;
+    border: 2px solid transparent;
+    color: #1a1a1a;
+    font-size: 16px; font-weight: 600;
     text-align: left; cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.15s ease;
+    font-family: inherit;
   }
-  .pf-option:hover { border-color: var(--pf-color, #00ff88); background: rgba(0,255,136,0.04); transform: translateY(-1px); }
-  .pf-option.selected { border-color: var(--pf-color, #00ff88); background: rgba(0,255,136,0.08); }
-  .pf-step-counter { color: var(--text2); font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px; }
-  .pf-next { margin-top: 8px; }
-  .pf-contact-form { text-align: left; }
-  .pf-contact-form h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
-  .pf-contact-form p { color: var(--text2); margin-bottom: 24px; }
-  .pf-contact-form .form-group { margin-bottom: 18px; }
-  .pf-success { text-align: center; }
-  .pf-success-icon { font-size: 72px; margin-bottom: 20px; display: block; }
-  .pf-success-msg { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
-  .pf-success-sub { color: var(--text2); font-size: 15px; }
+  .pf-opt:hover { background: #eee; border-color: #ddd; }
+  .pf-opt.selected {
+    border-color: var(--pf-color, #00cc6a);
+    background: rgba(0,204,106,0.06);
+  }
+  .pf-btn {
+    width: 100%; padding: 16px; border-radius: 12px;
+    font-size: 16px; font-weight: 700;
+    border: none; cursor: pointer;
+    transition: all 0.15s; font-family: inherit;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .pf-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .pf-btn-primary {
+    background: var(--pf-color, #00cc6a);
+    color: #fff;
+  }
+  .pf-btn-primary:not(:disabled):hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+  }
+  .pf-form { text-align: left; }
+  .pf-form h2 { font-size: 22px; font-weight: 800; color: #1a1a1a; margin-bottom: 4px; }
+  .pf-form p { color: #666; font-size: 15px; margin-bottom: 24px; }
+  .pf-field { margin-bottom: 16px; }
+  .pf-field label {
+    display: block; font-size: 12px; font-weight: 700;
+    color: #444; margin-bottom: 6px; text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .pf-field input {
+    width: 100%; padding: 14px 16px;
+    border: 2px solid #e0e0e0; border-radius: 10px;
+    font-size: 15px; font-family: inherit;
+    color: #1a1a1a; background: #fff;
+    transition: border-color 0.15s;
+  }
+  .pf-field input:focus { border-color: var(--pf-color, #00cc6a); outline: none; }
+  .pf-success-state { text-align: center; padding: 20px 0; }
+  .pf-success-icon { font-size: 56px; margin-bottom: 16px; }
+  .pf-success-title { font-size: 24px; font-weight: 800; color: #1a1a1a; margin-bottom: 8px; }
+  .pf-success-sub { font-size: 15px; color: #666; line-height: 1.6; }
+  .pf-error-box { text-align: center; }
+  .pf-error-icon { font-size: 48px; margin-bottom: 16px; }
+  .pf-error-title { font-size: 20px; font-weight: 700; color: #1a1a1a; margin-bottom: 8px; }
+  .pf-error-msg { font-size: 14px; color: #888; margin-bottom: 20px; }
+  .pf-loading {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 300px; color: #888; font-size: 15px;
+  }
 </style>
 </head>
 <body>
@@ -1818,15 +1876,15 @@ function PublicFunnelRenderer({ slug }) {
   }, [slug]);
 
   if (loading) return e('div', { className: 'public-funnel' },
-    e('div', { style: { color: 'var(--text2)' } }, 'Loading...')
+    e('div', { className: 'pf-loading' }, 'Loading…')
   );
 
   if (error) return e('div', { className: 'public-funnel' },
-    e('div', { className: 'pf-box' },
-      e('div', { style: { fontSize: 48, marginBottom: 16 } }, '\u274C'),
-      e('div', { style: { fontSize: 18, fontWeight: 700, marginBottom: 8 } }, 'Funnel Unavailable'),
-      e('div', { style: { color: 'var(--text2)', marginBottom: 20 } }, error),
-      e('a', { href: '/', style: { color: 'var(--accent)' } }, 'Go Home')
+    e('div', { className: 'pf-card pf-error-box' },
+      e('div', { className: 'pf-error-icon' }, '😕'),
+      e('div', { className: 'pf-error-title' }, 'Funnel Unavailable'),
+      e('div', { className: 'pf-error-msg' }, error),
+      e('a', { href: '/', style: { color: '#00cc6a', fontWeight: 700, fontSize: 14 } }, '← Go Home')
     )
   );
 
@@ -1834,22 +1892,23 @@ function PublicFunnelRenderer({ slug }) {
 
   if (success) {
     return e('div', { className: 'public-funnel' },
-      e('div', { className: 'pf-box pf-success' },
-        e('div', { className: 'pf-success-icon' }, '\u2705'),
-        e('div', { className: 'pf-success-msg' }, successMsg || 'Thanks! We\'ll be in touch soon.'),
-        e('div', { className: 'pf-success-sub' }, 'We\'ve received your information.')
+      e('div', { className: 'pf-card pf-success-state' },
+        e('div', { className: 'pf-success-icon' }, '✅'),
+        e('div', { className: 'pf-success-title' }, successMsg.replace(/^Thanks!?/i, '').trim() || "We'll be in touch!"),
+        e('div', { className: 'pf-success-sub' }, "We've received your information and will reach out shortly.")
       )
     );
   }
 
   const questions = funnel.questions || [];
-  const totalSteps = questions.length + 1; // questions + contact form
-  const progress = (step / totalSteps) * 100;
-  const isLastQuestion = step === questions.length - 1;
+  const totalSteps = questions.length + 1;
+  const progress = ((step) / totalSteps) * 100;
+  const isLastQuestion = step === questions.length;
 
   const answerQuestion = () => {
-    if (step < questions.length) {
-      const q = questions[step];
+    if (step <= questions.length) {
+      const q = questions[step - 1];
+      if (!q) return;
       if (q.type === 'yesno' && !selectedOption) return;
       if (q.type === 'choice' && !selectedOption) return;
       setAnswers({ ...answers, [q.question]: selectedOption });
@@ -1884,61 +1943,66 @@ function PublicFunnelRenderer({ slug }) {
     setSubmitting(false);
   };
 
-  return e('div', { className: 'public-funnel', style: { '--pf-color': funnel.brand_color || '#00ff88' } },
-    e('div', { className: 'pf-box' },
-      e('div', { className: 'pf-progress' },
-        e('div', { className: 'pf-progress-bar', style: { width: progress + '%', background: funnel.brand_color || '#00ff88' } })
-      ),
-      step < questions.length
+  return e('div', { className: 'public-funnel', style: { '--pf-color': funnel.brand_color || '#00cc6a' } },
+    e('div', { className: 'pf-card' },
+      step <= questions.length
         ? e('div', null,
-            step === 0 && e('div', { className: 'pf-step-counter' }, 'Qualification Quiz'),
-            step > 0 && e('div', { className: 'pf-step-counter' }, 'Question ' + (step + 1) + ' of ' + questions.length),
-            e('h1', { className: 'pf-headline' }, step === 0 ? (funnel.headline || 'Qualification Quiz') : ''),
-            step === 0 && funnel.niche && e('div', { className: 'pf-subtitle' }, funnel.niche),
-            step === 0 && e('div', { className: 'pf-subtitle', style: { fontSize: 13, marginTop: -20 } }, 'Answer ' + questions.length + ' quick questions to see if you qualify.'),
-            step > 0 && e('div', { className: 'pf-question' }, questions[step].question),
-            step > 0 && e('div', { className: 'pf-options' },
-              questions[step].type === 'yesno'
-                ? e('div', { className: 'pf-options' },
-                    e('button', { className: 'pf-option' + (selectedOption === 'Yes' ? ' selected' : ''), onClick: () => setSelectedOption('Yes') }, 'Yes'),
-                    e('button', { className: 'pf-option' + (selectedOption === 'No' ? ' selected' : ''), onClick: () => setSelectedOption('No') }, 'No')
-                  )
-                : (questions[step].options || []).map((opt, oi) =>
-                    e('button', {
-                      key: oi,
-                      className: 'pf-option' + (selectedOption === opt ? ' selected' : ''),
-                      onClick: () => setSelectedOption(opt)
-                    }, opt)
-                  )
+            e('div', { className: 'pf-step-label' },
+              step === 0 ? 'Quick Quiz' : 'Question ' + step + ' of ' + questions.length
             ),
-            step > 0 && e('button', {
-              className: 'btn-primary pf-next',
-              style: { opacity: selectedOption ? 1 : 0.4, background: funnel.brand_color || 'var(--accent)', color: '#000' },
-              disabled: !selectedOption,
-              onClick: answerQuestion
-            }, isLastQuestion ? 'See Results →' : 'Continue →')
+            e('div', { className: 'pf-progress-track' },
+              e('div', { className: 'pf-progress-fill', style: { width: progress + '%', background: funnel.brand_color || '#00cc6a' } })
+            ),
+            step === 0 && e('div', null,
+              e('div', { className: 'pf-headline' }, funnel.headline || 'See if you qualify'),
+              e('div', { className: 'pf-subhead' }, niche || 'Answer a few quick questions.'),
+              e('div', { className: 'pf-options' },
+                e('button', { className: 'pf-btn pf-btn-primary', onClick: () => { setStep(1); }, style: { background: funnel.brand_color || '#00cc6a' } }, 'Get Started →')
+              )
+            ),
+            step > 0 && e('div', null,
+              e('div', { className: 'pf-question-text' }, questions[step - 1]?.question),
+              e('div', { className: 'pf-options' },
+                (questions[step - 1]?.type === 'yesno'
+                  ? ['Yes', 'No']
+                  : (questions[step - 1]?.options || [])
+                ).map(opt =>
+                  e('button', {
+                    key: opt,
+                    className: 'pf-opt' + (selectedOption === opt ? ' selected' : ''),
+                    onClick: () => setSelectedOption(opt)
+                  }, opt)
+                )
+              ),
+              e('button', {
+                className: 'pf-btn pf-btn-primary',
+                style: { background: funnel.brand_color || '#00cc6a' },
+                disabled: !selectedOption,
+                onClick: answerQuestion
+              }, isLastQuestion ? 'Continue →' : 'Next →')
+            )
           )
-        : e('div', { className: 'pf-contact-form' },
-            e('h2', null, 'You qualify! Enter your details'),
-            e('p', null, 'We\'ll be in touch shortly to discuss your project.'),
-            e('div', { className: 'form-group' },
-              e('label', null, 'Your Name *'),
+        : e('div', { className: 'pf-form' },
+            e('h2', null, 'Great! Enter your details'),
+            e('p', null, "We'll be in touch to discuss your project."),
+            e('div', { className: 'pf-field' },
+              e('label', null, 'Full Name *'),
               e('input', { placeholder: 'John Smith', value: name, onChange: ev => setName(ev.target.value) })
             ),
-            e('div', { className: 'form-group' },
+            e('div', { className: 'pf-field' },
               e('label', null, 'Email Address *'),
               e('input', { type: 'email', placeholder: 'john@email.com', value: email, onChange: ev => setEmail(ev.target.value) })
             ),
-            e('div', { className: 'form-group' },
+            e('div', { className: 'pf-field' },
               e('label', null, 'Phone Number'),
               e('input', { type: 'tel', placeholder: '(555) 123-4567', value: phone, onChange: ev => setPhone(ev.target.value) })
             ),
             e('button', {
-              className: 'btn-primary',
-              style: { background: funnel.brand_color || 'var(--accent)', color: '#000', marginTop: 8 },
+              className: 'pf-btn pf-btn-primary',
+              style: { background: funnel.brand_color || '#00cc6a', marginTop: 8 },
               disabled: submitting || !name.trim() || !email.trim(),
               onClick: submitLead
-            }, submitting ? 'Submitting...' : 'Submit →')
+            }, submitting ? 'Submitting…' : 'Submit')
           )
     )
   );
@@ -1948,7 +2012,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [, forceRender] = useState(0);
   // Read page from hash on every render (no state needed for page)
-  const page = window.location.hash.replace('#', '') || (user?.role === 'admin' ? 'admin' : 'customers');
+  const page = (window.location.hash.replace('#', '').split('?')[0]) || (user?.role === 'admin' ? 'admin' : 'customers');
 
   // Listen for hash changes to trigger re-render
   useEffect(() => {
