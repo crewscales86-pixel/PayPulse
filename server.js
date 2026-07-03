@@ -384,18 +384,23 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
 // ─── FAILED CHARGE WEBHOOK ──────────────────────────────────────
 async function fireFailWebhook(user, customer, amount, reason) {
   if (!user.failed_charge_webhook_url) return;
+  const companyName = customer.company_name || customer.name;
   try {
     await fetch(user.failed_charge_webhook_url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         event: 'charge.failed',
+        event_type: 'charge_failed',
         customer_name: customer.name,
         customer_company: customer.company_name || '',
         customer_email: customer.email,
         amount,
         failure_reason: reason,
-        customer_id: customer.id
+        customer_id: customer.id,
+        // Pre-formatted SMS-friendly message for GHL mapping
+        sms_message: `${customer.name}'s payment of $${amount} was declined — ${reason}. Check with them to update their card.`,
+        sms_alert: `${customer.name} — payment declined`
       })
     });
   } catch (e) {
@@ -486,7 +491,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
       title: `Charge failed — ${customer.name}`,
       body: `$${chargeAmount.toFixed(2)} failed — No payment method on file`
     });
-    fireFailWebhook(user, customer, chargeAmount, 'No payment method on file');
+    await fireFailWebhook(user, customer, chargeAmount, 'No payment method on file');
     return db.getChargeById(charge.id);
   }
 
@@ -519,7 +524,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
           'Invalid Stripe key — must start with sk_live_ or sk_test_'
       });
       await db.updateCustomer(customer.id, { status: 'at_risk' });
-      fireFailWebhook(user, customer, chargeAmount, 'Invalid Stripe key');
+      await fireFailWebhook(user, customer, chargeAmount, 'Invalid Stripe key');
       return db.getChargeById(charge.id);
     }
     if (!customer.stripe_customer_id) {
@@ -534,7 +539,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
         body: 'No Stripe customer ID on file'
       });
       await db.updateCustomer(customer.id, { status: 'at_risk' });
-      fireFailWebhook(user, customer, chargeAmount, 'No Stripe customer ID on file');
+      await fireFailWebhook(user, customer, chargeAmount, 'No Stripe customer ID on file');
       return db.getChargeById(charge.id);
     }
 
@@ -608,7 +613,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
         body: `Stripe error: ${reason}`
       });
       await db.updateCustomer(customer.id, { status: 'at_risk' });
-      fireFailWebhook(user, customer, chargeAmount, reason);
+      await fireFailWebhook(user, customer, chargeAmount, reason);
     }
     return db.getChargeById(charge.id);
   }
@@ -670,7 +675,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
           title: `Charge failed — ${customer.name}`,
           body: `Whop error: ${failureReason}`
         });
-        fireFailWebhook(user, customer, chargeAmount, failureReason);
+        await fireFailWebhook(user, customer, chargeAmount, failureReason);
       }
     } catch (fetchErr) {
       console.error('Whop charge error:', fetchErr);
@@ -686,7 +691,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
         title: `Charge failed — ${customer.name}`,
         body: `Whop error: ${reason}`
       });
-      fireFailWebhook(user, customer, chargeAmount, reason);
+      await fireFailWebhook(user, customer, chargeAmount, reason);
     }
     return db.getChargeById(charge.id);
   }
@@ -831,6 +836,12 @@ app.post('/webhook/stripe/:secret', async (req, res) => {
               obj.last_payment_error?.message || 'Unknown'
             }`
           });
+          // Also fire the fail alert to GHL
+          const chargeUser = await db.getUserById(customer.user_id);
+          if (chargeUser) {
+            const failAmount = parseFloat(obj.amount_received || obj.amount || 0) / 100;
+            await fireFailWebhook(chargeUser, customer, failAmount, obj.last_payment_error?.message || 'Payment failed');
+          }
         }
       }
     }
