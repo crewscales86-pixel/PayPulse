@@ -381,6 +381,28 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
   }
 });
 
+// ─── FAILED CHARGE WEBHOOK ──────────────────────────────────────
+async function fireFailWebhook(user, customer, amount, reason) {
+  if (!user.failed_charge_webhook_url) return;
+  try {
+    await fetch(user.failed_charge_webhook_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: 'charge.failed',
+        customer_name: customer.name,
+        customer_company: customer.company_name || '',
+        customer_email: customer.email,
+        amount,
+        failure_reason: reason,
+        customer_id: customer.id
+      })
+    });
+  } catch (e) {
+    console.error('Failed to send failure webhook:', e.message);
+  }
+}
+
 // ─── CHARGE PROCESSING ────────────────────────────────────────────
 async function processCharge(user, customer, note = '', utmData = {}) {
   const rate = parseFloat(customer.rate_per_trigger) || 0;
@@ -464,6 +486,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
       title: `Charge failed — ${customer.name}`,
       body: `$${chargeAmount.toFixed(2)} failed — No payment method on file`
     });
+    fireFailWebhook(user, customer, chargeAmount, 'No payment method on file');
     return db.getChargeById(charge.id);
   }
 
@@ -495,6 +518,8 @@ async function processCharge(user, customer, note = '', utmData = {}) {
         body:
           'Invalid Stripe key — must start with sk_live_ or sk_test_'
       });
+      await db.updateCustomer(customer.id, { status: 'at_risk' });
+      fireFailWebhook(user, customer, chargeAmount, 'Invalid Stripe key');
       return db.getChargeById(charge.id);
     }
     if (!customer.stripe_customer_id) {
@@ -508,6 +533,8 @@ async function processCharge(user, customer, note = '', utmData = {}) {
         title: `Charge failed — ${customer.name}`,
         body: 'No Stripe customer ID on file'
       });
+      await db.updateCustomer(customer.id, { status: 'at_risk' });
+      fireFailWebhook(user, customer, chargeAmount, 'No Stripe customer ID on file');
       return db.getChargeById(charge.id);
     }
 
@@ -580,6 +607,8 @@ async function processCharge(user, customer, note = '', utmData = {}) {
         title: `Charge failed — ${customer.name}`,
         body: `Stripe error: ${reason}`
       });
+      await db.updateCustomer(customer.id, { status: 'at_risk' });
+      fireFailWebhook(user, customer, chargeAmount, reason);
     }
     return db.getChargeById(charge.id);
   }
@@ -1111,6 +1140,7 @@ app.get('/api/settings', requireAuth, async (req, res) => {
     ghlWebhookUrl: `${BASE_URL}/webhook/ghl/${user.ghl_webhook_secret}`,
     ghlWebhookSecret: user.ghl_webhook_secret,
     whopWebhookUrl: `${BASE_URL}/webhook/whop/${user.whop_webhook_secret}`,
+    failedChargeWebhookUrl: user.failed_charge_webhook_url || '',
     plan: user.plan,
     monthlyRate: user.monthly_rate
   });
@@ -1139,6 +1169,8 @@ app.post('/api/settings', requireAuth, async (req, res) => {
   if (req.body.appointmentTrackingMode !== undefined)
     updates.appointment_tracking_mode =
       req.body.appointmentTrackingMode ? 1 : 0;
+  if (req.body.failedChargeWebhookUrl !== undefined)
+    updates.failed_charge_webhook_url = req.body.failedChargeWebhookUrl;
   res.json(await db.updateUser(req.user.id, updates));
 });
 

@@ -377,43 +377,27 @@ function CustomerCard({ customer, onCharge, onEdit, onAnalytics, webhookSecret, 
   const locId = customer.ghl_location_id;
   const clientWebhook = locId && webhookSecret ? (window.location.origin + '/webhook/ghl/' + webhookSecret + '/' + locId) : null;
   const [copied, setCopied] = useState(false);
-  const [savingCard, setSavingCard] = useState(false);
   const copyUrl = () => { navigator.clipboard.writeText(clientWebhook); setCopied(true); setTimeout(() => setCopied(false), 2000); };
 
-  const saveCard = async () => {
-    setSavingCard(true);
-    try {
-      const data = await api('/api/customers/' + customer.id + '/setup-card', { method: 'POST' });
-      window.location.href = data.url;
-    } catch (err) {
-      alert('Failed to create card setup link: ' + err.message);
-      setSavingCard(false);
-    }
-  };
-
   return e('div', { className: 'cust-card' },
-    e('div', { className: 'cust-name' }, customer.name),
-    e('div', { className: 'cust-rate' }, '$' + customer.rate_per_trigger + '/appt'),
-    customer.company_name && e('div', { className: 'cust-company', style: { fontSize: 12, color: 'var(--text2)', marginTop: 2 } }, customer.company_name),
-    e('div', { className: 'cust-email' }, customer.email),
-    locId && e('div', { style: { fontSize: 11, color: 'var(--blue)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 } },
-      '📍 Location: ', e('span', { style: { fontFamily: 'monospace', color: 'var(--text)' } }, locId.slice(0, 12) + (locId.length > 12 ? '…' : ''))
-    ),
-    clientWebhook && e('div', { style: { marginTop: 6, padding: '6px 8px', background: 'var(--surface2)', borderRadius: 6, fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 } },
-      e('span', { style: { color: 'var(--blue)', fontWeight: 600 } }, '🔗 Webhook:'),
-      e('span', { style: { fontFamily: 'monospace', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 } }, clientWebhook),
-      e('button', { onClick: copyUrl, style: { background: copied ? 'var(--accent)' : 'var(--surface3)', color: copied ? '#000' : 'var(--text2)', border: 'none', borderRadius: 4, padding: '2px 8px', fontSize: 10, fontWeight: 700, cursor: 'pointer', flexShrink: 0 } }, copied ? '✓' : 'Copy')
+    e('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 } },
+      e('div', { style: { flex: 1, minWidth: 0 } },
+        e('div', { className: 'cust-name' }, customer.name),
+        customer.company_name && e('div', { style: { fontSize: 11, color: 'var(--text2)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, customer.company_name)
+      ),
+      e('div', { style: { fontSize: 15, fontWeight: 900, color: 'var(--blue)', whiteSpace: 'nowrap', marginLeft: 8 } }, '$' + customer.rate_per_trigger)
     ),
     e('div', { className: 'cust-meta' },
       customer.card_on_file
-        ? e('span', { className: 'tag tag-green' }, '\\u2713 Card on file')
-        : e('span', { className: 'tag tag-red' }, 'No card')
+        ? e('span', { className: 'tag tag-green' }, '\u2713 Card')
+        : e('span', { className: 'tag tag-red' }, 'No card'),
+      locId && e('span', { style: { fontSize: 10, color: 'var(--blue)', fontFamily: 'monospace' } }, '📍' + locId.slice(0, 8) + (locId.length > 8 ? '…' : '')),
+      e('span', { style: { fontSize: 10, color: 'var(--text3)' } }, customer.email)
     ),
     e('div', { className: 'cust-actions' },
-      e('button', { className: 'btn-sm green', onClick: () => onCharge(customer) }, 'Charge'),
-      e('button', { className: 'btn-sm', onClick: () => onEdit(customer) }, 'Edit'),
-      e('button', { className: 'btn-sm purple', onClick: () => onAnalytics(customer) }, 'Analytics'),
-      e('button', { className: 'btn-sm', style: { background: 'rgba(68,136,255,0.1)', color: 'var(--blue)', borderColor: 'rgba(68,136,255,0.3)' }, onClick: saveCard, disabled: savingCard }, savingCard ? '...' : 'Save Card')
+      e('button', { className: 'btn-sm green', style: { padding: '3px 10px', fontSize: 10 }, onClick: () => onCharge(customer) }, 'Charge'),
+      e('button', { className: 'btn-sm', style: { padding: '3px 10px', fontSize: 10 }, onClick: () => onEdit(customer) }, 'Edit'),
+      e('button', { className: 'btn-sm purple', style: { padding: '3px 10px', fontSize: 10 }, onClick: () => onAnalytics(customer) }, 'Analytics')
     )
   );
 }
@@ -625,9 +609,13 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
     byStatus[s].push(c);
   });
 
-  // Drag-and-drop kanban
+  // Drag-and-drop kanban (init once on mount, no refresh to prevent DOM clash)
   const colKeys = ['new', 'active', 'at_risk', 'paused'];
+  const sortableRef = useRef(null);
   useEffect(() => {
+    if (sortableRef.current) {
+      sortableRef.current.forEach(s => s.destroy());
+    }
     const sortables = [];
     colKeys.forEach(key => {
       const el = document.getElementById('kanban-' + key);
@@ -645,7 +633,8 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
           if (!customerId || !newStatus) return;
           try {
             await api('/api/customers/' + customerId, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) });
-            onRefresh();
+            // Don't call onRefresh — the 5s auto-refresh picks it up.
+            // Refresh mid-drag destroys Sortable DOM and causes black screen.
           } catch (err) {
             showToast('Failed to update status: ' + err.message, 'error');
           }
@@ -653,6 +642,7 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
       });
       sortables.push(s);
     });
+    sortableRef.current = sortables;
     return () => sortables.forEach(s => s.destroy());
   }, [customers.length]);
 
@@ -861,7 +851,8 @@ function SettingsPage({ settings, onSave, showToast }) {
         companyName: s.companyName, processor: s.processor,
         stripeSecretKey: s.stripeSecretKey, stripePublishableKey: s.stripePublishableKey,
         whopApiKey: s.whopApiKey, whopCompanyId: s.whopCompanyId,
-        appointmentTrackingMode: s.appointmentTrackingMode
+        appointmentTrackingMode: s.appointmentTrackingMode,
+        failedChargeWebhookUrl: s.failedChargeWebhookUrl || ''
       }) });
       setDirty(false);
       showToast('Settings saved!', 'success');
@@ -919,6 +910,20 @@ function SettingsPage({ settings, onSave, showToast }) {
           )
         ),
         e(Button, { className: 'btn-primary', loading: saving, onClick: save }, saving ? 'Saving...' : 'Save Changes')
+      ),
+      e('div', { className: 'settings-card' },
+        e('h3', null, 'Failed Charge Alerts'),
+        e('div', { className: 'form-group' },
+          e('label', null, 'GHL Webhook URL (for SMS alerts)'),
+          e('input', { value: s.failedChargeWebhookUrl || '', onChange: ev => update({failedChargeWebhookUrl: ev.target.value}), placeholder: 'https://services.leadconnectorhq.com/hooks/...' }),
+          e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 6, lineHeight: 1.5 } },
+            'When a charge fails, PayPulse POSTs here with the client name, company, and failure reason. ',
+            'Create a webhook in GHL (Settings → Webhooks) and paste the URL to trigger SMS alerts.'
+          )
+        ),
+        e('div', { style: { marginTop: 8 } },
+          e('button', { className: 'btn-sm green', onClick: save }, saving ? 'Saving...' : 'Save')
+        )
       ),
       e('div', { className: 'settings-card' },
         e('h3', null, 'Appointment Tracking Mode'),

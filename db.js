@@ -41,6 +41,7 @@ async function initSchema() {
         stripe_subscription_id TEXT DEFAULT '',
         ghl_webhook_secret TEXT DEFAULT '',
         whop_webhook_secret TEXT DEFAULT '',
+        failed_charge_webhook_url TEXT DEFAULT '',
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
       CREATE TABLE IF NOT EXISTS customers (
@@ -191,6 +192,20 @@ async function initSchema() {
     } catch (e) {
       // ignore migration errors (column already exists etc.)
     }
+  }
+
+  // Migration: add failed_charge_webhook_url to users
+  try {
+    if (USE_PG) {
+      await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_charge_webhook_url TEXT DEFAULT ''`);
+    } else {
+      const cols = sqliteDb.prepare("PRAGMA table_info(users)").all();
+      if (!cols.find(c => c.name === 'failed_charge_webhook_url')) {
+        sqliteDb.exec(`ALTER TABLE users ADD COLUMN failed_charge_webhook_url TEXT DEFAULT ''`);
+      }
+    }
+  } catch (e) {
+    // ignore
   }
 }
 
