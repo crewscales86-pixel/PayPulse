@@ -1784,6 +1784,15 @@ app.get('/guide', (req, res) =>
   res.sendFile(path.join(__dirname, 'public', 'guide.html'))
 );
 
+// ─── 404 CATCH-ALL ──────────────────────────────────────────────
+app.use((req, res) => {
+  if (req.path.startsWith('/api/')) {
+    res.status(404).json({ error: 'Not found' });
+  } else {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  }
+});
+
 app.listen(PORT, () => {
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@paypulse.co';
   const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
