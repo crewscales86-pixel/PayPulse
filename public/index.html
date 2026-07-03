@@ -627,9 +627,6 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
   const sortableRef = useRef(null);
   useEffect(() => {
     if (typeof Sortable === 'undefined') return; // CDN not loaded — skip drag
-    if (sortableRef.current) {
-      sortableRef.current.forEach(s => s.destroy());
-    }
     const sortables = [];
     colKeys.forEach(key => {
       const el = document.getElementById('kanban-' + key);
