@@ -476,7 +476,7 @@ function PaymentDetailModal({ customer, onClose, onRefresh }) {
     e('div', { className: 'modal wide' }, e('h3', null, 'Loading...'))
   );
 
-  const d = details || { charges: [], totalCharged: 0, totalTriggers: 0, creditBalance: 0, failureCount: 0, chargebackCount: 0, ratePerTrigger: customer.rate_per_trigger, cardOnFile: false };
+  const d = details || { charges: [], totalCharged: 0, totalTriggers: 0, creditBalance: 0, failureCount: 0, chargebackCount: 0, ratePerTrigger: customer.rate_per_trigger, cardOnFile: false, metaSpend: 0 };
   const c = d.customer || customer;
 
   return e('div', { className: 'modal-back', onClick: ev => ev.target === ev.currentTarget && onClose() },
@@ -516,6 +516,20 @@ function PaymentDetailModal({ customer, onClose, onRefresh }) {
           e('div', { className: 'detail-stat-label' }, 'Card on File'),
           e('div', { className: 'detail-stat-value ' + (d.cardOnFile ? 'green' : 'red'), style: { fontSize: 14 } },
             d.cardOnFile ? '✓ Yes' : '✗ No'
+          )
+        ),
+        e('div', { className: 'detail-stat' },
+          e('div', { className: 'detail-stat-label' }, 'Meta Ads Spend (MTD)'),
+          e('div', { className: 'detail-stat-value', style: { fontSize: 14 } },
+            d.metaSpend > 0 ? '$' + d.metaSpend.toFixed(2) : '—'
+          )
+        ),
+        d.metaSpend > 0 && e('div', { className: 'detail-stat' },
+          e('div', { className: 'detail-stat-label' }, 'Cost Per Lead'),
+          e('div', { className: 'detail-stat-value ' + ((d.totalTriggers || 0) > 0 ? (d.metaSpend / d.totalTriggers <= (d.ratePerTrigger || 147) ? 'green' : 'red') : '') },
+            (d.totalTriggers || 0) > 0
+              ? '$' + (d.metaSpend / d.totalTriggers).toFixed(2)
+              : '—'
           )
         )
       ),
@@ -637,7 +651,7 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
         await api('/api/customers', { method: 'POST', body: JSON.stringify({ name: editModal.name, email: editModal.email, rate_per_trigger: editModal.rate_per_trigger, status: editModal.status, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
         showToast('Customer added!', 'success');
       } else {
-        await api('/api/customers/' + editModal.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: editModal.rate_per_trigger, status: editModal.status, name: editModal.name, company_name: editModal.company_name, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
+        await api('/api/customers/' + editModal.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: editModal.rate_per_trigger, status: editModal.status, name: editModal.name, company_name: editModal.company_name, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '', meta_campaign_id: editModal.meta_campaign_id || '', client_brand_color: editModal.client_brand_color || '', client_logo_url: editModal.client_logo_url || '' }) });
         showToast('Customer updated!', 'success');
       }
       setEditModal(null); onRefresh();

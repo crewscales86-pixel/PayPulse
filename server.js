@@ -992,6 +992,23 @@ app.get('/api/customers/:id/payment-details', requireAuth, async (req, res) => {
     const webhookUrl = c.ghl_location_id
       ? `${BASE_URL}/webhook/ghl/${user.ghl_webhook_secret}/${c.ghl_location_id}`
       : null;
+    // Meta Ads spend for this customer's campaign
+    let metaSpend = 0;
+    try {
+      if (c.meta_campaign_id && user.meta_access_token) {
+        const accounts = await db.getMetaAdAccountsByUser(req.user.id);
+        const token = accounts?.[0]?.access_token || user.meta_access_token;
+        if (token) {
+          const now = new Date();
+          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+          const since = monthStart.toISOString().split('T')[0];
+          const until = now.toISOString().split('T')[0];
+          metaSpend = await db.getMetaCampaignSpend(c.meta_campaign_id, token, since, until);
+        }
+      }
+    } catch (e) {
+      metaSpend = 0; // silent fail — no Meta config set up yet
+    }
     const lastCharge =
       charges.length > 0 ? charges[0].created_at : null;
     const failureCount = charges.filter(ch => ch.status === 'failed').length;
@@ -1010,7 +1027,8 @@ app.get('/api/customers/:id/payment-details', requireAuth, async (req, res) => {
       ratePerTrigger: c.rate_per_trigger,
       cardOnFile: !!c.card_on_file,
       ghlLocationId: c.ghl_location_id,
-      webhookUrl
+      webhookUrl,
+      metaSpend
     });
   } catch (err) {
     console.error('Error in payment-details endpoint:', err);
