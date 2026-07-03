@@ -518,54 +518,23 @@
   <div class="story-num">SCENE 4 · CONNECT</div>
   <div class="story-title">Plug your keys into PayPulse</div>
   <div class="story-subtitle">
-    Open PayPulse in a new tab. If this is your first time logging in, you'll see the welcome screen below. Here's what to fill in:
-  </div>
-
-  <div class="mockup-wrap">
-    <div class="mockup-bar">
-      <div class="mockup-dots"><span></span><span></span><span></span></div>
-      <div class="mockup-url">PayPulse.app · /setup</div>
-    </div>
-    <div class="mockup-content">
-      <div style="text-align:center;margin-bottom:24px;">
-        <div style="font-size:11px;color:var(--green);letter-spacing:0.18em;font-weight:800;margin-bottom:6px;">⚡ PAYPULSE</div>
-        <div style="font-size:24px;font-weight:900;margin-bottom:6px;">Welcome to PayPulse</div>
-        <div style="font-size:12px;color:var(--text3);">Connect your payment processor to get started.</div>
-      </div>
-
-      <label class="fc-lbl">Your Name</label>
-      <input class="fc-inp" placeholder="e.g. John Smith"/>
-
-      <label class="fc-lbl">Choose Your Payment Processor</label>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:18px;">
-        <div id="procWhop" style="padding:14px 8px;background:var(--bg2);border:2px solid var(--border2);border-radius:9px;text-align:center;">
-          <div style="font-size:22px;margin-bottom:4px;">⚡</div>
-          <div style="font-size:11px;font-weight:800;">Whop</div>
-        </div>
-        <div id="procStripe" style="padding:14px 8px;background:var(--bg2);border:2px solid var(--border2);border-radius:9px;text-align:center;">
-          <div style="font-size:22px;margin-bottom:4px;">🔷</div>
-          <div style="font-size:11px;font-weight:800;">Stripe</div>
-        </div>
-        <div id="procFanbasis" style="padding:14px 8px;background:var(--bg2);border:2px solid var(--border2);border-radius:9px;text-align:center;">
-          <div style="font-size:22px;margin-bottom:4px;">🌟</div>
-          <div style="font-size:11px;font-weight:800;">Fanbasis</div>
-        </div>
-      </div>
-
-      <div id="setupFields"></div>
-
-      <button class="btn btn-primary" style="width:100%;justify-content:center;">SAVE & CONTINUE</button>
-    </div>
+    Open PayPulse in a new tab and log in. Then navigate to <strong>Settings</strong> (top navigation). Here's what to fill in depending on your processor:
   </div>
 
   <div class="instructions">
-    <div class="inst-title">📍 Do This</div>
+    <div class="inst-title">📍 In PayPulse → Settings</div>
     <ol class="inst-list">
-      <li>Type your name in the first field</li>
-      <li>Click your chosen processor (<span id="chosenProcName">Whop</span>)</li>
-      <li>Paste the key(s) you copied from the previous step</li>
-      <li>Click <strong>Save & Continue</strong></li>
+      <li>Click <strong>Settings</strong> in the top nav bar</li>
+      <li>In the <strong>Select Processor</strong> section, click your chosen processor (Whop or Stripe)</li>
+      <li>Paste the key(s) you copied from the previous step into the matching fields</li>
+      <li>Click <strong>Save Changes</strong></li>
+      <li>Your settings are stored securely. You can always update them later.</li>
     </ol>
+  </div>
+
+  <div class="callout callout-tip">
+    <div class="callout-icon">💡</div>
+    <div>If you're switching processors later, just come back to Settings — toggle between Whop and Stripe. All your customers stay in place.</div>
   </div>
 </div>
 
@@ -618,7 +587,7 @@
       <li>Click the <strong>Webhooks</strong> tab</li>
       <li>Click <strong>Create Webhook</strong> (or Add Endpoint)</li>
       <li>Paste your PayPulse URL in the URL field</li>
-      <li>Select these events: <code>payment.succeeded</code> and <code>membership.activated</code></li>
+      <li>Select these events: <code>payment.succeeded</code> and <code>membership.went_valid</code></li>
       <li>Click <strong>Save</strong></li>
     </ol>
   </div>
@@ -630,7 +599,7 @@
       <li>Click <strong>+ Add Endpoint</strong></li>
       <li>Paste your PayPulse URL in the Endpoint URL field</li>
       <li>Click <strong>+ Select events</strong></li>
-      <li>Add these events: <code>payment_intent.succeeded</code> and <code>payment_intent.payment_failed</code></li>
+      <li>Add these events: <code>payment_intent.succeeded</code>, <code>payment_intent.payment_failed</code>, <code>charge.dispute.created</code></li>
       <li>Click <strong>Add events</strong>, then <strong>Add endpoint</strong></li>
     </ol>
   </div>
@@ -648,7 +617,7 @@
   <div class="story-num">SCENE 6 · IMPORT EXISTING CLIENTS</div>
   <div class="story-title">Import your existing customers</div>
   <div class="story-subtitle">
-    If you already have paying clients on your processor, you don't have to wait for new payments to import them. The Sync button pulls everyone in.
+    If you already have paying clients on Stripe, you can import them directly. The Stripe sync button pulls everyone in and lets you select which ones to add.
   </div>
 
   <div class="mockup-wrap">
@@ -660,8 +629,8 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
         <div style="font-size:18px;font-weight:900;">Customers</div>
         <div style="position:relative;">
-          <button class="btn" style="background:transparent;color:var(--green);border:1px solid var(--green3);font-size:10px;padding:9px 16px;">
-            🔄 SYNC CUSTOMERS ▾
+          <button class="btn" style="background:transparent;color:var(--blue);border:1px solid var(--blue2);font-size:10px;padding:9px 16px;">
+            ⬇ STRIPE
           </button>
           <div class="hotspot" style="top:-6px;right:-6px;width:130%;height:140%;"></div>
         </div>
@@ -702,16 +671,18 @@
     <div class="inst-title">📍 Do This</div>
     <ol class="inst-list">
       <li>Go to the <strong>Customers</strong> tab</li>
-      <li>Click <strong>Sync Customers</strong> (top-right, green button)</li>
-      <li>Pick the option for your processor (<span id="syncProcName">From Whop</span>)</li>
-      <li>Confirm the dialog. PayPulse pulls all your existing clients.</li>
-      <li>You'll see a success toast like <code>✅ Synced 47 customers · 32 with card on file</code></li>
+      <li>Click <strong>⬇ Stripe</strong> button (above the search bar)</li>
+      <li>A modal opens showing all your <strong>Stripe customers</strong> with their card status</li>
+      <li>Check the ones you want to import, or use <strong>Select all</strong></li>
+      <li>Click <strong>Import X Selected</strong></li>
+      <li>You'll see a success toast like <code>✓ 12 imported · 3 skipped</code></li>
+      <li>Skipped customers already exist in PayPulse by email</li>
     </ol>
   </div>
 
   <div class="callout callout-info">
     <div class="callout-icon">💡</div>
-    <div><strong>"With card on file"</strong> means you can charge them immediately. Customers without a card need to complete a payment first — the webhook then catches their card automatically.</div>
+    <div><strong>Cards on file</strong> are imported from Stripe automatically. Customers with a card can be charged immediately. Customers without a card need to complete a payment first.</div>
   </div>
 </div>
 
@@ -795,7 +766,7 @@
   <div class="story-num">SCENE 8 · CUSTOMER SETTINGS</div>
   <div class="story-title">Configure a customer</div>
   <div class="story-subtitle">
-    Click any customer card → Edit. This is where you set the trigger amount, currency, and adaptive targets.
+    Click any customer card → <strong>Edit</strong>. This is where you set the trigger amount, pipeline stage, and link them to a GHL sub-account.
   </div>
 
   <div class="mockup-wrap" style="max-width:600px;margin:28px auto;">
@@ -808,38 +779,18 @@
       <div style="font-size:22px;font-weight:900;margin-bottom:24px;">Concrete Leads AU</div>
 
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;">
-        <div style="font-size:10px;font-weight:800;letter-spacing:0.12em;color:var(--text2);text-transform:uppercase;margin-bottom:8px;">Pipeline Stage</div>
-        <div style="display:flex;gap:6px;">
-          <span style="font-size:10px;padding:5px 10px;background:var(--green);color:#000;border-radius:6px;font-weight:800;">ACTIVE</span>
-          <span style="font-size:10px;padding:5px 10px;background:var(--card2);color:var(--text2);border-radius:6px;font-weight:700;">NEW</span>
-          <span style="font-size:10px;padding:5px 10px;background:var(--card2);color:var(--text2);border-radius:6px;font-weight:700;">AT RISK</span>
-        </div>
-      </div>
-
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;">
-        <div style="font-size:10px;font-weight:800;letter-spacing:0.12em;color:var(--text2);text-transform:uppercase;margin-bottom:8px;">Trigger Charge Amount</div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:24px;font-weight:900;color:var(--green);">$</span>
-          <span style="font-size:22px;font-weight:900;">75.00</span>
-          <span style="font-size:11px;color:var(--text3);">per shown appointment</span>
-        </div>
-      </div>
-
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;">
-        <div style="font-size:10px;font-weight:800;letter-spacing:0.12em;color:var(--text2);text-transform:uppercase;margin-bottom:8px;">Target Lead Costs <span style="color:var(--green);">(adaptive)</span></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">
-          <div><span style="color:var(--text3);">CPL:</span> <strong>$25</strong></div>
-          <div><span style="color:var(--text3);">CPBC:</span> <strong>$80</strong></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;">
+          <div><span style="color:var(--text3);">Rate per Trigger:</span> <strong style="color:var(--green);">$75.00</strong></div>
+          <div><span style="color:var(--text3);">Status:</span> <strong>Active</strong></div>
+          <div><span style="color:var(--text3);">GHL Location ID:</span> <span style="font-family:monospace;color:var(--blue);font-size:11px;">vQ3xK7mNpR</span></div>
+          <div><span style="color:var(--text3);">Card on File:</span> <strong style="color:var(--green);">✓ Yes</strong></div>
         </div>
       </div>
 
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;">
-        <div style="font-size:10px;font-weight:800;letter-spacing:0.12em;color:var(--text2);text-transform:uppercase;margin-bottom:8px;">Currency</div>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
-          <div style="padding:9px;background:var(--green3);border:2px solid var(--green);border-radius:7px;text-align:center;font-size:11px;font-weight:800;color:var(--green);">🇺🇸 USD</div>
-          <div style="padding:9px;background:var(--bg);border:2px solid var(--border2);border-radius:7px;text-align:center;font-size:11px;font-weight:800;">🇬🇧 GBP</div>
-          <div style="padding:9px;background:var(--bg);border:2px solid var(--border2);border-radius:7px;text-align:center;font-size:11px;font-weight:800;">🇦🇺 AUD</div>
-        </div>
+        <div style="font-size:10px;font-weight:800;letter-spacing:0.12em;color:var(--text2);text-transform:uppercase;margin-bottom:8px;">Per-Client Webhook URL</div>
+        <div style="font-size:11px;font-family:monospace;color:var(--blue);word-break:break-all;">https://paypulse.app/webhook/ghl/abc123/vQ3xK7mNpR</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:6px;">Paste this into the client's GHL sub-account outbound webhook</div>
       </div>
     </div>
   </div>
@@ -847,23 +798,23 @@
   <div class="feature-grid">
     <div class="feature-tile">
       <div class="feature-emoji">💰</div>
-      <div class="feature-title">Trigger Amount</div>
+      <div class="feature-title">Rate per Trigger</div>
       <div class="feature-desc">How much to bill per trigger (e.g. $75/shown appointment).</div>
     </div>
     <div class="feature-tile">
-      <div class="feature-emoji">🎯</div>
-      <div class="feature-title">Target CPL</div>
-      <div class="feature-desc">What you're aiming for as Cost Per Lead. Used by adaptive funnels.</div>
+      <div class="feature-emoji">📋</div>
+      <div class="feature-title">Pipeline Stage</div>
+      <div class="feature-desc">New → Active → At Risk → Paused. Drag cards between columns.</div>
     </div>
     <div class="feature-tile">
-      <div class="feature-emoji">📞</div>
-      <div class="feature-title">Target CPBC</div>
-      <div class="feature-desc">Cost Per Booked Call. Higher = each booking costs more.</div>
+      <div class="feature-emoji">🔗</div>
+      <div class="feature-title">GHL Location ID</div>
+      <div class="feature-desc">Links this customer to a GHL sub-account for per-client webhook routing.</div>
     </div>
     <div class="feature-tile">
-      <div class="feature-emoji">💱</div>
-      <div class="feature-title">Currency</div>
-      <div class="feature-desc">Per-customer billing currency. Stripe and Whop both support all 3.</div>
+      <div class="feature-emoji">💳</div>
+      <div class="feature-title">Card Setup</div>
+      <div class="feature-desc">Click "Save Card" in the Analytics modal to generate a $1 Stripe Checkout link.</div>
     </div>
   </div>
 </div>
@@ -887,23 +838,15 @@
       <div style="font-size:11px;color:var(--green);letter-spacing:0.18em;font-weight:800;margin-bottom:6px;">CHARGE CUSTOMER</div>
       <div style="font-size:22px;font-weight:900;margin-bottom:20px;">Jeffrey Sanford</div>
 
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px;">
-        <div style="font-size:9px;color:var(--text3);letter-spacing:0.12em;font-weight:700;margin-bottom:4px;">PAYMENT METHOD ID</div>
-        <div style="font-size:13px;font-family:monospace;color:var(--green);">payt_jgbRvV2FyalCY</div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:10px;color:var(--text3);letter-spacing:0.12em;font-weight:700;margin-bottom:4px;">Per-Appointment Rate</div>
+        <div style="font-size:24px;font-weight:900;color:var(--green);">$75.00</div>
       </div>
 
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px;margin:14px 0;">
-        <div style="font-size:10px;color:var(--text3);letter-spacing:0.12em;font-weight:800;margin-bottom:8px;text-transform:uppercase;">Manual Charge</div>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <span style="font-size:28px;color:var(--green);font-weight:900;">$</span>
-          <span style="font-size:26px;font-weight:900;">150</span>
-        </div>
-      </div>
-
-      <input class="fc-inp" placeholder="Note (optional)..." style="margin-bottom:16px;"/>
+      <input class="fc-inp" placeholder="Note (e.g. Monthly retainer)" style="margin-bottom:16px;"/>
 
       <button class="btn btn-primary" style="width:100%;justify-content:center;font-size:14px;padding:18px;">
-        ⚡ FIRE CHARGE
+        ⚡ CHARGE $75.00
       </button>
     </div>
   </div>
@@ -911,17 +854,16 @@
   <div class="instructions">
     <div class="inst-title">📍 How It Works</div>
     <ol class="inst-list">
-      <li>Click any customer card → <strong>Charge</strong></li>
-      <li>Enter the amount (in their currency)</li>
+      <li>Click any customer card → <strong>Analytics</strong> (purple button)</li>
+      <li>In the analytics modal, click the <strong>Charge $X.XX</strong> button in the "Fire Manual Charge" section</li>
       <li>Add an optional note ("Setup fee", "Make-good for missed appt", etc.)</li>
-      <li>Click <strong>Fire Charge</strong></li>
-      <li>The charge fires against their saved card. Card is never re-entered.</li>
+      <li>The charge fires against their saved card at their configured rate. Card is never re-entered.</li>
     </ol>
   </div>
 
   <div class="callout callout-tip">
     <div class="callout-icon">⚡</div>
-    <div><strong>What about automatic charges?</strong> You can also set up <strong>triggers</strong> that fire automatically — e.g. when a GHL appointment is marked "Showed", PayPulse bills the client. That's set up in the customer's Edit panel under "Trigger Charge Amount".</div>
+    <div><strong>What about automatic charges?</strong> You can also set up <strong>GHL webhook triggers</strong> that fire automatically — when a GHL appointment is booked, PayPulse bills the client at their configured rate. Enable <strong>Appointment Tracking Mode</strong> in Settings to show/no-show/cancel appointments.</div>
   </div>
 </div>
 
@@ -1261,9 +1203,7 @@ function goToScene(n) {
   updateMenu();
 
   // Special scene-specific setup
-  if (n === 5) updateSetupFieldsForProcessor();
   if (n === 6) updateWebhookInstructions();
-  if (n === 7) updateSyncProcessorName();
 }
 
 function nextScene() { goToScene(currentScene + 1); }
@@ -1289,39 +1229,7 @@ function applyProcessor(p) {
   const cpn = document.getElementById('chosenProcName');
   if (cpn) cpn.textContent = PROC_NAMES[p];
 
-  updateSetupFieldsForProcessor();
   updateWebhookInstructions();
-  updateSyncProcessorName();
-}
-
-function updateSetupFieldsForProcessor() {
-  const w = document.getElementById('procWhop');
-  const s = document.getElementById('procStripe');
-  const f = document.getElementById('procFanbasis');
-  if (!w) return;
-  [w, s, f].forEach(el => {
-    el.style.borderColor = 'var(--border2)';
-    el.style.background = 'var(--bg2)';
-  });
-  const sel = chosenProcessor === 'whop' ? w : chosenProcessor === 'stripe' ? s : f;
-  sel.style.borderColor = 'var(--green)';
-  sel.style.background = 'var(--green3)';
-
-  const fields = document.getElementById('setupFields');
-  if (!fields) return;
-  if (chosenProcessor === 'whop') {
-    fields.innerHTML = `
-      <label class="fc-lbl">Whop API Key</label>
-      <input class="fc-inp glow" placeholder="whop_api_..."/>
-      <label class="fc-lbl">Whop Company ID</label>
-      <input class="fc-inp" placeholder="biz_..."/>
-    `;
-  } else if (chosenProcessor === 'stripe') {
-    fields.innerHTML = `
-      <label class="fc-lbl">Stripe Secret Key</label>
-      <input class="fc-inp glow" placeholder="sk_live_..."/>
-    `;
-  }
 }
 
 function updateWebhookInstructions() {
@@ -1337,11 +1245,6 @@ function updateWebhookInstructions() {
     const el = document.getElementById(id);
     if (el) el.style.display = (k === chosenProcessor) ? '' : 'none';
   });
-}
-
-function updateSyncProcessorName() {
-  const el = document.getElementById('syncProcName');
-  if (el) el.textContent = `From ${PROC_NAMES[chosenProcessor]}`;
 }
 
 // Keyboard nav
