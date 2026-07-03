@@ -1004,15 +1004,7 @@ app.delete('/api/customers/:id', requireAuth, async (req, res) => {
   const c = await db.getCustomerById(req.params.id);
   if (!c || c.user_id !== req.user.id)
     return res.status(404).json({ error: 'Not found' });
-  if (db.sqliteDb) {
-    db.sqliteDb
-      .prepare('DELETE FROM customers WHERE id = ?')
-      .run(req.params.id);
-  } else {
-    await db.pgPool.query('DELETE FROM customers WHERE id = $1', [
-      req.params.id
-    ]);
-  }
+  await db.run('DELETE FROM customers WHERE id = ?', [req.params.id]);
   res.json({ ok: true });
 });
 
@@ -1440,16 +1432,7 @@ app.patch('/api/admin/agencies/:id', requireAuth, requireAdmin, async (req, res)
 });
 
 app.delete('/api/admin/agencies/:id', requireAuth, requireAdmin, async (req, res) => {
-  if (db.sqliteDb) {
-    db.sqliteDb
-      .prepare('DELETE FROM users WHERE id = ? AND role = ?')
-      .run(req.params.id, 'agency');
-  } else {
-    await db.pgPool.query(
-      'DELETE FROM users WHERE id = $1 AND role = $2',
-      [req.params.id, 'agency']
-    );
-  }
+  await db.run('DELETE FROM users WHERE id = ? AND role = ?', [req.params.id, 'agency']);
   res.json({ ok: true });
 });
 
