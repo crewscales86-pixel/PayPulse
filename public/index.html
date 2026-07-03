@@ -962,7 +962,7 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
         editModal.ghl_location_id && settings?.ghlWebhookSecret && e('div', { style: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 10, padding: 16, marginBottom: 16 } },
           e('div', { style: { fontSize: 12, fontWeight: 700, color: 'var(--accent)', marginBottom: 8 } }, '⚡ Auto-Billing Webhook'),
           e('div', { style: { fontSize: 12, color: 'var(--text2)', marginBottom: 10, lineHeight: 1.5 } },
-            'Paste this URL into this client\\'s ',
+            'Paste this URL into this client' + "'s" + ' ',
             e('strong', null, 'GHL Sub-Account → Settings → Webhooks → Outbound Webhook'),
             '. Trigger on ',
             e('strong', null, '"Appointment Booked"'),
