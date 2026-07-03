@@ -435,16 +435,11 @@
       <div class="choice-name">Stripe</div>
       <div class="choice-desc">Most flexible. Works with any business model. Best for tech-savvy users or B2B services.</div>
     </div>
-    <div class="choice" data-proc="fanbasis" onclick="pickProc('fanbasis')">
-      <div class="choice-icon">🌟</div>
-      <div class="choice-name">Fanbasis</div>
-      <div class="choice-desc">Purpose-built for subscriptions, creators, and fan platforms. Choose this if your business runs on Fanbasis.</div>
-    </div>
   </div>
 
   <div class="callout callout-info">
     <div class="callout-icon">ℹ️</div>
-    <div><strong>Don't know which?</strong> Most contractor/home-services agencies use <span class="hl">Whop</span> or <span class="hl">Stripe</span>. If you're billing clients monthly subscriptions for leads, Stripe is the simplest.</div>
+    <div><strong>Don't know which?</strong> Most contractor/home-services agencies use <span class="hl">Whop</span> or <span class="hl">Stripe</span>. If you're billing clients monthly for leads, Stripe is the simplest.</div>
   </div>
 </div>
 
@@ -513,43 +508,6 @@
   <div class="callout callout-warn">
     <div class="callout-icon">⚠️</div>
     <div>If your key starts with <code>sk_test_</code>, you're in <strong>Test mode</strong>. Switch to Live mode (top right) before copying.</div>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════
-     SCENE 4 — GET API KEY (FANBASIS)
-     ════════════════════════════════════════════ -->
-<div class="scene" data-scene="4" data-proc-fanbasis>
-  <div class="story-num">SCENE 3 · FANBASIS SETUP</div>
-  <div class="story-title">Get your Fanbasis API Key + Service ID</div>
-  <div class="story-subtitle">
-    You'll need two things from Fanbasis: an API key and the Service ID for the product you'll bill against.
-  </div>
-
-  <div class="instructions">
-    <div class="inst-title">📍 Step 1 — Get the API Key</div>
-    <ol class="inst-list">
-      <li>Go to <strong>fanbasis.com</strong> and log in</li>
-      <li>Click <strong>Settings</strong> in the sidebar</li>
-      <li>Click the <strong>API</strong> tab</li>
-      <li>Click <strong>Generate API Key</strong> if you don't have one</li>
-      <li>Copy the full key — long alphanumeric string</li>
-    </ol>
-  </div>
-
-  <div class="instructions">
-    <div class="inst-title">📍 Step 2 — Get the Service ID</div>
-    <ol class="inst-list">
-      <li>Click <strong>Services</strong> (or Products) in the sidebar</li>
-      <li>Click the service you want to bill against</li>
-      <li>Look in the URL bar or service details panel — the ID starts with <code>svc_</code></li>
-      <li>Copy the full ID</li>
-    </ol>
-  </div>
-
-  <div class="callout callout-info">
-    <div class="callout-icon">📌</div>
-    <div>If you can't find the Service ID, look at the page URL — Fanbasis often puts it after <code>/services/</code> in the path.</div>
   </div>
 </div>
 
@@ -674,17 +632,6 @@
       <li>Click <strong>+ Select events</strong></li>
       <li>Add these events: <code>payment_intent.succeeded</code> and <code>payment_intent.payment_failed</code></li>
       <li>Click <strong>Add events</strong>, then <strong>Add endpoint</strong></li>
-    </ol>
-  </div>
-
-  <div class="instructions" id="whInstFanbasis" style="display:none;">
-    <div class="inst-title">📍 Step 2 — Add the Webhook in Fanbasis</div>
-    <ol class="inst-list">
-      <li>Back in <strong>Fanbasis → Settings → Webhooks</strong></li>
-      <li>Click <strong>Add Webhook</strong></li>
-      <li>Paste your PayPulse URL</li>
-      <li>Select: <code>payment.succeeded</code> and <code>customer.created</code></li>
-      <li>Click <strong>Save</strong></li>
     </ol>
   </div>
 
@@ -985,7 +932,7 @@
   <div class="story-num">SCENE 10 · FUNNELS</div>
   <div class="story-title">Build quiz funnels</div>
   <div class="story-subtitle">
-    PayPulse has a built-in quiz funnel builder. You write a niche, click "AI Generate Questions", and get a 4-question qualifier funnel ready to deploy. Lead Intent Score gets posted to Meta Pixel for better ad targeting.
+    PayPulse has a built-in quiz funnel builder. You write a niche, click "AI Generate Questions", and get a 4-question qualifier funnel ready to deploy.
   </div>
 
   <div class="mockup-wrap">
@@ -999,11 +946,7 @@
           <div style="font-size:14px;font-weight:900;margin-bottom:8px;">🏠 Roofing — Atlanta</div>
           <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px;">
             <span style="font-size:9px;padding:3px 8px;background:var(--bg2);border-radius:100px;color:var(--text2);">4 Qs</span>
-            <span style="font-size:9px;padding:3px 8px;background:var(--yellow2);border-radius:100px;color:var(--yellow);">Q70+</span>
             <span style="font-size:9px;padding:3px 8px;background:var(--green4);border-radius:100px;color:var(--green);">📅 Calendar</span>
-            <span style="font-size:9px;padding:3px 8px;background:var(--blue2);border-radius:100px;color:var(--blue);">⚡ CAPI</span>
-            <span style="font-size:9px;padding:3px 8px;background:var(--purple2);border-radius:100px;color:var(--purple);">🧠 Adaptive</span>
-            <span style="font-size:9px;padding:3px 8px;background:var(--orange2);border-radius:100px;color:var(--orange);">🎰 Casino</span>
           </div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;font-size:9px;">
             <button style="padding:6px;background:transparent;border:1px solid var(--green3);color:var(--green);border-radius:5px;font-weight:700;letter-spacing:0.08em;">PREVIEW</button>
@@ -1015,7 +958,6 @@
           <div style="font-size:14px;font-weight:900;margin-bottom:8px;">🪟 Window Replacement</div>
           <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px;">
             <span style="font-size:9px;padding:3px 8px;background:var(--bg2);border-radius:100px;color:var(--text2);">5 Qs</span>
-            <span style="font-size:9px;padding:3px 8px;background:var(--yellow2);border-radius:100px;color:var(--yellow);">Q80+</span>
             <span style="font-size:9px;padding:3px 8px;background:var(--green4);border-radius:100px;color:var(--green);">📅 Calendar</span>
           </div>
           <div style="font-size:11px;color:var(--text3);">82 leads · avg score 74</div>
@@ -1031,7 +973,7 @@
       <li>Click <strong>+ New Funnel</strong></li>
       <li>Give it a name and niche ("Roofing — Atlanta")</li>
       <li>Click <strong>AI Generate Questions</strong> — Claude AI writes 4 qualifying questions for your niche</li>
-      <li>Add your headline, Meta Pixel ID, GHL Calendar ID (for inline booking)</li>
+      <li>Add your headline, GHL Calendar ID (for inline booking)</li>
       <li>Customize colors, success page, redirect URL</li>
       <li>Save — you'll get a public URL like <code>PayPulse.app/f/roofing-atlanta</code> ready to drive Meta ads to</li>
     </ol>
@@ -1053,7 +995,7 @@
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
       <div style="font-size:32px;">🧠</div>
       <div>
-        <div style="font-size:18px;font-weight:900;">Adaptive Funnel</div>
+        <div style="font-size:18px;font-weight:900;">Adaptive Funnel <span style="font-size:11px;font-weight:700;color:var(--yellow);background:var(--yellow2);padding:2px 10px;border-radius:100px;">Coming Soon</span></div>
         <div style="font-size:12px;color:var(--text2);">Auto-adjusts based on the assigned client's performance</div>
       </div>
     </div>
@@ -1071,7 +1013,7 @@
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
       <div style="font-size:32px;">🎰</div>
       <div>
-        <div style="font-size:18px;font-weight:900;">Casino Mode</div>
+        <div style="font-size:18px;font-weight:900;">Casino Mode <span style="font-size:11px;font-weight:700;color:var(--yellow);background:var(--yellow2);padding:2px 10px;border-radius:100px;">Coming Soon</span></div>
         <div style="font-size:12px;color:var(--text2);">Spin-the-wheel game before drop-off questions</div>
       </div>
     </div>
@@ -1090,7 +1032,7 @@
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
       <div style="font-size:32px;">👷</div>
       <div>
-        <div style="font-size:18px;font-weight:900;">Mascot Mode</div>
+        <div style="font-size:18px;font-weight:900;">Mascot Mode <span style="font-size:11px;font-weight:700;color:var(--yellow);background:var(--yellow2);padding:2px 10px;border-radius:100px;">Coming Soon</span></div>
         <div style="font-size:12px;color:var(--text2);">Full-screen cutscene between every question</div>
       </div>
     </div>
@@ -1178,8 +1120,7 @@
   <div class="trouble-item" onclick="this.classList.toggle('open')">
     <div class="trouble-q">Funnel disappeared from the dashboard</div>
     <div class="trouble-a">
-      Funnels have an <code>active</code> flag. If it got toggled to false, the funnel still exists but is hidden. Reactivate by running in Supabase:<br><br>
-      <code>UPDATE quiz_funnels SET active = true WHERE active = false;</code>
+      Funnels have an <code>active</code> flag. If it got toggled to false, the funnel still exists but is hidden. Re-activate it in the Funnels tab by clicking the <strong>Activate</strong> button on the card.<br><br>
     </div>
   </div>
 </div>
@@ -1213,7 +1154,7 @@
 
     <div class="btn-row" style="justify-content:center;">
       <button class="btn btn-ghost" onclick="goToScene(1)">← Restart Guide</button>
-      <button class="btn btn-primary" onclick="window.location.href='#'">Open PayPulse →</button>
+      <button class="btn btn-primary" onclick="window.open(window.location.origin, '_blank')">Open PayPulse →</button>
     </div>
   </div>
 </div>
@@ -1255,7 +1196,7 @@ let currentScene = 1;
 let chosenProcessor = localStorage.getItem('fc_guide_proc') || 'whop';
 let savedScene = parseInt(localStorage.getItem('fc_guide_scene') || '1');
 
-const PROC_NAMES = { whop: 'Whop', stripe: 'Stripe', fanbasis: 'Fanbasis' };
+const PROC_NAMES = { whop: 'Whop', stripe: 'Stripe' };
 
 function init() {
   applyProcessor(chosenProcessor);
@@ -1292,7 +1233,7 @@ function goToScene(n) {
   if (n === 4) {
     target = document.querySelector(`.scene[data-scene="4"][data-proc-${chosenProcessor}]`);
   } else {
-    target = document.querySelector(`.scene[data-scene="${n}"]:not([data-proc-whop]):not([data-proc-stripe]):not([data-proc-fanbasis])`);
+    target = document.querySelector(`.scene[data-scene="${n}"]:not([data-proc-whop]):not([data-proc-stripe])`);
   }
   if (target) target.classList.add('active');
 
@@ -1380,13 +1321,6 @@ function updateSetupFieldsForProcessor() {
       <label class="fc-lbl">Stripe Secret Key</label>
       <input class="fc-inp glow" placeholder="sk_live_..."/>
     `;
-  } else {
-    fields.innerHTML = `
-      <label class="fc-lbl">Fanbasis API Key</label>
-      <input class="fc-inp glow" placeholder="Your Fanbasis API key"/>
-      <label class="fc-lbl">Service ID</label>
-      <input class="fc-inp" placeholder="svc_..."/>
-    `;
   }
 }
 
@@ -1398,7 +1332,6 @@ function updateWebhookInstructions() {
   const insts = {
     whop: 'whInstWhop',
     stripe: 'whInstStripe',
-    fanbasis: 'whInstFanbasis',
   };
   Object.entries(insts).forEach(([k, id]) => {
     const el = document.getElementById(id);
