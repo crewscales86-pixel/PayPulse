@@ -170,7 +170,7 @@ app.post('/webhook/ghl/:secret', async (req, res) => {
         ),
         ghl_location_id: ghlLocationId
       });
-      db.addNotification({
+      await db.addNotification({
         user_id: user.id,
         type: 'new',
         title: `New customer — ${customer.name}`,
@@ -287,7 +287,7 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
         ),
         ghl_location_id: locationId
       });
-      db.addNotification({
+      await db.addNotification({
         user_id: user.id,
         type: 'new',
         title: `New client auto-created — ${customer.name}`,
@@ -735,7 +735,7 @@ app.post('/webhook/whop/:secret', async (req, res) => {
         card_on_file: 1,
         whop_member_id: data.user?.id || ''
       });
-      db.addNotification({
+      await db.addNotification({
         user_id: user.id,
         type: 'success',
         title: `Whop payment — ${customer.name}`,
@@ -846,9 +846,9 @@ app.post('/webhook/stripe/:secret', async (req, res) => {
             card_on_file: 1,
             stripe_payment_method_id: obj.payment_method || ''
           });
-          db.addNotification({
-            user_id: u.id,
-            type: 'success',
+      await db.addNotification({
+        user_id: u.id,
+        type: 'success',
             title: `Stripe payment — ${customer.name}`,
             body: 'Payment intent succeeded.'
           });
@@ -877,7 +877,7 @@ app.post('/webhook/stripe/:secret', async (req, res) => {
             note: 'Chargeback initiated',
             failure_reason: obj.reason
           });
-          db.addNotification({
+          await db.addNotification({
             user_id: u.id,
             type: 'fail',
             title: `CHARGEBACK — ${match.customer_name}`,
@@ -937,7 +937,7 @@ app.post('/api/customers', requireAuth, async (req, res) => {
       ...req.body,
       user_id: req.user.id
     });
-    db.addNotification({
+    await db.addNotification({
       user_id: req.user.id,
       type: 'new',
       title: `New customer — ${c.name}`,
