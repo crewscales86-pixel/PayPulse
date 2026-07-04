@@ -381,7 +381,11 @@ function AuthPage({ onAuth }) {
         loading ? 'Signing in...' : 'Log In'
       ),
       e('div', { style: { textAlign:'center', marginTop:20, color:'var(--text2)', fontSize:12 } },
-        'Accounts are created by your administrator.'
+        'Need an account? Contact your administrator.'
+      ),
+      e('div', { style: { textAlign:'center', marginTop:8, color:'var(--text3)', fontSize:11, lineHeight:1.5 } },
+        'Agencies: accounts are created for you by the admin. ',
+        'Admins: log in with your credentials, then go to Admin Panel → Create Agency to add users.'
       )
     )
   );
