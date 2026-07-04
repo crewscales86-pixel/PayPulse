@@ -1465,13 +1465,8 @@ app.post('/api/admin/seed-demo', requireAuth, requireAdmin, async (req, res) => 
     const existing = await db.getCustomersByUser(userId);
     for (const c of existing) {
       if (c.email && (c.email.includes('@plumbing.com') || c.email.includes('@premierroofing') || c.email.includes('@greenway') || c.email.includes('@brightelectric') || c.email.includes('@apexhvac'))) {
-        if (db.sqliteDb) {
-          db.sqliteDb.prepare('DELETE FROM charges WHERE customer_id = ?').run(c.id);
-          db.sqliteDb.prepare('DELETE FROM customers WHERE id = ?').run(c.id);
-        } else {
-          await db.pgPool.query('DELETE FROM charges WHERE customer_id = $1', [c.id]);
-          await db.pgPool.query('DELETE FROM customers WHERE id = $1', [c.id]);
-        }
+        await db.run('DELETE FROM charges WHERE customer_id = ?', [c.id]);
+        await db.run('DELETE FROM customers WHERE id = ?', [c.id]);
       }
     }
 
@@ -1510,18 +1505,10 @@ app.post('/api/admin/seed-demo', requireAuth, requireAdmin, async (req, res) => 
         const chargeId = uuidv4();
         const notes = ['Initial setup fee — welcome!', 'Weekly retainer — ' + c.company, 'Monthly retainer — ' + c.company, 'Lead generation fee', 'Performance bonus'];
         const note = notes[i % notes.length];
-        if (db.sqliteDb) {
-          db.sqliteDb.prepare(
-            `INSERT INTO charges (id, user_id, customer_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, note, created_at)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?)`
-          ).run(chargeId, userId, customer.id, c.name, c.email, c.rate, 'stripe', succeeded ? 'succeeded' : 'failed', 'ch_' + chargeId.slice(0, 10), note, chargeDate);
-        } else {
-          await db.pgPool.query(
-            `INSERT INTO charges (id, user_id, customer_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, note, created_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-            [chargeId, userId, customer.id, c.name, c.email, c.rate, 'stripe', succeeded ? 'succeeded' : 'failed', 'ch_' + chargeId.slice(0, 10), note, chargeDate]
-          );
-        }
+        await db.run(
+          'INSERT INTO charges (id, user_id, customer_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, note, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+          [chargeId, userId, customer.id, c.name, c.email, c.rate, 'stripe', succeeded ? 'succeeded' : 'failed', 'ch_' + chargeId.slice(0, 10), note, chargeDate]
+        );
         if (succeeded) { successCount++; totalAmount += c.rate; }
       }
       // Update customer totals
@@ -1540,29 +1527,15 @@ app.post('/api/admin/seed-demo', requireAuth, requireAdmin, async (req, res) => 
     }
 
     // Seed ad_metrics for charts (last 30 days of daily data)
-    if (db.sqliteDb) {
-      for (let i = 29; i >= 0; i--) {
-        const d = new Date(Date.now() - i * 86400000);
-        const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-        db.sqliteDb.prepare(
-          `INSERT OR IGNORE INTO ad_metrics (id, user_id, customer_id, source, ad_spend, impressions, clicks, leads, appointments, date_from, date_to, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
-        ).run(uuidv4(), userId, created[0]?.id || '', 'facebook', Math.round(Math.random()*150+50), Math.round(Math.random()*5000+500), Math.round(Math.random()*80+10), Math.round(Math.random()*8+2), Math.round(Math.random()*4+1), dateStr, dateStr, new Date().toISOString());
-      }
-    } else {
-      const metrics = [];
-      for (let i = 29; i >= 0; i--) {
-        const d = new Date(Date.now() - i * 86400000);
-        const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-        metrics.push(
-          db.pgPool.query(
-            `INSERT INTO ad_metrics (id, user_id, customer_id, source, ad_spend, impressions, clicks, leads, appointments, date_from, date_to, created_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING`,
-            [uuidv4(), userId, created[0]?.id || '', 'facebook', Math.round(Math.random()*150+50), Math.round(Math.random()*5000+500), Math.round(Math.random()*80+10), Math.round(Math.random()*8+2), Math.round(Math.random()*4+1), dateStr, dateStr, new Date().toISOString()]
-          )
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86400000);
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      try {
+        await db.run(
+          'INSERT INTO ad_metrics (id, user_id, customer_id, source, ad_spend, impressions, clicks, leads, appointments, date_from, date_to, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+          [uuidv4(), userId, created[0]?.id || '', 'facebook', Math.round(Math.random()*150+50), Math.round(Math.random()*5000+500), Math.round(Math.random()*80+10), Math.round(Math.random()*8+2), Math.round(Math.random()*4+1), dateStr, dateStr, new Date().toISOString()]
         );
-      }
-      await Promise.all(metrics);
+      } catch (e) { /* ignore dupes */ }
     }
 
     res.json({ created: created.length, message: `${created.length} demo clients with charges + 30-day ad metrics seeded` });
