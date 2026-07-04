@@ -394,10 +394,11 @@ function AuthPage({ onAuth }) {
 }
 
 // ─── CUSTOMER CARD ──────────────────────────────────────────────
-function CustomerCard({ customer, onCharge, onEdit, onAnalytics, webhookSecret, onSaveCard }) {
+function CustomerCard({ customer, onCharge, onEdit, onAnalytics, webhookSecret, onDelete }) {
   const locId = customer.ghl_location_id;
   const clientWebhook = locId && webhookSecret ? (window.location.origin + '/webhook/ghl/' + webhookSecret + '/' + locId) : null;
   const [copied, setCopied] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const copyUrl = () => { navigator.clipboard.writeText(clientWebhook); setCopied(true); setTimeout(() => setCopied(false), 2000); };
 
   return e('div', { className: 'cust-card' },
@@ -418,7 +419,11 @@ function CustomerCard({ customer, onCharge, onEdit, onAnalytics, webhookSecret, 
     e('div', { className: 'cust-actions' },
       e('button', { className: 'btn-sm green', style: { padding: '3px 10px', fontSize: 10 }, onClick: () => onCharge(customer) }, 'Charge'),
       e('button', { className: 'btn-sm', style: { padding: '3px 10px', fontSize: 10 }, onClick: () => onEdit(customer) }, 'Edit'),
-      e('button', { className: 'btn-sm purple', style: { padding: '3px 10px', fontSize: 10 }, onClick: () => onAnalytics(customer) }, 'Analytics')
+      e('button', { className: 'btn-sm purple', style: { padding: '3px 10px', fontSize: 10 }, onClick: () => onAnalytics(customer) }, 'Analytics'),
+      e('button', { className: 'btn-sm', style: { padding: '3px 10px', fontSize: 10, background: confirmDelete ? 'rgba(255,68,68,0.2)' : 'transparent', color: confirmDelete ? 'var(--danger)' : 'var(--text3)', borderColor: confirmDelete ? 'var(--danger)' : 'var(--border)' }, onClick: () => {
+        if (confirmDelete) { onDelete(customer); setConfirmDelete(false); }
+        else { setConfirmDelete(true); setTimeout(() => setConfirmDelete(false), 3000); }
+      } }, confirmDelete ? 'Confirm?' : 'Delete')
     )
   );
 }
@@ -759,7 +764,14 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
                   onCharge: setChargeModal,
                   onEdit: setEditModal,
                   webhookSecret: settings?.ghlWebhookSecret,
-                  onAnalytics: () => setDetailModal(c)
+                  onAnalytics: () => setDetailModal(c),
+                  onDelete: async (cust) => {
+                    try {
+                      await api('/api/customers/' + cust.id, { method: 'DELETE' });
+                      showToast(cust.name + ' deleted', 'success');
+                      onRefresh();
+                    } catch (err) { showToast(err.message, 'error'); }
+                  }
                 })
               )
             ),
