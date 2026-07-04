@@ -1406,7 +1406,16 @@ app.get('/api/metrics', requireAuth, async (req, res) => {
   }
 
   charges.forEach(c => {
-    const dateKey = (c.created_at ? String(c.created_at) : '').split(' ')[0];
+    let dateKey;
+    const raw = c.created_at;
+    if (!raw) return;
+    if (typeof raw === 'string') {
+      dateKey = raw.split(' ')[0]; // 'YYYY-MM-DD HH:MM:SS' → 'YYYY-MM-DD'
+    } else {
+      // JS Date object from PG — format to YYYY-MM-DD
+      const d = new Date(raw);
+      dateKey = `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+    }
     if (revenueByDay[dateKey] !== undefined) {
       if (c.status === 'succeeded') revenueByDay[dateKey] += c.amount;
       if (c.status === 'failed') failuresByDay[dateKey] += 1;
