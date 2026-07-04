@@ -1462,13 +1462,28 @@ app.post('/api/admin/seed-demo/:agencyId', requireAuth, requireAdmin, async (req
     const userId = req.params.agencyId;
     const user = await db.getUserById(userId);
     if (!user) return res.status(404).json({ error: 'Agency not found' });
+    if (user.role === 'admin') return res.status(400).json({ error: 'Seed into an agency account, not admin' });
+
+    // Delete existing demo data for clean seed
+    const existing = await db.getCustomersByUser(userId);
+    for (const c of existing) {
+      if (c.email && c.email.includes('@plumbing.com') || c.email.includes('@premierroofing') || c.email.includes('@greenway') || c.email.includes('@brightelectric') || c.email.includes('@apexhvac')) {
+        if (db.sqliteDb) {
+          db.sqliteDb.prepare('DELETE FROM charges WHERE customer_id = ?').run(c.id);
+          db.sqliteDb.prepare('DELETE FROM customers WHERE id = ?').run(c.id);
+        } else {
+          await db.pgPool.query('DELETE FROM charges WHERE customer_id = $1', [c.id]);
+          await db.pgPool.query('DELETE FROM customers WHERE id = $1', [c.id]);
+        }
+      }
+    }
 
     const clients = [
-      { name: 'Mike\'s Plumbing', company: 'Mike\'s Plumbing Inc.', email: 'mike@plumbing.com', rate: 97, status: 'active', charged: 1358, triggers: 14 },
-      { name: 'Premier Roofing', company: 'Premier Roofing LLC', email: 'info@premierroofing.com', rate: 147, status: 'active', charged: 2205, triggers: 15 },
-      { name: 'Greenway Landscaping', company: 'Greenway Landscaping Co.', email: 'tim@greenway.com', rate: 75, status: 'active', charged: 975, triggers: 13 },
-      { name: 'Bright Electric', company: 'Bright Electric Services', email: 'dispatch@brightelectric.com', rate: 125, status: 'new', charged: 125, triggers: 1 },
-      { name: 'Apex HVAC', company: 'Apex Heating & Cooling', email: 'office@apexhvac.com', rate: 147, status: 'at_risk', charged: 588, triggers: 4 },
+      { name: "Mike's Plumbing", company: "Mike's Plumbing Inc.", email: 'mike@plumbing.com', rate: 97, status: 'active', triggers: 14 },
+      { name: 'Premier Roofing', company: 'Premier Roofing LLC', email: 'info@premierroofing.com', rate: 147, status: 'active', triggers: 15 },
+      { name: 'Greenway Landscaping', company: 'Greenway Landscaping Co.', email: 'tim@greenway.com', rate: 75, status: 'active', triggers: 13 },
+      { name: 'Bright Electric', company: 'Bright Electric Services', email: 'dispatch@brightelectric.com', rate: 125, status: 'new', triggers: 1 },
+      { name: 'Apex HVAC', company: 'Apex Heating & Cooling', email: 'office@apexhvac.com', rate: 147, status: 'at_risk', triggers: 4 },
     ];
 
     const created = [];
@@ -1481,30 +1496,33 @@ app.post('/api/admin/seed-demo/:agencyId', requireAuth, requireAdmin, async (req
         rate_per_trigger: c.rate,
         status: c.status,
         card_on_file: c.status === 'active' ? 1 : 0,
-        stripe_customer_id: 'cus_demo_' + c.name.toLowerCase().replace(/\s/g, '').slice(0, 12),
-        stripe_payment_method_id: c.status === 'active' ? 'pm_demo_' + c.name.slice(0, 8).toLowerCase() : '',
+        stripe_customer_id: 'cus_demo_' + c.name.toLowerCase().replace(/[^a-z]/g, '').slice(0, 10),
+        stripe_payment_method_id: c.status === 'active' ? 'pm_demo_' + c.name.toLowerCase().replace(/[^a-z]/g, '').slice(0, 8) : '',
       });
       created.push(customer);
 
-      // Create historical charges
+      // Create historical charges with proper YYYY-MM-DD HH:MM:SS format
       const numCharges = Math.min(c.triggers, 12);
       let successCount = 0;
       let totalAmount = 0;
       for (let i = 0; i < numCharges; i++) {
-        const daysAgo = Math.floor(Math.random() * 60) + 1;
-        const chargeDate = new Date(Date.now() - daysAgo * 86400000).toISOString();
+        const daysAgo = Math.floor(Math.random() * 45) + 1 + i;
+        const d = new Date(Date.now() - daysAgo * 86400000);
+        const chargeDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
         const succeeded = i < numCharges - 1 || c.status !== 'at_risk';
-        const chargeId = require('uuid').v4();
+        const chargeId = uuidv4();
+        const notes = ['Initial setup fee — welcome!', 'Weekly retainer — ' + c.company, 'Monthly retainer — ' + c.company, 'Lead generation fee', 'Performance bonus'];
+        const note = notes[i % notes.length];
         if (db.sqliteDb) {
           db.sqliteDb.prepare(
             `INSERT INTO charges (id, user_id, customer_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, note, created_at)
              VALUES (?,?,?,?,?,?,?,?,?,?,?)`
-          ).run(chargeId, userId, customer.id, c.name, c.email, c.rate, 'stripe', succeeded ? 'succeeded' : 'failed', 'ch_demo_' + chargeId.slice(0, 8), i === 0 ? 'First charge — welcome!' : 'Monthly retainer — ' + c.company, chargeDate);
+          ).run(chargeId, userId, customer.id, c.name, c.email, c.rate, 'stripe', succeeded ? 'succeeded' : 'failed', 'ch_' + chargeId.slice(0, 10), note, chargeDate);
         } else {
           await db.pgPool.query(
             `INSERT INTO charges (id, user_id, customer_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, note, created_at)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-            [chargeId, userId, customer.id, c.name, c.email, c.rate, 'stripe', succeeded ? 'succeeded' : 'failed', 'ch_demo_' + chargeId.slice(0, 8), i === 0 ? 'First charge — welcome!' : 'Monthly retainer — ' + c.company, chargeDate]
+            [chargeId, userId, customer.id, c.name, c.email, c.rate, 'stripe', succeeded ? 'succeeded' : 'failed', 'ch_' + chargeId.slice(0, 10), note, chargeDate]
           );
         }
         if (succeeded) { successCount++; totalAmount += c.rate; }
@@ -1514,9 +1532,43 @@ app.post('/api/admin/seed-demo/:agencyId', requireAuth, requireAdmin, async (req
         total_charged: totalAmount,
         total_triggers: successCount,
       });
+
+      // Add a notification
+      await db.addNotification({
+        user_id: userId,
+        type: 'new',
+        title: `Demo client added — ${c.name}`,
+        body: `${c.company} — $${c.rate}/trigger, ${successCount} historical charges`
+      });
     }
 
-    res.json({ created: created.length, message: '5 demo clients with charges seeded' });
+    // Seed ad_metrics for charts (last 30 days of daily data)
+    if (db.sqliteDb) {
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date(Date.now() - i * 86400000);
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        db.sqliteDb.prepare(
+          `INSERT OR IGNORE INTO ad_metrics (id, user_id, customer_id, source, ad_spend, impressions, clicks, leads, appointments, date_from, date_to, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+        ).run(uuidv4(), userId, created[0]?.id || '', 'facebook', Math.round(Math.random()*150+50), Math.round(Math.random()*5000+500), Math.round(Math.random()*80+10), Math.round(Math.random()*8+2), Math.round(Math.random()*4+1), dateStr, dateStr, new Date().toISOString());
+      }
+    } else {
+      const metrics = [];
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date(Date.now() - i * 86400000);
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        metrics.push(
+          db.pgPool.query(
+            `INSERT INTO ad_metrics (id, user_id, customer_id, source, ad_spend, impressions, clicks, leads, appointments, date_from, date_to, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING`,
+            [uuidv4(), userId, created[0]?.id || '', 'facebook', Math.round(Math.random()*150+50), Math.round(Math.random()*5000+500), Math.round(Math.random()*80+10), Math.round(Math.random()*8+2), Math.round(Math.random()*4+1), dateStr, dateStr, new Date().toISOString()]
+          )
+        );
+      }
+      await Promise.all(metrics);
+    }
+
+    res.json({ created: created.length, message: `${created.length} demo clients with charges + 30-day ad metrics seeded` });
   } catch (err) {
     console.error('Seed error:', err);
     res.status(500).json({ error: err.message });
