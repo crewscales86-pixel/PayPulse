@@ -836,7 +836,7 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
             e('strong', null, '"Appointment Booked"'),
             ', then add a ',
             e('strong', null, 'Webhook'),
-            ' step with the URL below. PayPulse auto-charges $' + (editModal.rate_per_trigger || 'X') + ' to their card.'
+            ' step with the URL below. PayPulse charges to their card.'
           ),
           e('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
             e('code', { style: { flex: 1, background: 'var(--surface3)', padding: '8px 12px', borderRadius: 6, fontSize: 11, color: 'var(--blue)', wordBreak: 'break-all', fontFamily: 'monospace' } },
