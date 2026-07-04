@@ -1470,13 +1470,11 @@ app.post('/api/seed-demo', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Delete existing demo data for clean seed
+    // Delete ALL existing customers for clean seed
     const existing = await db.getCustomersByUser(userId);
     for (const c of existing) {
-      if (c.email && (c.email.includes('@painting.com') || c.email.includes('@freshcoat.com') || c.email.includes('@deckmasters.com') || c.email.includes('@fenceexperts.com') || c.email.includes('@precisiondecks.com'))) {
-        await db.run('DELETE FROM charges WHERE customer_id = ?', [c.id]);
-        await db.run('DELETE FROM customers WHERE id = ?', [c.id]);
-      }
+      await db.run('DELETE FROM charges WHERE customer_id = ?', [c.id]);
+      await db.run('DELETE FROM customers WHERE id = ?', [c.id]);
     }
 
     const clients = [
