@@ -1569,7 +1569,7 @@ app.post('/api/admin/agencies', requireAuth, requireAdmin, async (req, res) => {
       email,
       password_hash: hash,
       name,
-      companyName,
+      company_name: companyName || '',
       role: 'agency',
       plan: 'free',
       monthlyRate: 0,
