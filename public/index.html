@@ -1100,6 +1100,19 @@ function SettingsPage({ settings, onSave, showToast }) {
           )
         )
       )
+    ),
+    e('div', { className: 'settings-card', style: { border: '1px dashed var(--accent)' } },
+      e('h3', null, '🌱 Demo Data'),
+      e('div', { style: { color: 'var(--text2)', fontSize: 13, marginBottom: 14, lineHeight: 1.5 } },
+        'Click below to seed 5 realistic clients (Painting $147, Deck & Fence $197) with appointment history and 30-day metrics. Existing demo data will be replaced.'
+      ),
+      e(Button, { className: 'btn-primary', onClick: async () => {
+        try {
+          const res = await api('/api/seed-demo', { method: 'POST' });
+          showToast(res.message || 'Seeded!', 'success');
+          onSave();
+        } catch (err) { showToast(err.message, 'error'); }
+      } }, '🌱 Seed Demo Data')
     )
   );
 }
@@ -1317,7 +1330,7 @@ function AdminPage({ agencies, adminStats, onRefresh }) {
       e('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
         e('button', { className: 'btn-sm', style: { background:'rgba(0,200,83,0.1)', color:'var(--accent)', borderColor:'rgba(0,200,83,0.3)' }, onClick: async () => {
           try {
-            const res = await api('/api/admin/seed-demo', { method: 'POST' });
+            const res = await api('/api/seed-demo', { method: 'POST' });
             showToast(res.message || 'Seeded!', 'success');
             onRefresh();
           } catch (err) { showToast(err.message, 'error'); }

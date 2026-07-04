@@ -1466,25 +1466,25 @@ app.get('/api/admin/stats', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // ─── SEED DEMO DATA ─────────────────────────────────────────────
-app.post('/api/admin/seed-demo', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/seed-demo', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
 
     // Delete existing demo data for clean seed
     const existing = await db.getCustomersByUser(userId);
     for (const c of existing) {
-      if (c.email && (c.email.includes('@plumbing.com') || c.email.includes('@premierroofing') || c.email.includes('@greenway') || c.email.includes('@brightelectric') || c.email.includes('@apexhvac'))) {
+      if (c.email && (c.email.includes('@painting.com') || c.email.includes('@freshcoat.com') || c.email.includes('@deckmasters.com') || c.email.includes('@fenceexperts.com') || c.email.includes('@precisiondecks.com'))) {
         await db.run('DELETE FROM charges WHERE customer_id = ?', [c.id]);
         await db.run('DELETE FROM customers WHERE id = ?', [c.id]);
       }
     }
 
     const clients = [
-      { name: "Mike's Plumbing", company: "Mike's Plumbing Inc.", email: 'mike@plumbing.com', rate: 97, status: 'active', triggers: 14 },
-      { name: 'Premier Roofing', company: 'Premier Roofing LLC', email: 'info@premierroofing.com', rate: 147, status: 'active', triggers: 15 },
-      { name: 'Greenway Landscaping', company: 'Greenway Landscaping Co.', email: 'tim@greenway.com', rate: 75, status: 'active', triggers: 13 },
-      { name: 'Bright Electric', company: 'Bright Electric Services', email: 'dispatch@brightelectric.com', rate: 125, status: 'new', triggers: 1 },
-      { name: 'Apex HVAC', company: 'Apex Heating & Cooling', email: 'office@apexhvac.com', rate: 147, status: 'at_risk', triggers: 4 },
+      { name: 'Pro Painters', company: 'Pro Painters Toronto', email: 'pro@painting.com', rate: 147, status: 'active', triggers: 14 },
+      { name: 'Fresh Coat Painting', company: 'Fresh Coat Painting Inc.', email: 'info@freshcoat.com', rate: 147, status: 'active', triggers: 12 },
+      { name: 'Deck Masters', company: 'Deck Masters Ottawa', email: 'info@deckmasters.com', rate: 197, status: 'active', triggers: 10 },
+      { name: 'Fence Experts', company: 'Fence Experts GTA', email: 'dispatch@fenceexperts.com', rate: 197, status: 'new', triggers: 2 },
+      { name: 'Precision Decks', company: 'Precision Deck & Fence', email: 'office@precisiondecks.com', rate: 197, status: 'at_risk', triggers: 5 },
     ];
 
     const created = [];
@@ -1512,7 +1512,7 @@ app.post('/api/admin/seed-demo', requireAuth, requireAdmin, async (req, res) => 
         const chargeDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
         const succeeded = i < numCharges - 1 || c.status !== 'at_risk';
         const chargeId = uuidv4();
-        const notes = ['Initial setup fee — welcome!', 'Weekly retainer — ' + c.company, 'Monthly retainer — ' + c.company, 'Lead generation fee', 'Performance bonus'];
+        const notes = ['Appointment booked — ' + c.company, 'Appointment booked — ' + c.company, 'Appointment booked — ' + c.company];
         const note = notes[i % notes.length];
         await db.run(
           'INSERT INTO charges (id, user_id, customer_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, note, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
