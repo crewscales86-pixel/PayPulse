@@ -282,10 +282,12 @@ const API = window.location.origin.includes('localhost') ? 'http://localhost:300
 window.addEventListener('error', (ev) => {
   const root = document.getElementById('root');
   if (root) {
+    const msg = String(ev.message || 'Unknown error').replace(/[<>]/g, '');
+    const stack = String(ev.error?.stack || 'No stack trace').replace(/[<>]/g, '');
     root.innerHTML = `<div style="color:#ff4444;padding:40px;font-family:monospace;font-size:14px;">
       <h2 style="color:#fff;margin-bottom:12px;">⚠️ Something crashed</h2>
-      <p style="color:#ff8888;margin-bottom:8px;">${ev.message}</p>
-      <pre style="color:var(--text2);font-size:11px;overflow:auto;max-height:300px;">${ev.error?.stack || 'No stack trace'}</pre>
+      <p style="color:#ff8888;margin-bottom:8px;">${msg}</p>
+      <pre style="color:var(--text2);font-size:11px;overflow:auto;max-height:300px;">${stack}</pre>
       <button onclick="localStorage.removeItem('paypulse_token');location.reload()" style="margin-top:16px;padding:10px 20px;background:#00ff88;color:#000;border:none;border-radius:8px;font-weight:700;cursor:pointer;">Clear token & reload</button>
     </div>`;
   }

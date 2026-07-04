@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
@@ -14,9 +16,39 @@ const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
 const app = express();
-app.use(cors());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+
+// ─── SECURITY MIDDLEWARE ─────────────────────────────────────────
+app.use(helmet({
+  contentSecurityPolicy: false, // Allow inline styles/scripts for the SPA
+  crossOriginEmbedderPolicy: false
+}));
+app.use(cors({
+  origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : true,
+  credentials: true
+}));
+
+// Rate limiting
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 attempts per window
+  message: { error: 'Too many login attempts. Try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 120, // 120 requests per minute
+  message: { error: 'Too many requests. Slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+app.use('/api/', apiLimiter);
+app.use('/api/auth/login', authLimiter);
+
+app.use(bodyParser.json({ limit: '100kb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '100kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── INIT DB ─────────────────────────────────────────────────────
@@ -73,7 +105,11 @@ app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password)
       return res.status(400).json({ error: 'Email and password required' });
-    const user = await db.getUserByEmail(email);
+    if (typeof email !== 'string' || typeof password !== 'string')
+      return res.status(400).json({ error: 'Invalid input format' });
+    if (email.length > 254 || password.length > 128)
+      return res.status(400).json({ error: 'Input too long' });
+    const user = await db.getUserByEmail(email.toLowerCase().trim());
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
@@ -1591,6 +1627,11 @@ app.post('/api/admin/agencies', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+// ─── LOGOUT ───────────────────────────────────────────────────────
+app.post('/api/auth/logout', (req, res) => {
+  res.json({ ok: true });
+});
+
 // ─── ADMIN: AGENCY SUBSCRIPTION STATUS ──────────────────────────
 app.get('/api/admin/agencies/:id/subscription', requireAuth, requireAdmin, async (req, res) => {
   const user = await db.getUserById(req.params.id);
@@ -1613,6 +1654,12 @@ app.get('/', (req, res) =>
 app.get('/guide', (req, res) =>
   res.sendFile(path.join(__dirname, 'public', 'guide.html'))
 );
+
+// ─── GLOBAL ERROR HANDLER ────────────────────────────────────────
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
 
 // ─── 404 CATCH-ALL ──────────────────────────────────────────────
 app.use((req, res) => {
