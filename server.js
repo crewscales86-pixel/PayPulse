@@ -1456,6 +1456,73 @@ app.get('/api/admin/stats', requireAuth, requireAdmin, async (req, res) => {
   res.json(await db.getAdminStats());
 });
 
+// ─── SEED DEMO DATA ─────────────────────────────────────────────
+app.post('/api/admin/seed-demo/:agencyId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.agencyId;
+    const user = await db.getUserById(userId);
+    if (!user) return res.status(404).json({ error: 'Agency not found' });
+
+    const clients = [
+      { name: 'Mike\'s Plumbing', company: 'Mike\'s Plumbing Inc.', email: 'mike@plumbing.com', rate: 97, status: 'active', charged: 1358, triggers: 14 },
+      { name: 'Premier Roofing', company: 'Premier Roofing LLC', email: 'info@premierroofing.com', rate: 147, status: 'active', charged: 2205, triggers: 15 },
+      { name: 'Greenway Landscaping', company: 'Greenway Landscaping Co.', email: 'tim@greenway.com', rate: 75, status: 'active', charged: 975, triggers: 13 },
+      { name: 'Bright Electric', company: 'Bright Electric Services', email: 'dispatch@brightelectric.com', rate: 125, status: 'new', charged: 125, triggers: 1 },
+      { name: 'Apex HVAC', company: 'Apex Heating & Cooling', email: 'office@apexhvac.com', rate: 147, status: 'at_risk', charged: 588, triggers: 4 },
+    ];
+
+    const created = [];
+    for (const c of clients) {
+      const customer = await db.createCustomer({
+        user_id: userId,
+        name: c.name,
+        company_name: c.company,
+        email: c.email,
+        rate_per_trigger: c.rate,
+        status: c.status,
+        card_on_file: c.status === 'active' ? 1 : 0,
+        stripe_customer_id: 'cus_demo_' + c.name.toLowerCase().replace(/\s/g, '').slice(0, 12),
+        stripe_payment_method_id: c.status === 'active' ? 'pm_demo_' + c.name.slice(0, 8).toLowerCase() : '',
+      });
+      created.push(customer);
+
+      // Create historical charges
+      const numCharges = Math.min(c.triggers, 12);
+      let successCount = 0;
+      let totalAmount = 0;
+      for (let i = 0; i < numCharges; i++) {
+        const daysAgo = Math.floor(Math.random() * 60) + 1;
+        const chargeDate = new Date(Date.now() - daysAgo * 86400000).toISOString();
+        const succeeded = i < numCharges - 1 || c.status !== 'at_risk';
+        const chargeId = require('uuid').v4();
+        if (db.sqliteDb) {
+          db.sqliteDb.prepare(
+            `INSERT INTO charges (id, user_id, customer_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, note, created_at)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+          ).run(chargeId, userId, customer.id, c.name, c.email, c.rate, 'stripe', succeeded ? 'succeeded' : 'failed', 'ch_demo_' + chargeId.slice(0, 8), i === 0 ? 'First charge — welcome!' : 'Monthly retainer — ' + c.company, chargeDate);
+        } else {
+          await db.pgPool.query(
+            `INSERT INTO charges (id, user_id, customer_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, note, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+            [chargeId, userId, customer.id, c.name, c.email, c.rate, 'stripe', succeeded ? 'succeeded' : 'failed', 'ch_demo_' + chargeId.slice(0, 8), i === 0 ? 'First charge — welcome!' : 'Monthly retainer — ' + c.company, chargeDate]
+          );
+        }
+        if (succeeded) { successCount++; totalAmount += c.rate; }
+      }
+      // Update customer totals
+      await db.updateCustomer(customer.id, {
+        total_charged: totalAmount,
+        total_triggers: successCount,
+      });
+    }
+
+    res.json({ created: created.length, message: '5 demo clients with charges seeded' });
+  } catch (err) {
+    console.error('Seed error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/admin/agencies', requireAuth, requireAdmin, async (req, res) => {
   const agencies = await db.listUsers('agency');
   const result = [];

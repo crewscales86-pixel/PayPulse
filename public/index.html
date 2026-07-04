@@ -1337,6 +1337,14 @@ function AdminPage({ agencies, adminStats, onRefresh }) {
               e('td', null, e('span', { className: 'tag ' + (a.active ? 'tag-green' : 'tag-red') }, a.active ? 'Active' : 'Paused')),
               e('td', null,
                 e('button', { className: 'btn-sm', style: { marginRight:6 }, onClick: () => setShowModal(a) }, 'Edit'),
+                e('button', { className: 'btn-sm', style: { marginRight:6, background:'rgba(0,200,83,0.1)', color:'var(--accent)', borderColor:'rgba(0,200,83,0.3)' }, onClick: async () => {
+                  if (!confirm('Seed 5 demo clients into ' + a.name + '?')) return;
+                  try {
+                    const res = await api('/api/admin/seed-demo/' + a.id, { method: 'POST' });
+                    showToast(res.message || 'Seeded!', 'success');
+                    onRefresh();
+                  } catch (err) { showToast(err.message, 'error'); }
+                } }, 'Seed Demo'),
                 e('button', { className: 'btn-sm', style: { color:'var(--danger)' }, onClick: () => deleteAgency(a.id) }, 'Delete')
               )
             )
