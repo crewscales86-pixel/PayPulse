@@ -1457,17 +1457,14 @@ app.get('/api/admin/stats', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // ─── SEED DEMO DATA ─────────────────────────────────────────────
-app.post('/api/admin/seed-demo/:agencyId', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/admin/seed-demo', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const userId = req.params.agencyId;
-    const user = await db.getUserById(userId);
-    if (!user) return res.status(404).json({ error: 'Agency not found' });
-    if (user.role === 'admin') return res.status(400).json({ error: 'Seed into an agency account, not admin' });
+    const userId = req.user.id;
 
     // Delete existing demo data for clean seed
     const existing = await db.getCustomersByUser(userId);
     for (const c of existing) {
-      if (c.email && c.email.includes('@plumbing.com') || c.email.includes('@premierroofing') || c.email.includes('@greenway') || c.email.includes('@brightelectric') || c.email.includes('@apexhvac')) {
+      if (c.email && (c.email.includes('@plumbing.com') || c.email.includes('@premierroofing') || c.email.includes('@greenway') || c.email.includes('@brightelectric') || c.email.includes('@apexhvac'))) {
         if (db.sqliteDb) {
           db.sqliteDb.prepare('DELETE FROM charges WHERE customer_id = ?').run(c.id);
           db.sqliteDb.prepare('DELETE FROM customers WHERE id = ?').run(c.id);

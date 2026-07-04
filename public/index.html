@@ -1314,7 +1314,16 @@ function AdminPage({ agencies, adminStats, onRefresh }) {
   return e('div', { className: 'page' },
     e('div', { className: 'page-title', style: { display:'flex', justifyContent:'space-between', alignItems:'center' } },
       e('span', null, 'Admin Panel'),
-      e('button', { className: 'btn-primary', onClick: () => setShowModal('create') }, '+ Create Agency')
+      e('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
+        e('button', { className: 'btn-sm', style: { background:'rgba(0,200,83,0.1)', color:'var(--accent)', borderColor:'rgba(0,200,83,0.3)' }, onClick: async () => {
+          try {
+            const res = await api('/api/admin/seed-demo', { method: 'POST' });
+            showToast(res.message || 'Seeded!', 'success');
+            onRefresh();
+          } catch (err) { showToast(err.message, 'error'); }
+        } }, '🌱 Seed Demo'),
+        e('button', { className: 'btn-primary', onClick: () => setShowModal('create') }, '+ Create Agency')
+      )
     ),
     e('div', { className: 'admin-grid' },
       e('div', { className: 'admin-card stat-card' },
@@ -1349,14 +1358,6 @@ function AdminPage({ agencies, adminStats, onRefresh }) {
               e('td', null, e('span', { className: 'tag ' + (a.active ? 'tag-green' : 'tag-red') }, a.active ? 'Active' : 'Paused')),
               e('td', null,
                 e('button', { className: 'btn-sm', style: { marginRight:6 }, onClick: () => setShowModal(a) }, 'Edit'),
-                e('button', { className: 'btn-sm', style: { marginRight:6, background:'rgba(0,200,83,0.1)', color:'var(--accent)', borderColor:'rgba(0,200,83,0.3)' }, onClick: async () => {
-                  if (!confirm('Seed 5 demo clients into ' + a.name + '?')) return;
-                  try {
-                    const res = await api('/api/admin/seed-demo/' + a.id, { method: 'POST' });
-                    showToast(res.message || 'Seeded!', 'success');
-                    onRefresh();
-                  } catch (err) { showToast(err.message, 'error'); }
-                } }, 'Seed Demo'),
                 e('button', { className: 'btn-sm', style: { color:'var(--danger)' }, onClick: () => deleteAgency(a.id) }, 'Delete')
               )
             )
@@ -1579,12 +1580,20 @@ function App() {
       setUser(me);
 
       if (me.role === 'admin') {
-        const [aRes, sRes] = await Promise.all([
+        const [aRes, sRes, cRes, nRes, seRes, chRes, mRes, uRes] = await Promise.all([
           api('/api/admin/agencies'),
           api('/api/admin/stats'),
+          api('/api/customers'), api('/api/notifications'), api('/api/settings'),
+          api('/api/charges'), api('/api/metrics'), api('/api/notifications/unread-count'),
         ]);
         setAgencies(aRes);
         setAdminStats(sRes);
+        setCustomers(cRes);
+        setNotifications(nRes);
+        setSettings(seRes);
+        setCharges(chRes);
+        setMetrics(mRes);
+        setUnreadCount(uRes.count);
       } else {
         const [cRes, nRes, sRes, chRes, mRes, uRes] = await Promise.all([
           api('/api/customers'), api('/api/notifications'), api('/api/settings'),
@@ -1615,6 +1624,7 @@ function App() {
     { key: 'metrics', label: 'Metrics' },
   ];
   const adminNav = [
+    { key: 'customers', label: 'Customers' },
     { key: 'admin', label: 'Agencies' },
     ...(user?.role === 'admin' ? [{ key: 'subadmins', label: 'Sub Admins' }] : []),
     { key: 'admin-settings', label: 'Settings' },
@@ -1649,6 +1659,7 @@ function App() {
     !isAdmin && page === 'charges' && e(ChargesPage, { charges, showToast }),
     !isAdmin && page === 'metrics' && e(MetricsPage, { metrics, showToast }),
     isAdmin && page === 'admin' && e(AdminPage, { agencies, adminStats, onRefresh: refresh, showToast }),
+    isAdmin && page === 'customers' && e(CustomersPage, { customers, onRefresh: refresh, settings, showToast }),
     isAdmin && page === 'subadmins' && e(SubAdminsPage, { showToast }),
     isAdmin && page === 'admin-settings' && e(AdminSettingsPage, { user, onSave: refresh, showToast }),
     e(Toast, { toast, onDismiss: () => setToast(null) })
