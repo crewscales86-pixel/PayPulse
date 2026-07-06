@@ -449,7 +449,7 @@ function CustomerCard({ customer, onCharge, onEdit, onAnalytics, webhookSecret, 
         ? e('span', { className: 'tag tag-green' }, '\u2713 Card')
         : e('span', { className: 'tag tag-red' }, 'No card'),
       locId && e('span', { style: { fontSize: 10, color: 'var(--blue)', fontFamily: 'monospace' } }, '📍' + locId.slice(0, 8) + (locId.length > 8 ? '…' : '')),
-      e('span', { style: { fontSize: 10, color: 'var(--text2)' } }, customer.email)
+      e('span', { style: { fontSize: 10, color: 'var(--text2)' } }, customer.company_name)
     ),
     e('div', { className: 'cust-actions' },
       e('button', { className: 'btn-sm green', style: { padding: '3px 10px', fontSize: 10 }, onClick: () => onCharge(customer) }, 'Charge'),
@@ -991,7 +991,7 @@ function SyncFromStripeModal({ onClose, onImported, showToast }) {
             e('input', { type: 'checkbox', checked: !!selected[c.id], readOnly: true, style: { accentColor: 'var(--accent)' } }),
             e('div', { style: { flex: 1 } },
               e('div', { style: { fontWeight: 600, fontSize: 13 } }, c.name),
-              e('div', { style: { color: 'var(--text2)', fontSize: 11 } }, c.email)
+              e('div', { style: { color: 'var(--text2)', fontSize: 11 } }, c.email ? c.email.split('@')[0] + '…' : '')
             ),
             c.card_on_file
               ? e('span', { className: 'tag tag-green', style: { fontSize: 9 } }, '✓ Card')
