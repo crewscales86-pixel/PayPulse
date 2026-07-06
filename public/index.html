@@ -494,6 +494,7 @@ function AuthPage({ onAuth }) {
       try {
         const res = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
         localStorage.setItem('paypulse_token', res.token);
+        window.location.hash = 'customers';
         onAuth();
       } catch (err) { setError(err.message); }
       setLoading(false);
