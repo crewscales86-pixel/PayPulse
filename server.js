@@ -30,7 +30,7 @@ app.use(cors({
 // Rate limiting
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 attempts per window
+  max: 20, // 20 attempts per window
   message: { error: 'Too many login attempts. Try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false
@@ -1500,18 +1500,20 @@ app.post('/api/admin/seed-demo/:agencyId', requireAuth, requireAdmin, async (req
       });
       created.push(customer);
 
-      // Create historical charges with proper YYYY-MM-DD HH:MM:SS format
-      const numCharges = Math.min(c.triggers, 12);
+      // Create historical charges spread across days since June 26
+      // Slow day on July 1 — no appointments
+      const today = new Date();
+      const year = today.getFullYear();
+      const activeDays = [`${year}-06-26`, `${year}-06-27`, `${year}-06-28`, `${year}-06-29`, `${year}-06-30`, `${year}-07-02`, `${year}-07-03`];
+      const numCharges = Math.min(c.triggers, activeDays.length);
       let successCount = 0;
       let totalAmount = 0;
       for (let i = 0; i < numCharges; i++) {
-        const daysAgo = Math.floor(Math.random() * 45) + 1 + i;
-        const d = new Date(Date.now() - daysAgo * 86400000);
-        const chargeDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+        const dateStr = activeDays[i];
+        const chargeDate = dateStr + ' 10:30:00';
         const succeeded = i < numCharges - 1 || c.status !== 'at_risk';
         const chargeId = uuidv4();
-        const notes = ['Appointment booked — ' + c.company, 'Appointment booked — ' + c.company, 'Appointment booked — ' + c.company];
-        const note = notes[i % notes.length];
+        const note = 'Appointment booked — ' + c.company;
         await db.run(
           'INSERT INTO charges (id, user_id, customer_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, note, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
           [chargeId, userId, customer.id, c.name, c.email, c.rate, 'stripe', succeeded ? 'succeeded' : 'failed', 'ch_' + chargeId.slice(0, 10), note, chargeDate]

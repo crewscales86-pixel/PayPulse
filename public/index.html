@@ -228,13 +228,20 @@
   .charge-table td { padding: 8px 12px; }
 
   /* Metrics */
+  .metrics-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  .metrics-header h2 { font-size: 20px; font-weight: 900; }
+  .metrics-header span { font-size: 12px; color: var(--text3); }
   .metrics-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 20px; }
-  .metrics-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+  .metrics-grid-wide { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
   .chart-card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px;
+    transition: border-color 0.2s;
   }
-  .chart-card h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text2); margin-bottom: 16px; }
+  .chart-card:hover { border-color: var(--border2); }
+  .chart-card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text2); margin-bottom: 4px; }
+  .chart-card .chart-subtitle { font-size: 11px; color: var(--text3); margin-bottom: 14px; }
   .chart-wrap { height: 240px; position: relative; }
+  .chart-wrap.tall { height: 300px; }
 
   /* Admin */
   .admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 24px; }
@@ -1175,70 +1182,208 @@ function ChargesPage({ charges }) {
 function MetricsPage({ metrics }) {
   const revChartRef = useRef(null);
   const custChartRef = useRef(null);
+  const trigChartRef = useRef(null);
 
   useEffect(() => {
     if (!metrics) return;
+    // Destroy old charts if they exist
+    const charts = [];
     const revCtx = revChartRef.current?.getContext('2d');
     const custCtx = custChartRef.current?.getContext('2d');
-    if (!revCtx || !custCtx) return;
+    const trigCtx = trigChartRef.current?.getContext('2d');
 
     Chart.defaults.color = '#888';
     Chart.defaults.borderColor = '#2a2a2a';
+    Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif';
 
-    const labels = Object.keys(metrics.revenueByDay).slice(-14);
-    const revData = labels.map(k => metrics.revenueByDay[k] || 0);
-    const failData = labels.map(k => metrics.failuresByDay[k] || 0);
+    // ── Revenue & Failures (30 days, line chart) ──
+    if (revCtx) {
+      const labels = Object.keys(metrics.revenueByDay);
+      const revData = labels.map(k => metrics.revenueByDay[k] || 0);
+      const failData = labels.map(k => metrics.failuresByDay[k] || 0);
+      // Show ~5 date labels evenly spaced
+      const step = Math.max(1, Math.floor(labels.length / 5));
+      const tickLabels = labels.map((l, i) => i % step === 0 ? l.slice(5) : '');
 
-    const revChart = new Chart(revCtx, {
-      type: 'line',
-      data: { labels, datasets: [
-        { label: 'Revenue ($)', data: revData, borderColor: '#00ff88', backgroundColor: 'rgba(0,255,136,0.1)', fill: true, tension: 0.4, pointRadius: 3 },
-        { label: 'Failures', data: failData, borderColor: '#ff4444', backgroundColor: 'rgba(255,68,68,0.05)', fill: true, tension: 0.4, pointRadius: 2 }
-      ]},
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#888' } } }, scales: { y: { beginAtZero: true } } }
-    });
+      charts.push(new Chart(revCtx, {
+        type: 'line',
+        data: { labels, datasets: [
+          { label: 'Revenue ($)', data: revData, borderColor: '#00ff88', backgroundColor: (ctx) => {
+            const g = ctx.chart.ctx.createLinearGradient(0, 0, 0, 240);
+            g.addColorStop(0, 'rgba(0,255,136,0.25)');
+            g.addColorStop(1, 'rgba(0,255,136,0)');
+            return g;
+          }, fill: true, tension: 0.3, pointRadius: 3, pointHoverRadius: 6, pointBackgroundColor: '#00ff88', borderWidth: 2 },
+          { label: 'Failures', data: failData, borderColor: '#ff4444', backgroundColor: 'rgba(255,68,68,0.06)', fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5, borderWidth: 1.5, borderDash: [4, 3] }
+        ]},
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { labels: { color: '#888', usePointStyle: true, padding: 16, font: { size: 11 } } },
+            tooltip: {
+              backgroundColor: '#1a1a1a', titleColor: '#fff', bodyColor: '#ccc',
+              borderColor: '#333', borderWidth: 1, padding: 10,
+              callbacks: { label: (ctx) => ctx.dataset.label + ': ' + (ctx.dataset.label.includes('$') ? '$' + ctx.parsed.y.toFixed(0) : ctx.parsed.y) }
+            }
+          },
+          scales: {
+            x: { ticks: { callback: (v, i) => tickLabels[i], maxTicksLimit: 8, color: '#555', font: { size: 10 } }, grid: { display: false } },
+            y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#555' }, grid: { color: 'rgba(255,255,255,0.04)' } }
+          }
+        }
+      }));
+    }
 
-    const topNames = metrics.topCustomers.map(c => c.name);
-    const topVals = metrics.topCustomers.map(c => c.totalCharged);
-    const custChart = new Chart(custCtx, {
-      type: 'bar',
-      data: { labels: topNames, datasets: [{ label: 'Total Charged ($)', data: topVals, backgroundColor: '#4488ff', borderRadius: 6 }] },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
-    });
+    // ── Top Customers (bar chart) ──
+    if (custCtx) {
+      const topNames = metrics.topCustomers.map(c => c.name.length > 14 ? c.name.slice(0, 13) + '…' : c.name);
+      const topVals = metrics.topCustomers.map(c => c.totalCharged);
+      const topTriggers = metrics.topCustomers.map(c => c.totalTriggers);
+      const colors = ['#00ff88', '#4488ff', '#aa66ff', '#ffaa00', '#ff6b35'];
 
-    return () => { revChart.destroy(); custChart.destroy(); };
+      charts.push(new Chart(custCtx, {
+        type: 'bar',
+        data: {
+          labels: topNames,
+          datasets: [
+            { label: 'Revenue ($)', data: topVals, backgroundColor: colors.slice(0, topVals.length), borderRadius: 6, barThickness: 32 },
+            { label: 'Triggers', data: topTriggers, backgroundColor: 'rgba(68,136,255,0.4)', borderRadius: 6, barThickness: 32 }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: true, labels: { color: '#888', usePointStyle: true, padding: 12, font: { size: 11 } } },
+            tooltip: {
+              backgroundColor: '#1a1a1a', titleColor: '#fff', bodyColor: '#ccc',
+              borderColor: '#333', borderWidth: 1, padding: 10
+            }
+          },
+          scales: {
+            x: { ticks: { font: { size: 10 }, color: '#888' }, grid: { display: false } },
+            y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#555' }, grid: { color: 'rgba(255,255,255,0.04)' } }
+          }
+        }
+      }));
+    }
+
+    // ── Daily Triggers (bar chart) ──
+    if (trigCtx) {
+      const labels = Object.keys(metrics.triggersByDay);
+      const trigData = labels.map(k => metrics.triggersByDay[k] || 0);
+      const step2 = Math.max(1, Math.floor(labels.length / 5));
+      const tickLabels2 = labels.map((l, i) => i % step2 === 0 ? l.slice(5) : '');
+
+      charts.push(new Chart(trigCtx, {
+        type: 'bar',
+        data: { labels, datasets: [{ label: 'Triggers', data: trigData, backgroundColor: 'rgba(68,136,255,0.5)', borderRadius: 4, borderSkipped: false }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#1a1a1a', titleColor: '#fff', bodyColor: '#ccc',
+              borderColor: '#333', borderWidth: 1, padding: 10
+            }
+          },
+          scales: {
+            x: { ticks: { callback: (v, i) => tickLabels2[i], maxTicksLimit: 8, color: '#555', font: { size: 10 } }, grid: { display: false } },
+            y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#555' }, grid: { color: 'rgba(255,255,255,0.04)' } }
+          }
+        }
+      }));
+    }
+
+    return () => charts.forEach(c => c.destroy());
   }, [metrics]);
 
   if (!metrics) return e('div', { className: 'page' }, e('div', { style: { color:'#555', textAlign:'center', padding:60 } }, 'Loading metrics...'));
 
+  const totalRev = metrics.totalRevenue || 0;
+  const totalTrig = Object.values(metrics.triggersByDay || {}).reduce((s,v) => s+v, 0);
+  const totalFail = Object.values(metrics.failuresByDay || {}).reduce((s,v) => s+v, 0);
+  const failRate = totalTrig > 0 ? ((totalFail / totalTrig) * 100).toFixed(1) : '0.0';
+  const avgCharge = totalTrig > 0 ? (totalRev / totalTrig).toFixed(0) : '—';
+  const bestDay = Object.entries(metrics.revenueByDay || {}).sort((a,b) => b[1]-a[1])[0];
+
   return e('div', { className: 'page' },
-    e('div', { className: 'page-title' }, 'Metrics'),
+    e('div', { className: 'metrics-header' },
+      e('h2', null, '📊 Metrics'),
+      e('span', null, 'Last 30 days')
+    ),
+    // ── Stat row ──
     e('div', { className: 'stats-row' },
       e('div', { className: 'stat-card' },
-        e('div', { className: 'stat-label' }, '30-Day Revenue'),
-        e('div', { className: 'stat-value' }, '$' + metrics.totalRevenue.toFixed(0))
+        e('div', { className: 'stat-label' }, '💰 Total Revenue'),
+        e('div', { className: 'stat-value green', style: { fontSize: 28 } }, '$' + totalRev.toFixed(0))
       ),
       e('div', { className: 'stat-card' },
-        e('div', { className: 'stat-label' }, 'Failure Rate'),
-        e('div', { className: 'stat-value ' + (parseFloat(metrics.failureRate) > 10 ? 'red' : '') }, metrics.failureRate + '%')
+        e('div', { className: 'stat-label' }, '📋 Total Triggers'),
+        e('div', { className: 'stat-value blue' }, totalTrig)
       ),
       e('div', { className: 'stat-card' },
-        e('div', { className: 'stat-label' }, 'Chargebacks'),
-        e('div', { className: 'stat-value red' }, metrics.totalChargebacks)
+        e('div', { className: 'stat-label' }, '❌ Failed'),
+        e('div', { className: 'stat-value ' + (totalFail > 0 ? 'red' : '') }, totalFail + ' (' + failRate + '%)')
       ),
       e('div', { className: 'stat-card' },
-        e('div', { className: 'stat-label' }, 'Total Customers'),
-        e('div', { className: 'stat-value blue' }, metrics.totalCustomers)
+        e('div', { className: 'stat-label' }, '📊 Avg per Trigger'),
+        e('div', { className: 'stat-value' }, '$' + avgCharge)
+      ),
+      e('div', { className: 'stat-card' },
+        e('div', { className: 'stat-label' }, '👥 Active Customers'),
+        e('div', { className: 'stat-value blue' }, metrics.totalCustomers || 0)
+      ),
+      e('div', { className: 'stat-card' },
+        e('div', { className: 'stat-label' }, '⚡ Best Day'),
+        e('div', { className: 'stat-value green', style: { fontSize: 16 } }, bestDay ? '$' + bestDay[1].toFixed(0) : '—')
       )
     ),
+    // ── Charts ──
     e('div', { className: 'metrics-grid' },
       e('div', { className: 'chart-card' },
-        e('h3', null, 'Revenue & Failures (Last 14 Days)'),
-        e('div', { className: 'chart-wrap' }, e('canvas', { ref: revChartRef }))
+        e('h3', null, 'Revenue & Failures'),
+        e('div', { className: 'chart-subtitle' }, 'Daily revenue (green) and failed charges (red dashed) over 30 days'),
+        e('div', { className: 'chart-wrap tall' }, e('canvas', { ref: revChartRef }))
       ),
       e('div', { className: 'chart-card' },
         e('h3', null, 'Top Customers'),
-        e('div', { className: 'chart-wrap' }, e('canvas', { ref: custChartRef }))
+        e('div', { className: 'chart-subtitle' }, 'Revenue and trigger count by client'),
+        e('div', { className: 'chart-wrap tall' }, e('canvas', { ref: custChartRef }))
+      )
+    ),
+    e('div', { className: 'metrics-grid-wide' },
+      e('div', { className: 'chart-card' },
+        e('h3', null, 'Daily Trigger Volume'),
+        e('div', { className: 'chart-subtitle' }, 'Number of charges per day (succeeded + failed)'),
+        e('div', { className: 'chart-wrap' }, e('canvas', { ref: trigChartRef }))
+      ),
+      // ── Top customers table ──
+      e('div', { className: 'chart-card' },
+        e('h3', null, 'Customer Breakdown'),
+        e('div', { className: 'chart-subtitle' }, 'Revenue & triggers per client'),
+        e('div', { style: { marginTop: 8 } },
+          e('table', { className: 'charge-table', style: { width: '100%' } },
+            e('thead', null, e('tr', null,
+              e('th', { style: { padding: '6px 8px', fontSize: 10 } }, 'Client'),
+              e('th', { style: { padding: '6px 8px', fontSize: 10, textAlign: 'right' } }, 'Revenue'),
+              e('th', { style: { padding: '6px 8px', fontSize: 10, textAlign: 'right' } }, 'Triggers'),
+              e('th', { style: { padding: '6px 8px', fontSize: 10, textAlign: 'right' } }, 'Avg')
+            )),
+            e('tbody', null,
+              metrics.topCustomers.map(c =>
+                e('tr', { key: c.name },
+                  e('td', { style: { padding: '6px 8px', fontSize: 12, fontWeight: 600 } }, c.name),
+                  e('td', { style: { padding: '6px 8px', fontSize: 12, textAlign: 'right', color: 'var(--accent)' } }, '$' + (c.totalCharged || 0).toFixed(0)),
+                  e('td', { style: { padding: '6px 8px', fontSize: 12, textAlign: 'right' } }, c.totalTriggers || 0),
+                  e('td', { style: { padding: '6px 8px', fontSize: 12, textAlign: 'right', color: 'var(--text2)' } },
+                    c.totalTriggers > 0 ? '$' + ((c.totalCharged || 0) / c.totalTriggers).toFixed(0) : '—')
+                )
+              ),
+              metrics.topCustomers.length === 0 && e('tr', null, e('td', { colSpan: 4, style: { textAlign:'center', padding:20, color:'#555' } }, 'No data yet'))
+            )
+          )
+        )
       )
     )
   );
@@ -1352,7 +1497,7 @@ function AdminPage({ agencies, adminStats, onRefresh }) {
               e('td', null,
                 e('button', { className: 'btn-sm', style: { marginRight:6 }, onClick: () => setShowModal(a) }, 'Edit'),
                 e('button', { className: 'btn-sm', style: { marginRight:6, background:'rgba(0,200,83,0.1)', color:'var(--accent)', borderColor:'rgba(0,200,83,0.3)' }, onClick: async () => {
-                  if (!confirm('Seed 5 demo clients (Painting $147, Deck & Fence $197) into ' + a.name + '?')) return;
+                  if (!confirm('Seed 5 demo clients into ' + a.name + '?')) return;
                   try {
                     const res = await api('/api/admin/seed-demo/' + a.id, { method: 'POST' });
                     showToast(res.message || 'Seeded!', 'success');
