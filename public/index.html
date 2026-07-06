@@ -2538,8 +2538,8 @@ function App() {
           api('/api/admin/stats'),
           api('/api/customers'), api('/api/notifications'), api('/api/settings'),
           api('/api/charges'), api('/api/metrics'), api('/api/notifications/unread-count'),
-          api('/api/alerts'), api('/api/webhook-events'), api('/api/audit-logs'), api('/api/segments'),
-          api('/api/forecast'), api('/api/margin-dashboard'),
+          api('/api/alerts').catch(() => []), api('/api/webhook-events').catch(() => []), api('/api/audit-logs').catch(() => []), api('/api/segments').catch(() => []),
+          api('/api/forecast').catch(() => ({})), api('/api/margin-dashboard').catch(() => ({})),
         ]);
         setAgencies(aRes);
         setAdminStats(sRes);
