@@ -1481,7 +1481,7 @@ app.post('/api/admin/seed-demo/:agencyId', requireAuth, requireAdmin, async (req
       { name: 'Pro Painters', company: 'Pro Painters Toronto', email: 'pro@painting.com', rate: 147, status: 'active', triggers: 7, succeeded: 7 },
       { name: 'Fresh Coat Painting', company: 'Fresh Coat Painting Inc.', email: 'info@freshcoat.com', rate: 147, status: 'active', triggers: 6, succeeded: 6 },
       { name: 'Deck Masters', company: 'Deck Masters Ottawa', email: 'info@deckmasters.com', rate: 197, status: 'active', triggers: 5, succeeded: 5 },
-      { name: 'Fence Experts', company: 'Fence Experts GTA', email: 'dispatch@fenceexperts.com', rate: 197, status: 'new', triggers: 1, succeeded: 1 },
+      { name: 'Fence Experts', company: 'Fence Experts GTA', email: 'dispatch@fenceexperts.com', rate: 197, status: 'new', triggers: 0, succeeded: 0 },
       { name: 'Precision Decks', company: 'Precision Deck & Fence', email: 'office@precisiondecks.com', rate: 197, status: 'at_risk', triggers: 3, succeeded: 2 },
     ];
 
@@ -1494,9 +1494,9 @@ app.post('/api/admin/seed-demo/:agencyId', requireAuth, requireAdmin, async (req
         email: c.email,
         rate_per_trigger: c.rate,
         status: c.status,
-        card_on_file: c.status === 'active' ? 1 : 0,
+        card_on_file: c.status === 'active' || c.status === 'at_risk' ? 1 : 0,
         stripe_customer_id: 'cus_demo_' + c.name.toLowerCase().replace(/[^a-z]/g, '').slice(0, 10),
-        stripe_payment_method_id: c.status === 'active' ? 'pm_demo_' + c.name.toLowerCase().replace(/[^a-z]/g, '').slice(0, 8) : '',
+        stripe_payment_method_id: c.status === 'active' || c.status === 'at_risk' ? 'pm_demo_' + c.name.toLowerCase().replace(/[^a-z]/g, '').slice(0, 8) : '',
       });
       created.push(customer);
 
