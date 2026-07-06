@@ -10,12 +10,23 @@ services:
       - PORT=3000
       - DATABASE_URL=postgresql://user:pass@db:5432/paypulse
       - JWT_SECRET=change-this-to-a-random-64-char-string
-      - BASE_URL=http://localhost:3000
+      - BASE_URL=${BASE_URL:-http://localhost:3000}
+      - STRIPE_WEBHOOK_ROUTE_SECRET=${STRIPE_WEBHOOK_ROUTE_SECRET:-change-me}
+      - META_APP_ID=${META_APP_ID:-}
+      - META_APP_SECRET=${META_APP_SECRET:-}
+      - META_API_VERSION=${META_API_VERSION:-v23.0}
+      - META_REDIRECT_URI=${META_REDIRECT_URI:-http://localhost:3000/api/meta/callback}
       # Stripe (optional - for SMMA subscription billing)
       # - STRIPE_SECRET_KEY=sk_live_xxx
       # - STRIPE_PRICE_STANDARD=price_xxx
       # - STRIPE_PRICE_PRO=price_yyy
       # - STRIPE_WEBHOOK_SECRET=whsec_xxx
+      # SMTP (optional - for email alerts)
+      # - SMTP_HOST=smtp.example.com
+      # - SMTP_PORT=587
+      # - SMTP_USER=apikey
+      # - SMTP_PASS=secret
+      # - SMTP_FROM=alerts@yourdomain.com
     depends_on:
       - db
     restart: unless-stopped

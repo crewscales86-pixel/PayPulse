@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PayPulse — Pay Per Appointment Billing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -11,153 +14,266 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #0a0a0a;
-    --surface: #111111;
-    --surface2: #1a1a1a;
-    --surface3: #222222;
-    --border: #2a2a2a;
-    --text: #e0e0e0;
-    --text2: #888888;
-    --accent: #00ff88;
-    --accent2: #00cc6a;
-    --danger: #ff4444;
-    --warn: #ffaa00;
-    --blue: #4488ff;
-    --purple: #aa66ff;
+    --bg: #07110d;
+    --bg2: #0d1713;
+    --surface: rgba(12, 21, 17, 0.82);
+    --surface2: rgba(17, 31, 25, 0.88);
+    --surface3: rgba(26, 43, 35, 0.92);
+    --surface4: rgba(14, 24, 20, 0.96);
+    --border: rgba(130, 164, 146, 0.16);
+    --border-strong: rgba(82, 255, 177, 0.28);
+    --text: #eef7f1;
+    --text2: #9eb4a7;
+    --text3: #6e8479;
+    --accent: #2af598;
+    --accent2: #1adf88;
+    --accent-soft: rgba(42, 245, 152, 0.14);
+    --danger: #ff6a6a;
+    --warn: #ffbf5f;
+    --blue: #59b7ff;
+    --purple: #a791ff;
+    --shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+    --glow: 0 0 0 1px rgba(42, 245, 152, 0.08), 0 18px 45px rgba(0, 0, 0, 0.22);
+  }
+  html {
+    background:
+      radial-gradient(circle at top left, rgba(42,245,152,0.14), transparent 30%),
+      radial-gradient(circle at top right, rgba(89,183,255,0.10), transparent 24%),
+      linear-gradient(180deg, #08120e 0%, #06100c 44%, #050908 100%);
   }
   body {
-    background: var(--bg);
+    background:
+      radial-gradient(circle at 10% 0%, rgba(42,245,152,0.08), transparent 28%),
+      radial-gradient(circle at 90% 12%, rgba(89,183,255,0.07), transparent 24%),
+      linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0)),
+      var(--bg);
     color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Manrope', sans-serif;
     font-size: 14px;
     overflow-x: hidden;
+    min-height: 100vh;
   }
-  #root { min-height: 100vh; }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+    mask-image: linear-gradient(180deg, rgba(255,255,255,0.55), transparent 85%);
+    pointer-events: none;
+    opacity: 0.22;
+  }
+  #root { min-height: 100vh; position: relative; }
   a { color: var(--accent); text-decoration: none; }
   button { cursor: pointer; font-family: inherit; border: none; outline: none; background: none; color: inherit; }
   input, select, textarea {
-    background: var(--surface2);
-    border: 1px solid var(--border);
+    background: rgba(15, 28, 22, 0.94);
+    border: 1px solid rgba(140, 171, 155, 0.14);
     color: var(--text);
-    padding: 10px 14px;
-    border-radius: 8px;
+    padding: 12px 14px;
+    border-radius: 12px;
     font-size: 14px;
     width: 100%;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
   }
-  input:focus, select:focus { border-color: var(--accent); outline: none; }
-  ::placeholder { color: #555; }
+  textarea { resize: vertical; }
+  input:focus, select:focus, textarea:focus {
+    border-color: rgba(42, 245, 152, 0.44);
+    box-shadow: 0 0 0 4px rgba(42, 245, 152, 0.08);
+    outline: none;
+  }
+  ::placeholder { color: #62776c; }
 
   /* Auth */
-  .auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); }
+  .auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 28px; }
   .auth-box {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
-    padding: 48px; width: 100%; max-width: 420px;
+    background: linear-gradient(180deg, rgba(17,31,25,0.94), rgba(11,19,16,0.98));
+    border: 1px solid var(--border); border-radius: 26px;
+    padding: 48px; width: 100%; max-width: 460px;
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(22px);
   }
-  .auth-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 32px; }
-  .auth-logo-icon { width: 40px; height: 40px; background: var(--accent); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #000; font-size: 22px; }
-  .auth-logo-text { font-size: 24px; font-weight: 800; letter-spacing: 1px; color: var(--accent); }
+  .auth-logo { display: flex; align-items: center; gap: 12px; margin-bottom: 32px; }
+  .auth-logo-icon {
+    width: 46px; height: 46px; border-radius: 14px;
+    display: flex; align-items: center; justify-content: center; color: #042312; font-size: 22px;
+    background: linear-gradient(135deg, #76ffbf 0%, #2af598 58%, #16b96e 100%);
+    box-shadow: 0 12px 28px rgba(42, 245, 152, 0.24);
+  }
+  .auth-logo-text { font-size: 28px; font-weight: 700; letter-spacing: 0.04em; color: var(--text); font-family: 'Space Grotesk', sans-serif; }
   .auth-tabs { display: flex; gap: 0; margin-bottom: 24px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
   .auth-tab { flex: 1; padding: 10px; text-align: center; font-size: 13px; font-weight: 700; cursor: pointer; background: var(--surface2); color: var(--text2); }
   .auth-tab.active { background: var(--accent); color: #000; }
   .form-group { margin-bottom: 18px; }
   .form-group label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text2); margin-bottom: 8px; font-weight: 600; }
   .btn-primary {
-    padding: 12px 24px; border-radius: 8px; background: var(--accent); color: #000; font-weight: 800; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; width: 100%;
+    padding: 12px 20px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #61ffc0 0%, #28f598 55%, #18c97a 100%);
+    color: #042311;
+    font-weight: 800;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    box-shadow: 0 16px 28px rgba(22, 174, 105, 0.22);
+    transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+    width: 100%;
   }
-  .btn-primary:hover { background: var(--accent2); }
-  .btn-ghost { padding: 10px 18px; border-radius: 8px; background: transparent; color: var(--text2); border: 1px solid var(--border); font-weight: 600; }
-  .btn-ghost:hover { color: var(--text); }
+  .btn-primary:hover { transform: translateY(-1px); filter: brightness(1.03); box-shadow: 0 18px 32px rgba(22, 174, 105, 0.28); }
+  .btn-ghost {
+    padding: 10px 18px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.02);
+    color: var(--text2);
+    border: 1px solid rgba(154, 179, 166, 0.12);
+    font-weight: 600;
+  }
+  .btn-ghost:hover { color: var(--text); background: rgba(255,255,255,0.04); }
   .error-msg { color: var(--danger); font-size: 13px; margin-top: 8px; }
   .success-msg { color: var(--accent); font-size: 13px; margin-top: 8px; }
 
   /* Nav */
   .nav {
-    display: flex; align-items: center; gap: 8px;
-    padding: 0 32px; height: 64px;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
+    display: flex; align-items: center; gap: 10px;
+    padding: 16px 32px 14px; min-height: 84px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    background: linear-gradient(180deg, rgba(5,10,8,0.88), rgba(5,10,8,0.65));
+    backdrop-filter: blur(20px);
     position: sticky; top: 0; z-index: 100;
   }
-  .logo { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 800; letter-spacing: 1px; }
-  .logo-icon { width: 32px; height: 32px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #000; font-size: 18px; }
+  .logo { display: flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 700; letter-spacing: 0.03em; font-family: 'Space Grotesk', sans-serif; }
+  .logo-icon {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, #7effc5 0%, #2af598 55%, #18c97a 100%);
+    border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #042311; font-size: 18px;
+    box-shadow: 0 10px 24px rgba(42, 245, 152, 0.22);
+  }
   .nav-link {
-    padding: 8px 16px; border-radius: 8px; color: var(--text2); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; transition: 0.15s;
+    padding: 10px 15px; border-radius: 999px; color: var(--text2); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; cursor: pointer; transition: 0.15s;
     display: flex; align-items: center; gap: 6px;
   }
-  .nav-link:hover { color: var(--text); background: var(--surface2); }
-  .nav-link.active { color: var(--accent); background: var(--surface2); border: 1px solid var(--border); }
+  .nav-link:hover { color: var(--text); background: rgba(255,255,255,0.035); }
+  .nav-link.active {
+    color: var(--text);
+    background: linear-gradient(180deg, rgba(42, 245, 152, 0.15), rgba(42, 245, 152, 0.08));
+    border: 1px solid rgba(42, 245, 152, 0.18);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+  }
   .nav-spacer { flex: 1; }
   .inbox-btn {
-    position: relative; padding: 8px 14px; border-radius: 8px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-size: 13px; display: flex; align-items: center; gap: 6px;
+    position: relative; padding: 10px 14px; border-radius: 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); color: var(--text); font-size: 13px; display: flex; align-items: center; gap: 6px;
   }
   .badge {
     position: absolute; top: -4px; right: -4px; background: var(--danger); color: #fff; font-size: 10px; font-weight: 700; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
   }
 
   /* Page */
-  .page { padding: 32px; max-width: 1400px; margin: 0 auto; }
-  .page-title { font-size: 24px; font-weight: 700; margin-bottom: 24px; }
+  .page { padding: 34px 32px 48px; max-width: 1440px; margin: 0 auto; }
+  .page-title { font-size: 30px; font-weight: 700; margin-bottom: 24px; font-family: 'Space Grotesk', sans-serif; letter-spacing: -0.03em; }
 
-  .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 28px; }
+  .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; margin-bottom: 28px; }
   .stat-card {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0)),
+      linear-gradient(180deg, rgba(11, 20, 16, 0.96), rgba(10, 17, 14, 0.92));
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 22px 22px 20px;
+    box-shadow: var(--glow);
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    height: 3px;
+    background: linear-gradient(90deg, rgba(42,245,152,0.7), rgba(89,183,255,0.4), transparent);
   }
   .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text2); font-weight: 600; margin-bottom: 8px; }
-  .stat-value { font-size: 32px; font-weight: 800; color: var(--accent); }
+  .stat-value { font-size: 38px; font-weight: 800; color: var(--accent); font-family: 'Space Grotesk', sans-serif; letter-spacing: -0.04em; }
   .stat-value.red { color: var(--danger); }
   .stat-value.blue { color: var(--blue); }
   .stat-value.yellow { color: var(--warn); }
 
   .filters { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
   .filter-pill {
-    padding: 6px 14px; border-radius: 20px; background: var(--surface2); border: 1px solid var(--border);
-    color: var(--text2); font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-radius: 999px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+    color: var(--text2); font-size: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px;
   }
-  .filter-pill.active { color: var(--accent); border-color: var(--accent); }
-  .filter-pill .count { background: var(--surface3); padding: 2px 7px; border-radius: 10px; font-size: 11px; }
-  .search-box { width: 260px; }
+  .filter-pill.active {
+    color: var(--text);
+    border-color: rgba(42,245,152,0.28);
+    background: linear-gradient(180deg, rgba(42,245,152,0.14), rgba(42,245,152,0.06));
+  }
+  .filter-pill .count { background: rgba(255,255,255,0.06); padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+  .search-box { width: 280px; }
+  .filters .btn-primary { width: auto; min-width: 220px; }
 
   .kanban { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-  .kanban-col { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; min-height: 400px; transition: border-color 0.2s; }
-  .kanban-col.drag-over { border-color: var(--accent); box-shadow: 0 0 0 2px var(--green4); }
-  .kanban-col-header { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+  .kanban-col {
+    background: linear-gradient(180deg, rgba(13, 23, 19, 0.94), rgba(9, 15, 13, 0.92));
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 18px;
+    min-height: 460px;
+    transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+    box-shadow: var(--glow);
+  }
+  .kanban-col:hover { transform: translateY(-1px); }
+  .kanban-col.drag-over { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(42,245,152,0.18), 0 18px 40px rgba(0,0,0,0.24); }
+  .kanban-col-header { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.16em; }
   .kanban-col-header .dot { width: 8px; height: 8px; border-radius: 50%; }
-  .kanban-col-header .count { margin-left: auto; background: var(--surface3); padding: 2px 10px; border-radius: 10px; font-size: 11px; }
+  .kanban-col-header .count { margin-left: auto; background: rgba(255,255,255,0.05); padding: 3px 10px; border-radius: 999px; font-size: 11px; }
   .kanban-sortable { min-height: 100px; }
-  .kanban-col-empty { color:#555; font-size:13px; text-align:center; padding:40px 10px; line-height:1.5; }
+  .kanban-col-empty { color:var(--text3); font-size:13px; text-align:center; padding:52px 10px; line-height:1.6; }
 
   .cust-card {
-    background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 16px;
+    background: linear-gradient(180deg, rgba(22, 38, 31, 0.96), rgba(15, 26, 22, 0.98));
+    border: 1px solid rgba(133, 170, 151, 0.12); border-radius: 18px; padding: 16px;
     margin-bottom: 12px; transition: 0.15s; cursor: grab; position: relative;
   }
-  .cust-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
-  .cust-card.sortable-chosen { border-color: var(--accent); box-shadow: 0 8px 24px rgba(0,200,83,0.15); transform: scale(1.02); }
+  .cust-card::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    border-radius: 18px 0 0 18px;
+    background: linear-gradient(180deg, rgba(42,245,152,0.88), rgba(89,183,255,0.24));
+    opacity: 0.8;
+  }
+  .cust-card:hover { border-color: rgba(42,245,152,0.26); transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0,0,0,0.22); }
+  .cust-card.sortable-chosen { border-color: var(--accent); box-shadow: 0 12px 28px rgba(0,200,83,0.15); transform: scale(1.02); }
   .cust-card.sortable-ghost { opacity: 0.4; border-style: dashed; }
   .cust-card:active { cursor: grabbing; }
-  .cust-name { font-weight: 700; font-size: 15px; margin-bottom: 3px; }
+  .cust-name { font-weight: 800; font-size: 15px; margin-bottom: 3px; }
   .cust-rate { font-weight: 800; color: var(--blue); font-size: 14px; margin-bottom: 4px; }
   .cust-email { color: var(--text2); font-size: 12px; margin-bottom: 10px; }
   .cust-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
   .tag {
     font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 6px; text-transform: uppercase;
   }
-  .tag-green { background: rgba(0,255,136,0.1); color: var(--accent); }
-  .tag-red { background: rgba(255,68,68,0.1); color: var(--danger); }
-  .tag-blue { background: rgba(68,136,255,0.1); color: var(--blue); }
-  .tag-purple { background: rgba(170,102,255,0.1); color: var(--purple); }
+  .tag-green { background: rgba(42,245,152,0.12); color: var(--accent); }
+  .tag-red { background: rgba(255,106,106,0.1); color: var(--danger); }
+  .tag-blue { background: rgba(89,183,255,0.12); color: var(--blue); }
+  .tag-purple { background: rgba(167,145,255,0.12); color: var(--purple); }
   .cust-actions { display: flex; gap: 6px; }
   .btn-sm {
-    padding: 6px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
-    background: var(--surface3); color: var(--text); border: 1px solid var(--border); transition: 0.15s;
+    padding: 7px 13px; border-radius: 10px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em;
+    background: rgba(255,255,255,0.04); color: var(--text); border: 1px solid rgba(255,255,255,0.06); transition: 0.15s;
   }
-  .btn-sm:hover { background: var(--border); }
-  .btn-sm.green { background: rgba(0,255,136,0.1); color: var(--accent); border-color: rgba(0,255,136,0.3); }
-  .btn-sm.green:hover { background: rgba(0,255,136,0.2); }
-  .btn-sm.purple { background: rgba(170,102,255,0.1); color: var(--purple); border-color: rgba(170,102,255,0.3); }
+  .btn-sm:hover { background: rgba(255,255,255,0.08); }
+  .btn-sm.green { background: rgba(42,245,152,0.12); color: var(--accent); border-color: rgba(42,245,152,0.22); }
+  .btn-sm.green:hover { background: rgba(42,245,152,0.18); }
+  .btn-sm.purple { background: rgba(167,145,255,0.12); color: var(--purple); border-color: rgba(167,145,255,0.22); }
 
   .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   .settings-card {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px;
+    background: linear-gradient(180deg, rgba(13, 23, 19, 0.95), rgba(10, 17, 14, 0.94)); border: 1px solid var(--border); border-radius: 22px; padding: 24px;
+    box-shadow: var(--glow);
   }
   .settings-card h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text2); margin-bottom: 20px; }
   .processor-tabs { display: flex; gap: 10px; margin-bottom: 20px; }
@@ -167,7 +283,7 @@
   }
   .proc-tab.active { border-color: var(--accent); color: var(--accent); background: rgba(0,255,136,0.05); }
   .webhook-box {
-    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-top: 10px; word-break: break-all; font-family: monospace; font-size: 12px; color: var(--accent);
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 14px; margin-top: 10px; word-break: break-all; font-family: monospace; font-size: 12px; color: var(--accent);
   }
   .webhook-box.blue { color: var(--blue); }
   .copy-btn {
@@ -178,7 +294,7 @@
   .toggle::after { content: ''; position: absolute; width: 20px; height: 20px; border-radius: 50%; background: #fff; top: 2px; left: 2px; transition: 0.2s; }
   .toggle.on::after { left: 24px; }
 
-  .notif-list { max-width: 800px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .notif-list { max-width: 840px; margin: 0 auto; background: linear-gradient(180deg, rgba(13,23,19,0.96), rgba(9,16,13,0.96)); border: 1px solid var(--border); border-radius: 22px; overflow: hidden; box-shadow: var(--glow); }
   .notif-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
   .notif-header h3 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
   .notif-header .mark-read { font-size: 12px; color: var(--text2); cursor: pointer; }
@@ -195,27 +311,28 @@
   .notif-time { color: #555; font-size: 11px; }
   .notif-view { margin-left: auto; padding: 6px 14px; border-radius: 6px; background: var(--surface3); color: var(--accent); font-size: 11px; font-weight: 700; border: 1px solid var(--border); }
 
-  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .table-wrap { background: linear-gradient(180deg, rgba(13,23,19,0.96), rgba(9,16,13,0.96)); border: 1px solid var(--border); border-radius: 20px; overflow: hidden; box-shadow: var(--glow); }
   table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; padding: 14px 20px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text2); border-bottom: 1px solid var(--border); background: var(--surface2); }
-  td { padding: 14px 20px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  th { text-align: left; padding: 14px 20px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text2); border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.03); }
+  td { padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; }
   .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
   .status-dot.ok { background: var(--accent); }
   .status-dot.fail { background: var(--danger); }
   .status-dot.warn { background: var(--warn); }
 
-  .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 200; }
+  .modal-back { position: fixed; inset: 0; background: rgba(3,6,5,0.78); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; z-index: 200; }
   .modal {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    background: linear-gradient(180deg, rgba(16, 28, 23, 0.98), rgba(10, 17, 14, 0.99)); border: 1px solid rgba(154,179,166,0.12); border-radius: 24px;
     width: 90%; max-width: 440px; max-height: 90vh; overflow: auto; padding: 24px;
+    box-shadow: 0 22px 60px rgba(0,0,0,0.34);
   }
-  .modal.wide { max-width: 700px; }
-  .modal h3 { font-size: 18px; margin-bottom: 20px; }
+  .modal.wide { max-width: 760px; }
+  .modal h3 { font-size: 21px; margin-bottom: 20px; font-family: 'Space Grotesk', sans-serif; letter-spacing: -0.03em; }
   .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
 
   /* Payment Detail Modal */
   .detail-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
-  .detail-stat { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .detail-stat { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 12px; }
   .detail-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text2); margin-bottom: 4px; }
   .detail-stat-value { font-size: 18px; font-weight: 700; }
   .detail-stat-value.green { color: var(--accent); }
@@ -234,8 +351,9 @@
   .metrics-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 20px; }
   .metrics-grid-wide { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
   .chart-card {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px;
+    background: linear-gradient(180deg, rgba(13,23,19,0.95), rgba(9,16,13,0.94)); border: 1px solid var(--border); border-radius: 22px; padding: 20px;
     transition: border-color 0.2s;
+    box-shadow: var(--glow);
   }
   .chart-card:hover { border-color: var(--border2); }
   .chart-card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text2); margin-bottom: 4px; }
@@ -246,7 +364,8 @@
   /* Admin */
   .admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 24px; }
   .admin-card {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px;
+    background: linear-gradient(180deg, rgba(13,23,19,0.95), rgba(9,16,13,0.94)); border: 1px solid var(--border); border-radius: 20px; padding: 20px;
+    box-shadow: var(--glow);
   }
 
   .plan-badge {
@@ -264,10 +383,11 @@
   }
   @media (max-width: 700px) {
     .kanban { grid-template-columns: 1fr; }
-    .nav { padding: 0 16px; overflow-x: auto; }
+    .nav { padding: 14px 16px 12px; overflow-x: auto; }
     .page { padding: 16px; }
     .stats-row { grid-template-columns: 1fr 1fr; }
     .detail-stats { grid-template-columns: 1fr; }
+    .filters .btn-primary { min-width: 0; width: 100%; }
   }
   @keyframes slideIn {
     from { transform: translateX(100%); opacity: 0; }
@@ -283,7 +403,10 @@
 const { useState, useEffect, useCallback, useRef } = React;
 const e = React.createElement;
 
-const API = window.location.origin.includes('localhost') ? 'http://localhost:3000' : window.location.origin;
+const API =
+  window.location.protocol === 'file:' || window.location.origin === 'null'
+    ? 'http://localhost:3000'
+    : window.location.origin;
 
 // Global error display — catches React crashes and shows the error on screen
 window.addEventListener('error', (ev) => {
@@ -304,6 +427,11 @@ function fmtDate(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
   return `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}, ${d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}`;
+}
+
+function safeJsonParse(value, fallback = null) {
+  if (!value) return fallback;
+  try { return JSON.parse(value); } catch { return fallback; }
 }
 
 function api(path, opts) {
@@ -464,167 +592,399 @@ function CustomerCard({ customer, onCharge, onEdit, onAnalytics, webhookSecret, 
 }
 
 // ─── PAYMENT DETAIL MODAL ────────────────────────────────────────
-function PaymentDetailModal({ customer, onClose, onRefresh }) {
+function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast }) {
   const [details, setDetails] = useState(null);
+  const [timeline, setTimeline] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingRate, setSavingRate] = useState(false);
   const [newRate, setNewRate] = useState(customer.rate_per_trigger);
-  const [note, setNote] = useState('');
+  const [chargeNote, setChargeNote] = useState('');
   const [retrying, setRetrying] = useState(null);
   const [savingCard, setSavingCard] = useState(false);
+  const [noteBody, setNoteBody] = useState('');
+  const [noteCategory, setNoteCategory] = useState('internal');
+  const [noteRecurring, setNoteRecurring] = useState(false);
+  const [noteDueAt, setNoteDueAt] = useState('');
+  const [creditAmount, setCreditAmount] = useState('');
+  const [creditNote, setCreditNote] = useState('');
+  const [metaCampaigns, setMetaCampaigns] = useState([]);
+  const [metaRoutes, setMetaRoutes] = useState([]);
+  const [metaAdsetsByCampaign, setMetaAdsetsByCampaign] = useState({});
+  const [savingMetaMappings, setSavingMetaMappings] = useState(false);
+  const [syncingMeta, setSyncingMeta] = useState(false);
+  const [metaDateFrom, setMetaDateFrom] = useState(new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10));
+  const [metaDateTo, setMetaDateTo] = useState(new Date().toISOString().slice(0, 10));
 
-  useEffect(() => {
-    api('/api/customers/' + customer.id + '/payment-details')
-      .then(setDetails)
-      .catch(err => alert('Failed to load details: ' + err.message))
-      .finally(() => setLoading(false));
-  }, [customer.id]);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [detailData, timelineData] = await Promise.all([
+        api('/api/customers/' + customer.id + '/payment-details'),
+        api('/api/customers/' + customer.id + '/timeline')
+      ]);
+      setDetails(detailData);
+      setTimeline(timelineData);
+      setNewRate(detailData?.ratePerTrigger || customer.rate_per_trigger);
+      const existingRoutes = (detailData?.metaMappings || []).map(item => ({
+        campaign_id: item.campaign_id || '',
+        adset_id: item.adset_id || ''
+      }));
+      setMetaRoutes(existingRoutes.length ? existingRoutes : [{ campaign_id: '', adset_id: '' }]);
+      if (settings?.metaConnected && settings?.metaAdAccountId) {
+        const campaigns = await api('/api/meta/campaigns?adAccountId=' + encodeURIComponent(settings.metaAdAccountId));
+        setMetaCampaigns(campaigns);
+        const campaignIds = [...new Set(existingRoutes.map(route => route.campaign_id).filter(Boolean))];
+        if (campaignIds.length) {
+          const entries = await Promise.all(campaignIds.map(async campaignId => [campaignId, await api('/api/meta/adsets?campaignId=' + encodeURIComponent(campaignId))]));
+          setMetaAdsetsByCampaign(Object.fromEntries(entries));
+        } else {
+          setMetaAdsetsByCampaign({});
+        }
+      } else {
+        setMetaCampaigns([]);
+        setMetaAdsetsByCampaign({});
+      }
+    } catch (err) {
+      showToast(err.message || 'Failed to load customer details', 'error');
+    }
+    setLoading(false);
+  }, [customer.id, customer.rate_per_trigger, settings?.metaAdAccountId, settings?.metaConnected, showToast]);
+
+  useEffect(() => { load(); }, [load]);
 
   const saveRate = async () => {
     setSavingRate(true);
     try {
       await api('/api/customers/' + customer.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: parseFloat(newRate) || 147 }) });
-      setSavingRate(false);
-      onRefresh();
-      const updated = await api('/api/customers/' + customer.id + '/payment-details');
-      setDetails(updated);
-    } catch (err) { setSavingRate(false); showToast(err.message, 'error'); }
+      showToast('Rate updated', 'success');
+      await onRefresh();
+      await load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+    setSavingRate(false);
   };
 
   const fireCharge = async () => {
-    if (!confirm(`Charge $${customer.rate_per_trigger} for ${customer.name}?`)) return;
+    if (!confirm(`Charge $${newRate} for ${customer.name}?`)) return;
     try {
-      const res = await api('/api/customers/' + customer.id + '/charge', { method: 'POST', body: JSON.stringify({ note }) });
-      alert(res.status === 'succeeded' ? `✓ Charge succeeded! (ID: ${res.id.slice(-8)})` : `✗ Charge failed: ${res.failure_reason}`);
-      onRefresh();
-      const updated = await api('/api/customers/' + customer.id + '/payment-details');
-      setDetails(updated);
-      setNote('');
-    } catch (err) { alert('Charge failed: ' + err.message); }
+      const res = await api('/api/customers/' + customer.id + '/charge', { method: 'POST', body: JSON.stringify({ note: chargeNote }) });
+      showToast(res.status === 'succeeded' ? 'Charge succeeded' : `Charge ${res.status}`, res.status === 'succeeded' ? 'success' : 'warn');
+      setChargeNote('');
+      await onRefresh();
+      await load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
   };
 
   const saveCard = async () => {
     setSavingCard(true);
     try {
       const data = await api('/api/customers/' + customer.id + '/setup-card', { method: 'POST' });
-      window.location.href = data.url;
+      window.open(data.url, '_blank');
     } catch (err) {
-      alert('Failed to create card setup link: ' + err.message);
-      setSavingCard(false);
+      showToast(err.message, 'error');
     }
+    setSavingCard(false);
   };
 
   const retryCharge = async (chargeId) => {
     setRetrying(chargeId);
     try {
       const res = await api('/api/charges/' + chargeId + '/retry', { method: 'POST' });
-      alert(res.status === 'succeeded' ? `✓ Retry succeeded! (ID: ${res.id.slice(-8)})` : `✗ Retry failed: ${res.failure_reason}`);
-      onRefresh();
-      const updated = await api('/api/customers/' + customer.id + '/payment-details');
-      setDetails(updated);
-    } catch (err) { alert('Retry failed: ' + err.message); }
+      showToast(res.status === 'succeeded' ? 'Retry succeeded' : 'Retry submitted', res.status === 'succeeded' ? 'success' : 'warn');
+      await onRefresh();
+      await load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
     setRetrying(null);
+  };
+
+  const scheduleRetry = async (chargeId) => {
+    setRetrying(chargeId);
+    try {
+      await api('/api/charges/' + chargeId + '/schedule-retry', { method: 'POST', body: JSON.stringify({}) });
+      showToast('Retry scheduled', 'success');
+      await load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+    setRetrying(null);
+  };
+
+  const refundCharge = async (charge) => {
+    const amount = prompt('Refund amount', String(charge.amount || ''));
+    if (!amount) return;
+    try {
+      await api('/api/charges/' + charge.id + '/refund', { method: 'POST', body: JSON.stringify({ amount: parseFloat(amount), note: 'Manual refund' }) });
+      showToast('Refund processed', 'success');
+      await onRefresh();
+      await load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const issueCredit = async () => {
+    try {
+      await api('/api/customers/' + customer.id + '/credits', { method: 'POST', body: JSON.stringify({ amount: parseFloat(creditAmount), note: creditNote }) });
+      showToast('Credit issued', 'success');
+      setCreditAmount('');
+      setCreditNote('');
+      await onRefresh();
+      await load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const addNote = async () => {
+    if (!noteBody.trim()) return;
+    try {
+      await api('/api/customers/' + customer.id + '/notes', {
+        method: 'POST',
+        body: JSON.stringify({
+          body: noteBody,
+          category: noteCategory,
+          recurring: noteRecurring,
+          nextDueAt: noteRecurring ? noteDueAt : ''
+        })
+      });
+      showToast('Note added', 'success');
+      setNoteBody('');
+      setNoteRecurring(false);
+      setNoteDueAt('');
+      await load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const toggleNoteDone = async (note) => {
+    try {
+      await api('/api/notes/' + note.id, { method: 'PATCH', body: JSON.stringify({ is_done: !note.is_done }) });
+      await load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const saveMetaMappings = async () => {
+    if (!settings?.metaAdAccountId) {
+      showToast('Select a Meta ad account in Settings first', 'warn');
+      return;
+    }
+    setSavingMetaMappings(true);
+    try {
+      const mappings = metaRoutes.filter(route => route.campaign_id).map(route => {
+        const campaign = metaCampaigns.find(item => item.id === route.campaign_id);
+        const adset = (metaAdsetsByCampaign[route.campaign_id] || []).find(item => item.id === route.adset_id);
+        return {
+          ad_account_id: settings.metaAdAccountId,
+          ad_account_name: settings.metaAdAccountName || '',
+          campaign_id: route.campaign_id,
+          campaign_name: campaign?.name || '',
+          adset_id: route.adset_id || '',
+          adset_name: adset?.name || ''
+        };
+      });
+      await api('/api/customers/' + customer.id + '/meta-mappings', {
+        method: 'POST',
+        body: JSON.stringify({ mappings })
+      });
+      showToast('Meta campaign mapping saved', 'success');
+      await load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+    setSavingMetaMappings(false);
+  };
+
+  const syncMetaMetrics = async () => {
+    setSyncingMeta(true);
+    try {
+      await api('/api/customers/' + customer.id + '/meta-sync', {
+        method: 'POST',
+        body: JSON.stringify({ dateFrom: metaDateFrom, dateTo: metaDateTo })
+      });
+      showToast('Meta metrics synced', 'success');
+      await load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+    setSyncingMeta(false);
+  };
+
+  const loadAdsetsForCampaign = async (campaignId) => {
+    if (!campaignId || metaAdsetsByCampaign[campaignId]) return;
+    try {
+      const adsets = await api('/api/meta/adsets?campaignId=' + encodeURIComponent(campaignId));
+      setMetaAdsetsByCampaign(prev => ({ ...prev, [campaignId]: adsets }));
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const updateMetaRoute = async (index, patch) => {
+    const next = metaRoutes.map((route, idx) => idx === index ? { ...route, ...patch } : route);
+    setMetaRoutes(next);
+    if (patch.campaign_id) await loadAdsetsForCampaign(patch.campaign_id);
   };
 
   if (loading) return e('div', { className: 'modal-back', onClick: onClose },
     e('div', { className: 'modal wide' }, e('h3', null, 'Loading...'))
   );
 
-  const d = details || { charges: [], totalCharged: 0, totalTriggers: 0, creditBalance: 0, failureCount: 0, chargebackCount: 0, ratePerTrigger: customer.rate_per_trigger, cardOnFile: false };
+  const d = details || { charges: [], notes: [], webhookEvents: [], auditLogs: [], adMetrics: [], metaMappings: [], totalCharged: 0, totalTriggers: 0, creditBalance: 0, failureCount: 0, chargebackCount: 0, ratePerTrigger: customer.rate_per_trigger, cardOnFile: false };
   const c = d.customer || customer;
+  const adMetricTotals = (d.adMetrics || []).reduce((acc, item) => {
+    acc.spend += parseFloat(item.ad_spend || 0);
+    acc.impressions += parseInt(item.impressions || 0, 10);
+    acc.clicks += parseInt(item.clicks || 0, 10);
+    acc.leads += parseInt(item.leads || 0, 10);
+    return acc;
+  }, { spend: 0, impressions: 0, clicks: 0, leads: 0 });
+  const profit = (parseFloat(d.totalCharged || 0) || 0) - adMetricTotals.spend;
+  const ctr = adMetricTotals.impressions > 0 ? ((adMetricTotals.clicks / adMetricTotals.impressions) * 100).toFixed(2) : '0.00';
+  const cpl = adMetricTotals.leads > 0 ? (adMetricTotals.spend / adMetricTotals.leads).toFixed(2) : '0.00';
+  const costPerBooked = (d.totalTriggers || 0) > 0 ? (adMetricTotals.spend / d.totalTriggers).toFixed(2) : '0.00';
 
   return e('div', { className: 'modal-back', onClick: ev => ev.target === ev.currentTarget && onClose() },
-    e('div', { className: 'modal wide' },
+    e('div', { className: 'modal wide', style: { maxWidth: 980 } },
       e('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 } },
         e('div', null,
           e('h3', { style: { marginBottom: 4 } }, c.name),
           e('div', { style: { color: 'var(--text2)', fontSize: 13 } }, c.email)
         ),
-        e('button', { onClick: onClose, style: { fontSize: 20, padding: '4px 8px', color: 'var(--text2)' } }, '✕')
+        e('button', { onClick: onClose, style: { fontSize: 20, padding: '4px 8px', color: 'var(--text2)' } }, 'x')
       ),
-
       e('div', { className: 'detail-stats' },
-        e('div', { className: 'detail-stat' },
-          e('div', { className: 'detail-stat-label' }, 'Total Charged'),
-          e('div', { className: 'detail-stat-value green' }, '$' + (d.totalCharged || 0).toFixed(2))
-        ),
-        e('div', { className: 'detail-stat' },
-          e('div', { className: 'detail-stat-label' }, 'Total Triggers'),
-          e('div', { className: 'detail-stat-value blue' }, d.totalTriggers || 0)
-        ),
-        e('div', { className: 'detail-stat' },
-          e('div', { className: 'detail-stat-label' }, 'Credit Balance'),
-          e('div', { className: 'detail-stat-value ' + ((d.creditBalance || 0) > 0 ? 'green' : '') }, '$' + (d.creditBalance || 0).toFixed(2))
-        ),
-        e('div', { className: 'detail-stat' },
-          e('div', { className: 'detail-stat-label' }, 'Last Charge'),
-          e('div', { className: 'detail-stat-value', style: { fontSize: 14 } }, fmtDate(d.lastChargeDate))
-        ),
-        e('div', { className: 'detail-stat' },
-          e('div', { className: 'detail-stat-label' }, 'Failed / Chargebacks'),
-          e('div', { className: 'detail-stat-value ' + ((d.failureCount + d.chargebackCount) > 0 ? 'red' : '') },
-            (d.failureCount || 0) + ' / ' + (d.chargebackCount || 0)
-          )
-        ),
-        e('div', { className: 'detail-stat' },
-        e('div', { className: 'detail-stat-label' }, 'Card on File'),
-        e('div', { className: 'detail-stat-value ' + (d.cardOnFile ? 'green' : 'red'), style: { fontSize: 14 } },
-          d.cardOnFile ? '✓ Yes' : '✗ No'
-        )
-        )
-        ),
+        e('div', { className: 'detail-stat' }, e('div', { className: 'detail-stat-label' }, 'Total Charged'), e('div', { className: 'detail-stat-value green' }, '$' + (d.totalCharged || 0).toFixed(2))),
+        e('div', { className: 'detail-stat' }, e('div', { className: 'detail-stat-label' }, 'Total Triggers'), e('div', { className: 'detail-stat-value blue' }, d.totalTriggers || 0)),
+        e('div', { className: 'detail-stat' }, e('div', { className: 'detail-stat-label' }, 'Credit Balance'), e('div', { className: 'detail-stat-value ' + ((d.creditBalance || 0) > 0 ? 'green' : '') }, '$' + (d.creditBalance || 0).toFixed(2))),
+        e('div', { className: 'detail-stat' }, e('div', { className: 'detail-stat-label' }, 'Last Charge'), e('div', { className: 'detail-stat-value', style: { fontSize: 14 } }, fmtDate(d.lastChargeDate))),
+        e('div', { className: 'detail-stat' }, e('div', { className: 'detail-stat-label' }, 'Failed / Chargebacks'), e('div', { className: 'detail-stat-value ' + ((d.failureCount + d.chargebackCount) > 0 ? 'red' : '') }, (d.failureCount || 0) + ' / ' + (d.chargebackCount || 0))),
+        e('div', { className: 'detail-stat' }, e('div', { className: 'detail-stat-label' }, 'Card on File'), e('div', { className: 'detail-stat-value ' + (d.cardOnFile ? 'green' : 'red'), style: { fontSize: 14 } }, d.cardOnFile ? 'Yes' : 'No'))
+      ),
 
       !d.cardOnFile && e('div', { className: 'detail-section' },
         e('h4', null, 'Card Setup'),
         e('div', { style: { display: 'flex', gap: 10, alignItems: 'center' } },
-          e('span', { style: { color: 'var(--text2)', fontSize: 13, flex: 1 } }, 'No card on file. Generate a Stripe Checkout link to save the client\'s card ($1 auth charge).'),
+          e('span', { style: { color: 'var(--text2)', fontSize: 13, flex: 1 } }, 'No card on file. Generate a Stripe Checkout link to save the client card.'),
           e('button', { className: 'btn-sm', style: { background: 'rgba(68,136,255,0.1)', color: 'var(--blue)', borderColor: 'rgba(68,136,255,0.3)', padding: '8px 16px' }, onClick: saveCard, disabled: savingCard }, savingCard ? '...' : 'Save Card')
         )
       ),
 
       e('div', { className: 'detail-section' },
-        e('h4', null, 'Rate per Appointment'),
-        e('div', { style: { display: 'flex', gap: 10, alignItems: 'center' } },
-          e('input', { type: 'number', value: newRate, onChange: ev => setNewRate(ev.target.value), style: { width: 120 } }),
-          e('button', { className: 'btn-sm green', onClick: saveRate, disabled: savingRate }, savingRate ? '...' : 'Save'),
-          d.cardOnFile
-            ? e('span', { className: 'tag tag-green' }, 'Card on file')
-            : e('span', { className: 'tag tag-red' }, 'No card on file')
+        e('h4', null, 'Billing Controls'),
+        e('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 } },
+          e('div', { style: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 } },
+            e('div', { style: { fontSize: 11, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 8 } }, 'Rate per Appointment'),
+            e('div', { style: { display: 'flex', gap: 10, alignItems: 'center' } },
+              e('input', { type: 'number', value: newRate, onChange: ev => setNewRate(ev.target.value), style: { width: 140 } }),
+              e('button', { className: 'btn-sm green', onClick: saveRate, disabled: savingRate }, savingRate ? '...' : 'Save')
+            )
+          ),
+          e('div', { style: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 } },
+            e('div', { style: { fontSize: 11, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 8 } }, 'Manual Credit'),
+            e('div', { style: { display: 'flex', gap: 8 } },
+              e('input', { type: 'number', placeholder: 'Amount', value: creditAmount, onChange: ev => setCreditAmount(ev.target.value) }),
+              e('input', { placeholder: 'Reason', value: creditNote, onChange: ev => setCreditNote(ev.target.value) }),
+              e('button', { className: 'btn-sm green', onClick: issueCredit }, 'Issue')
+            )
+          )
+        )
+      ),
+
+      e('div', { className: 'detail-section' },
+        e('h4', null, 'Meta Margin Tracking'),
+        !settings?.metaConnected && e('div', { style: { color: 'var(--warn)', fontSize: 12 } }, 'Connect Meta in Settings to map campaigns and sync spend.'),
+        settings?.metaConnected && !settings?.metaAdAccountId && e('div', { style: { color: 'var(--warn)', fontSize: 12 } }, 'Select a primary Meta ad account in Settings first.'),
+        settings?.metaConnected && settings?.metaAdAccountId && e('div', { style: { display: 'grid', gap: 12 } },
+          e('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10 } },
+            [
+              ['Ad Spend', '$' + adMetricTotals.spend.toFixed(2), 'red'],
+              ['Leads', adMetricTotals.leads, 'blue'],
+              ['CTR', ctr + '%', 'blue'],
+              ['Cost / Booked', '$' + costPerBooked, 'yellow'],
+              ['Profit', '$' + profit.toFixed(2), profit >= 0 ? 'green' : 'red']
+            ].map(([label, value, tone]) =>
+              e('div', { key: label, className: 'detail-stat' },
+                e('div', { className: 'detail-stat-label' }, label),
+                e('div', { className: 'detail-stat-value ' + tone, style: { fontSize: 18 } }, value)
+              )
+            )
+          ),
+          e('div', { style: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 10, padding: 12 } },
+            e('div', { style: { fontSize: 12, color: 'var(--text2)', marginBottom: 8 } }, 'Route specific campaigns or ad sets from this ad account to this client'),
+            e('div', { style: { display: 'grid', gap: 10, marginBottom: 10 } },
+              metaRoutes.map((route, index) =>
+                e('div', { key: index, style: { display: 'grid', gridTemplateColumns: '1.2fr 1.2fr auto', gap: 8, alignItems: 'center' } },
+                  e('select', {
+                    value: route.campaign_id || '',
+                    onChange: ev => updateMetaRoute(index, { campaign_id: ev.target.value, adset_id: '' })
+                  },
+                    e('option', { value: '' }, 'Select campaign'),
+                    metaCampaigns.map(campaign =>
+                      e('option', { key: campaign.id, value: campaign.id }, campaign.name)
+                    )
+                  ),
+                  e('select', {
+                    value: route.adset_id || '',
+                    onChange: ev => updateMetaRoute(index, { adset_id: ev.target.value })
+                  },
+                    e('option', { value: '' }, 'All ad sets in campaign'),
+                    (metaAdsetsByCampaign[route.campaign_id] || []).map(adset =>
+                      e('option', { key: adset.id, value: adset.id }, adset.name)
+                    )
+                  ),
+                  e('button', { className: 'btn-sm', onClick: () => setMetaRoutes(prev => prev.filter((_, idx) => idx !== index)), disabled: metaRoutes.length === 1 }, 'Remove')
+                )
+              ),
+              metaCampaigns.length === 0 && e('div', { style: { color: '#666', fontSize: 12 } }, 'No campaigns found for the selected ad account.')
+            ),
+            e('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' } },
+              e('button', { className: 'btn-sm', onClick: () => setMetaRoutes(prev => [...prev, { campaign_id: '', adset_id: '' }]) }, 'Add Route'),
+              e('button', { className: 'btn-sm', onClick: saveMetaMappings, disabled: savingMetaMappings }, savingMetaMappings ? 'Saving...' : 'Save Mapping'),
+              e('input', { type: 'date', value: metaDateFrom, onChange: ev => setMetaDateFrom(ev.target.value), style: { width: 160 } }),
+              e('input', { type: 'date', value: metaDateTo, onChange: ev => setMetaDateTo(ev.target.value), style: { width: 160 } }),
+              e('button', { className: 'btn-sm green', onClick: syncMetaMetrics, disabled: syncingMeta || metaRoutes.filter(route => route.campaign_id).length === 0 }, syncingMeta ? 'Syncing...' : 'Sync Meta Data')
+            ),
+            e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 10 } },
+              'CPL: $', cpl, ' · Clicks: ', adMetricTotals.clicks, ' · Impressions: ', adMetricTotals.impressions
+            )
+          )
         )
       ),
 
       e('div', { className: 'detail-section' },
         e('h4', null, 'GHL & Webhook Info'),
-        e('div', { style: { fontSize: 13, color: 'var(--text2)' } },
-          'Location ID: ', e('strong', { style: { color: 'var(--text)' } }, d.ghlLocationId || '—')
-        ),
-        d.webhookUrl && e('div', { style: { marginTop: 6, padding: '8px 12px', background: 'var(--surface2)', borderRadius: 6, fontFamily: 'monospace', fontSize: 11, color: 'var(--blue)', wordBreak: 'break-all' } },
-          d.webhookUrl
-        ),
-        !d.webhookUrl && e('div', { style: { fontSize: 12, color: 'var(--text2)', marginTop: 6 } }, 'Set a GHL Location ID to get a per-client webhook URL')
+        e('div', { style: { fontSize: 13, color: 'var(--text2)' } }, 'Location ID: ', e('strong', { style: { color: 'var(--text)' } }, d.ghlLocationId || '-')),
+        d.webhookUrl && e('div', { style: { marginTop: 6, padding: '8px 12px', background: 'var(--surface2)', borderRadius: 6, fontFamily: 'monospace', fontSize: 11, color: 'var(--blue)', wordBreak: 'break-all' } }, d.webhookUrl)
       ),
 
       e('div', { className: 'detail-section' },
-        e('h4', null, 'Charge History (Last ' + Math.min(d.charges.length, 10) + ' of ' + d.charges.length + ')'),
+        e('h4', null, 'Charge History'),
         e('div', { className: 'table-wrap', style: { maxHeight: 250, overflow: 'auto' } },
           e('table', { className: 'charge-table' },
             e('thead', null, e('tr', null,
-              e('th', null, 'Status'), e('th', null, 'Amount'), e('th', null, 'Note'), e('th', null, 'Date'), e('th', null, 'Action')
+              e('th', null, 'Status'), e('th', null, 'Amount'), e('th', null, 'Note'), e('th', null, 'Date'), e('th', null, 'Actions')
             )),
             e('tbody', null,
-              d.charges.slice(0, 10).map(ch =>
+              d.charges.slice(0, 15).map(ch =>
                 e('tr', { key: ch.id },
-                  e('td', null,
-                    e('span', { className: 'status-dot ' + (ch.status==='succeeded'?'ok':ch.status==='failed'?'fail':'warn') }),
-                    e('span', { style: { textTransform:'capitalize' } }, ch.status)
-                  ),
+                  e('td', null, e('span', { className: 'status-dot ' + (ch.status==='succeeded'?'ok':ch.status==='failed'?'fail':'warn') }), e('span', { style: { textTransform:'capitalize' } }, ch.status)),
                   e('td', null, '$' + ch.amount.toFixed(2)),
-                  e('td', { style: { color: 'var(--text2)' } }, ch.note || '—'),
+                  e('td', { style: { color: 'var(--text2)' } }, ch.note || ch.failure_reason || '-'),
                   e('td', { style: { color: 'var(--text2)' } }, fmtDate(ch.created_at)),
                   e('td', null,
-                    ch.status === 'failed'
-                      ? e('button', { className: 'btn-sm', style: { padding: '4px 10px', fontSize: 10 }, onClick: () => retryCharge(ch.id), disabled: retrying === ch.id }, retrying === ch.id ? '...' : 'Retry')
-                      : ''
+                    ch.status === 'failed' && e('span', null,
+                      e('button', { className: 'btn-sm', style: { padding: '4px 10px', fontSize: 10, marginRight: 6 }, onClick: () => retryCharge(ch.id), disabled: retrying === ch.id }, retrying === ch.id ? '...' : 'Retry'),
+                      e('button', { className: 'btn-sm', style: { padding: '4px 10px', fontSize: 10 }, onClick: () => scheduleRetry(ch.id), disabled: retrying === ch.id }, 'Schedule')
+                    ),
+                    (ch.status === 'succeeded' || ch.status === 'refunded') && e('button', { className: 'btn-sm', style: { padding: '4px 10px', fontSize: 10 }, onClick: () => refundCharge(ch) }, 'Refund')
                   )
                 )
               ),
@@ -635,22 +995,87 @@ function PaymentDetailModal({ customer, onClose, onRefresh }) {
       ),
 
       e('div', { className: 'detail-section' },
-        e('h4', null, 'Fire Manual Charge'),
+        e('h4', null, 'Internal Notes & Follow-ups'),
+        e('div', { style: { display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 12 } },
+          e('div', null,
+            e('textarea', { value: noteBody, onChange: ev => setNoteBody(ev.target.value), placeholder: 'Add internal note or follow-up...', style: { minHeight: 80 } }),
+            e('div', { style: { display: 'flex', gap: 8, marginTop: 8 } },
+              e('select', { value: noteCategory, onChange: ev => setNoteCategory(ev.target.value) },
+                e('option', { value: 'internal' }, 'Internal'),
+                e('option', { value: 'follow_up' }, 'Follow-up'),
+                e('option', { value: 'billing' }, 'Billing')
+              ),
+              e('label', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 } }, e('input', { type: 'checkbox', checked: noteRecurring, onChange: ev => setNoteRecurring(ev.target.checked), style: { width: 'auto' } }), 'Recurring'),
+              noteRecurring && e('input', { type: 'datetime-local', value: noteDueAt, onChange: ev => setNoteDueAt(ev.target.value) }),
+              e('button', { className: 'btn-sm green', onClick: addNote }, 'Add Note')
+            )
+          ),
+          e('div', { style: { maxHeight: 180, overflow: 'auto', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: 10 } },
+            (d.notes || []).map(note =>
+              e('div', { key: note.id, style: { padding: '8px 0', borderBottom: '1px solid var(--border)' } },
+                e('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 8 } },
+                  e('strong', { style: { fontSize: 12 } }, note.category.replace('_', ' ')),
+                  e('button', { className: 'btn-sm', style: { padding: '2px 8px', fontSize: 10 }, onClick: () => toggleNoteDone(note) }, note.is_done ? 'Reopen' : 'Done')
+                ),
+                e('div', { style: { fontSize: 12, color: 'var(--text2)', marginTop: 4, lineHeight: 1.5 } }, note.body),
+                note.next_due_at && e('div', { style: { fontSize: 11, color: 'var(--blue)', marginTop: 4 } }, 'Due ' + fmtDate(note.next_due_at))
+              )
+            ),
+            (!d.notes || d.notes.length === 0) && e('div', { style: { color: '#666', fontSize: 12 } }, 'No notes yet')
+          )
+        )
+      ),
+
+      e('div', { className: 'detail-section' },
+        e('h4', null, 'Activity Timeline'),
+        e('div', { style: { maxHeight: 220, overflow: 'auto', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 } },
+          timeline.slice(0, 20).map((item, idx) =>
+            e('div', { key: idx, style: { padding: '10px 0', borderBottom: '1px solid var(--border)' } },
+              e('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 12 } },
+                e('strong', { style: { fontSize: 12 } }, item.title),
+                e('span', { style: { fontSize: 11, color: 'var(--text2)' } }, fmtDate(item.created_at))
+              ),
+              item.body && e('div', { style: { fontSize: 12, color: 'var(--text2)', marginTop: 4, lineHeight: 1.5, wordBreak: 'break-word' } }, item.type === 'audit' ? (() => {
+                const parsed = safeJsonParse(item.body, null);
+                return parsed ? JSON.stringify(parsed) : item.body;
+              })() : item.body)
+            )
+          ),
+          timeline.length === 0 && e('div', { style: { color: '#666', fontSize: 12 } }, 'No activity yet')
+        )
+      ),
+
+      e('div', { className: 'detail-section' },
+        e('h4', null, 'Webhook History'),
+        e('div', { style: { maxHeight: 140, overflow: 'auto', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 } },
+          (d.webhookEvents || []).slice(0, 12).map(evt =>
+            e('div', { key: evt.id, style: { padding: '8px 0', borderBottom: '1px solid var(--border)' } },
+              e('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 8 } },
+                e('strong', { style: { fontSize: 12 } }, evt.source + ' · ' + evt.event_type),
+                e('span', { className: 'tag ' + (evt.status === 'succeeded' ? 'tag-green' : evt.status === 'failed' ? 'tag-red' : 'tag-blue') }, evt.status)
+              ),
+              e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 4 } }, fmtDate(evt.created_at))
+            )
+          ),
+          (!d.webhookEvents || d.webhookEvents.length === 0) && e('div', { style: { color: '#666', fontSize: 12 } }, 'No webhook events yet')
+        )
+      ),
+
+      e('div', { className: 'detail-section' },
+        e('h4', null, 'Manual Charge'),
         e('div', { style: { display: 'flex', gap: 10, alignItems: 'center' } },
-          e('input', { placeholder: 'Note (optional)', value: note, onChange: ev => setNote(ev.target.value), style: { flex: 1 } }),
+          e('input', { placeholder: 'Note (optional)', value: chargeNote, onChange: ev => setChargeNote(ev.target.value), style: { flex: 1 } }),
           e('button', { className: 'btn-primary', onClick: fireCharge, style: { width: 'auto' } }, 'Charge $' + c.rate_per_trigger)
         )
       ),
 
-      e('div', { className: 'modal-actions' },
-        e('button', { className: 'btn-ghost', onClick: onClose }, 'Close')
-      )
+      e('div', { className: 'modal-actions' }, e('button', { className: 'btn-ghost', onClick: onClose }, 'Close'))
     )
   );
 }
 
 // ─── CUSTOMERS PAGE ───────────────────────────────────────────────
-function CustomersPage({ customers, onRefresh, settings, showToast }) {
+function CustomersPage({ customers, onRefresh, settings, showToast, segments, activeSegmentId, setActiveSegmentId, onCreateSegment, onDeleteSegment }) {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [chargeModal, setChargeModal] = useState(null);
@@ -658,12 +1083,18 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
   const [detailModal, setDetailModal] = useState(null);
   const [note, setNote] = useState('');
   const [syncModal, setSyncModal] = useState(false);
+  const activeSegment = (segments || []).find(seg => seg.id === activeSegmentId) || null;
 
   const processors = { all: 'All', whop: 'Whop', stripe: 'Stripe' };
 
   const filtered = customers.filter(c => {
-    if (filter !== 'all' && filter !== c.processor) return false;
-    if (search && !c.name.toLowerCase().includes(search.toLowerCase()) && !c.email.toLowerCase().includes(search.toLowerCase())) return false;
+    const segmentFilter = activeSegment?.filters || {};
+    const effectiveFilter = segmentFilter.processor || filter;
+    const effectiveSearch = segmentFilter.search || search;
+    if (effectiveFilter !== 'all' && effectiveFilter !== c.processor) return false;
+    if (segmentFilter.status && c.status !== segmentFilter.status) return false;
+    if (segmentFilter.noCard && c.card_on_file) return false;
+    if (effectiveSearch && !c.name.toLowerCase().includes(effectiveSearch.toLowerCase()) && !c.email.toLowerCase().includes(effectiveSearch.toLowerCase())) return false;
     return true;
   });
 
@@ -764,9 +1195,34 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
       ),
       e('div', { className: 'nav-spacer' }),
       e('button', { className: 'btn-primary', style: { padding:'8px 18px', fontSize:13 }, onClick: () => setEditModal({ id: 'new', name: '', email: '', rate_per_trigger: '', status: 'new', ghl_location_id: '', card_on_file: false }) }, '+ Add Customer'),
+      e('button', { className: 'btn-sm', style: { padding:'8px 16px', background:'rgba(0,255,136,0.1)', color:'var(--accent)', borderColor:'rgba(0,255,136,0.3)' }, onClick: async () => {
+        const name = prompt('Save current filters as segment', activeSegment?.name || '');
+        if (!name) return;
+        try {
+          await onCreateSegment(name, { processor: filter, search, status: '', noCard: false });
+          showToast('Segment saved', 'success');
+        } catch (err) { showToast(err.message, 'error'); }
+      } }, 'Save Segment'),
       e('button', { className: 'btn-sm', style: { padding:'8px 16px' }, onClick: onRefresh }, '↻ Sync'),
       e('button', { className: 'btn-sm', style: { padding:'8px 16px', background:'rgba(0,180,255,0.1)', color:'var(--blue)', borderColor:'rgba(0,180,255,0.3)' }, onClick: () => setSyncModal(true) }, '⬇ Stripe'),
       e('input', { className: 'search-box', placeholder: 'Search...', value: search, onChange: ev => setSearch(ev.target.value) })
+    ),
+    (segments || []).length > 0 && e('div', { className: 'filters', style: { marginTop: -8 } },
+      e('span', { style: { fontSize: 11, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: 1 } }, 'Saved Segments'),
+      e('div', {
+        className: 'filter-pill ' + (!activeSegmentId ? 'active' : ''),
+        onClick: () => setActiveSegmentId(null)
+      }, 'All Customers'),
+      (segments || []).map(seg =>
+        e('div', {
+          key: seg.id,
+          className: 'filter-pill ' + (activeSegmentId === seg.id ? 'active' : ''),
+          onClick: () => setActiveSegmentId(seg.id)
+        },
+          seg.name,
+          e('span', { className: 'count', onClick: ev => { ev.stopPropagation(); onDeleteSegment(seg.id); } }, '×')
+        )
+      )
     ),
     e('div', { className: 'filters', style: { marginBottom:24 } },
       Object.entries(processors).map(([k, v]) =>
@@ -836,8 +1292,10 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
     ),
     detailModal && e(PaymentDetailModal, {
       customer: detailModal,
+      settings,
       onClose: () => setDetailModal(null),
-      onRefresh
+      onRefresh,
+      showToast
     }),
     syncModal && e(SyncFromStripeModal, {
       onClose: () => setSyncModal(false),
@@ -1010,13 +1468,28 @@ function SyncFromStripeModal({ onClose, onImported, showToast }) {
 // ─── SETTINGS PAGE ───────────────────────────────────────────────
 function SettingsPage({ settings, onSave, showToast }) {
   const [s, setS] = useState(settings || {});
-  const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [metaAccounts, setMetaAccounts] = useState([]);
+  const [metaLoading, setMetaLoading] = useState(false);
 
   useEffect(() => { if (settings && !dirty) setS(settings); }, [settings, dirty]);
 
   const update = (patch) => { setDirty(true); setS(prev => ({...prev, ...patch})); };
+
+  const loadMetaAccounts = useCallback(async () => {
+    if (!s.metaConnected) return;
+    setMetaLoading(true);
+    try {
+      const accounts = await api('/api/meta/ad-accounts');
+      setMetaAccounts(accounts);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+    setMetaLoading(false);
+  }, [s.metaConnected, showToast]);
+
+  useEffect(() => { if (s.metaConnected) loadMetaAccounts(); }, [s.metaConnected, loadMetaAccounts]);
 
   const save = async () => {
     setSaving(true);
@@ -1026,7 +1499,9 @@ function SettingsPage({ settings, onSave, showToast }) {
         stripeSecretKey: s.stripeSecretKey, stripePublishableKey: s.stripePublishableKey,
         whopApiKey: s.whopApiKey, whopCompanyId: s.whopCompanyId,
         appointmentTrackingMode: s.appointmentTrackingMode,
-        failedChargeWebhookUrl: s.failedChargeWebhookUrl || ''
+        failedChargeWebhookUrl: s.failedChargeWebhookUrl || '',
+        metaAdAccountId: s.metaAdAccountId || '',
+        metaAdAccountName: s.metaAdAccountName || ''
       }) });
       setDirty(false);
       showToast('Settings saved!', 'success');
@@ -1038,6 +1513,32 @@ function SettingsPage({ settings, onSave, showToast }) {
   };
 
   const copy = (text) => { navigator.clipboard.writeText(text); };
+  const selectedMetaAccount = metaAccounts.find(account => String(account.id) === String(s.metaAdAccountId));
+
+  const connectMeta = async () => {
+    try {
+      const { url } = await api('/api/meta/connect-url');
+      const popup = window.open(url, 'paypulse-meta', 'width=720,height=760');
+      const poll = setInterval(async () => {
+        if (popup && popup.closed) {
+          clearInterval(poll);
+          onSave();
+          return;
+        }
+        try {
+          const status = await api('/api/meta/status');
+          if (status.connected) {
+            clearInterval(poll);
+            onSave();
+            showToast('Meta connected', 'success');
+            if (popup && !popup.closed) popup.close();
+          }
+        } catch {}
+      }, 1500);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
 
   return e('div', { className: 'page' },
     e('div', { className: 'settings-grid' },
@@ -1096,6 +1597,61 @@ function SettingsPage({ settings, onSave, showToast }) {
         ),
         e('div', { style: { marginTop: 8 } },
           e('button', { className: 'btn-sm green', onClick: save }, saving ? 'Saving...' : 'Save')
+        )
+      ),
+      e('div', { className: 'settings-card' },
+        e('h3', null, 'Meta Ads'),
+        !s.metaConfigured && e('div', { style: { color: 'var(--warn)', fontSize: 12, lineHeight: 1.5 } },
+          e('div', { style: { fontWeight: 700, marginBottom: 8 } }, 'Platform setup required'),
+          e('div', { style: { marginBottom: 10 } },
+            'Agencies should not enter Meta app secrets here. ',
+            'The platform owner sets Meta once on Railway, and then every agency just clicks ',
+            e('strong', null, 'Connect Meta Ads'),
+            ' with their own Meta login.'
+          ),
+          e('div', { style: { background: 'rgba(255,170,0,0.08)', border: '1px solid rgba(255,170,0,0.22)', borderRadius: 10, padding: 12, color: 'var(--text)' } },
+            e('div', { style: { fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--text2)', marginBottom: 8 } }, 'Railway Env Needed'),
+            e('div', { style: { fontFamily: 'monospace', fontSize: 11, lineHeight: 1.8 } },
+              'META_APP_ID', e('br'),
+              'META_APP_SECRET', e('br'),
+              'META_REDIRECT_URI=', s.metaRedirectUri || (window.location.origin + '/api/meta/callback')
+            )
+          )
+        ),
+        s.metaConfigured && !s.metaConnected && e('div', null,
+          e('div', { style: { color: 'var(--text2)', fontSize: 12, lineHeight: 1.5, marginBottom: 12 } },
+            'Each agency account connects its own Meta ad account here once. Then you map campaigns to each client and sync spend, clicks, CTR, and leads natively.'
+          ),
+          e('button', { className: 'btn-primary', onClick: connectMeta, style: { width: 'auto' } }, 'Connect Meta Ads')
+        ),
+        s.metaConfigured && s.metaConnected && e('div', null,
+          e('div', { style: { color: 'var(--accent)', fontSize: 12, fontWeight: 700, marginBottom: 12 } }, 'Meta connected'),
+          e('div', { className: 'form-group' },
+            e('label', null, 'Primary Ad Account'),
+            e('select', {
+              value: s.metaAdAccountId || '',
+              onChange: ev => {
+                const chosen = metaAccounts.find(account => String(account.id) === String(ev.target.value));
+                update({
+                  metaAdAccountId: ev.target.value,
+                  metaAdAccountName: chosen?.name || ''
+                });
+              }
+            },
+              e('option', { value: '' }, metaLoading ? 'Loading accounts...' : 'Select an ad account'),
+              metaAccounts.map(account =>
+                e('option', { key: account.id, value: account.id }, `${account.name} (${account.account_id || account.id})`)
+              )
+            )
+          ),
+          selectedMetaAccount && e('div', { style: { color: 'var(--text2)', fontSize: 11, marginBottom: 10 } },
+            'Selected account: ', selectedMetaAccount.name, '. This connection belongs only to this agency login.'
+          ),
+          e('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
+            e('button', { className: 'btn-sm', onClick: connectMeta }, 'Reconnect Meta'),
+            e('button', { className: 'btn-sm', onClick: loadMetaAccounts }, metaLoading ? 'Refreshing...' : 'Refresh Accounts'),
+            e('button', { className: 'btn-sm green', onClick: save }, saving ? 'Saving...' : 'Save Meta Setup')
+          )
         )
       ),
       e('div', { className: 'settings-card' },
@@ -1415,12 +1971,186 @@ function MetricsPage({ metrics }) {
   );
 }
 
+function MarginPage({ marginDashboard, onSyncAllMeta, syncingAllMeta, showToast }) {
+  const totals = marginDashboard?.totals || { spend: 0, revenue: 0, margin: 0, booked: 0, leads: 0 };
+  const rows = marginDashboard?.customers || [];
+
+  return e('div', { className: 'page' },
+    e('div', { className: 'page-title', style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 } },
+      e('span', null, 'Agency Margin Dashboard'),
+      e('button', { className: 'btn-primary', style: { width: 'auto' }, onClick: onSyncAllMeta, disabled: syncingAllMeta }, syncingAllMeta ? 'Syncing Meta...' : 'Sync All Client Campaigns')
+    ),
+    e('div', { className: 'stats-row', style: { marginBottom: 20 } },
+      [
+        ['Total Spend', '$' + totals.spend.toFixed(2), 'red'],
+        ['Collected Revenue', '$' + totals.revenue.toFixed(2), 'green'],
+        ['Gross Margin', '$' + totals.margin.toFixed(2), totals.margin >= 0 ? 'green' : 'red'],
+        ['Booked Appointments', totals.booked, 'blue'],
+        ['Leads', totals.leads, 'blue']
+      ].map(([label, value, tone]) =>
+        e('div', { key: label, className: 'stat-card' },
+          e('div', { className: 'stat-label' }, label),
+          e('div', { className: 'stat-value ' + tone }, value)
+        )
+      )
+    ),
+    e('div', { className: 'chart-card' },
+      e('h3', null, 'Client Profitability'),
+      e('div', { className: 'table-wrap' },
+        e('table', null,
+          e('thead', null, e('tr', null,
+            e('th', null, 'Client'),
+            e('th', null, 'Spend'),
+            e('th', null, 'Revenue'),
+            e('th', null, 'Margin'),
+            e('th', null, 'Booked'),
+            e('th', null, 'CPL'),
+            e('th', null, 'Cost / Booked'),
+            e('th', null, 'CTR')
+          )),
+          e('tbody', null,
+            rows.map(row =>
+              e('tr', { key: row.customerId },
+                e('td', null,
+                  e('strong', null, row.customerName),
+                  e('br', null),
+                  e('span', { style: { color: 'var(--text2)', fontSize: 11, textTransform: 'capitalize' } }, row.status.replace('_', ' '))
+                ),
+                e('td', null, '$' + row.spend.toFixed(2)),
+                e('td', null, '$' + row.revenue.toFixed(2)),
+                e('td', null, e('span', { style: { color: row.margin >= 0 ? 'var(--accent)' : 'var(--danger)', fontWeight: 700 } }, '$' + row.margin.toFixed(2))),
+                e('td', null, row.booked),
+                e('td', null, '$' + row.cpl.toFixed(2)),
+                e('td', null, '$' + row.costPerBooked.toFixed(2)),
+                e('td', null, row.ctr.toFixed(2) + '%')
+              )
+            ),
+            rows.length === 0 && e('tr', null, e('td', { colSpan: 8, style: { textAlign: 'center', padding: 30, color: '#666' } }, 'No synced Meta margin data yet'))
+          )
+        )
+      )
+    )
+  );
+}
+
+function OpsPage({ alerts, webhookEvents, auditLogs, forecast, showToast }) {
+  const exportCsv = async (type) => {
+    try {
+      const res = await fetch(API + '/api/export/' + type, {
+        headers: {
+          'Authorization': 'Bearer ' + localStorage.getItem('paypulse_token')
+        }
+      });
+      const csv = await res.text();
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = type + '.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      showToast('Export failed', 'error');
+    }
+  };
+
+  return e('div', { className: 'page' },
+    e('div', { className: 'page-title', style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+      e('span', null, 'Operations'),
+      e('div', { style: { display: 'flex', gap: 8 } },
+        ['customers', 'charges', 'failures', 'metrics'].map(type =>
+          e('button', { key: type, className: 'btn-sm', onClick: () => exportCsv(type) }, 'Export ' + type)
+        )
+      )
+    ),
+    e('div', { className: 'admin-grid', style: { marginBottom: 20 } },
+      (alerts || []).map(alert =>
+        e('div', { key: alert.id, className: 'admin-card', style: { borderColor: alert.level === 'warn' ? 'rgba(255,170,0,0.5)' : 'var(--border)' } },
+          e('div', { className: 'stat-label' }, alert.label),
+          e('div', { className: 'stat-value ' + (alert.level === 'warn' ? 'yellow' : 'blue') }, alert.value),
+          e('div', { style: { color: 'var(--text2)', fontSize: 12, marginTop: 8 } }, alert.action)
+        )
+      )
+    ),
+    e('div', { className: 'metrics-grid-wide', style: { marginBottom: 20 } },
+      e('div', { className: 'settings-card' },
+        e('h3', null, 'Revenue Forecast'),
+        forecast
+          ? e('div', { className: 'admin-grid', style: { gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 } },
+              e('div', { className: 'admin-card' },
+                e('div', { className: 'stat-label' }, 'Projected 30-Day Revenue'),
+                e('div', { className: 'stat-value green' }, '$' + (forecast.projectedNext30Revenue || 0).toFixed(0))
+              ),
+              e('div', { className: 'admin-card' },
+                e('div', { className: 'stat-label' }, 'Recovery Opportunity'),
+                e('div', { className: 'stat-value blue' }, '$' + (forecast.projectedRecoveryRevenue || 0).toFixed(0))
+              ),
+              e('div', { className: 'admin-card' },
+                e('div', { className: 'stat-label' }, 'Avg Daily Revenue'),
+                e('div', { className: 'stat-value' }, '$' + (forecast.avgDailyRevenue || 0).toFixed(0))
+              ),
+              e('div', { className: 'admin-card' },
+                e('div', { className: 'stat-label' }, 'At-Risk Exposure'),
+                e('div', { className: 'stat-value yellow' }, '$' + (forecast.atRiskExposure || 0).toFixed(0))
+              ),
+              e('div', { className: 'admin-card' },
+                e('div', { className: 'stat-label' }, 'No-Card Exposure'),
+                e('div', { className: 'stat-value red' }, '$' + (forecast.noCardExposure || 0).toFixed(0))
+              ),
+              e('div', { className: 'admin-card' },
+                e('div', { className: 'stat-label' }, 'Retry Recovery Rate'),
+                e('div', { className: 'stat-value blue' }, ((forecast.recoveryRate || 0) * 100).toFixed(0) + '%')
+              )
+            )
+          : e('div', { style: { color: '#666', fontSize: 12 } }, 'Forecast loading...')
+      )
+    ),
+    e('div', { className: 'metrics-grid-wide' },
+      e('div', { className: 'settings-card' },
+        e('h3', null, 'Webhook Event History'),
+        e('div', { style: { maxHeight: 360, overflow: 'auto' } },
+          (webhookEvents || []).slice(0, 50).map(evt =>
+            e('div', { key: evt.id, style: { padding: '10px 0', borderBottom: '1px solid var(--border)' } },
+              e('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 8 } },
+                e('strong', { style: { fontSize: 12 } }, evt.source + ' · ' + (evt.event_type || 'event')),
+                e('span', { className: 'tag ' + (evt.status === 'succeeded' ? 'tag-green' : evt.status === 'failed' ? 'tag-red' : 'tag-blue') }, evt.status)
+              ),
+              e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 4 } }, fmtDate(evt.created_at))
+            )
+          ),
+          (!webhookEvents || webhookEvents.length === 0) && e('div', { style: { color: '#666', fontSize: 12 } }, 'No webhook events yet')
+        )
+      ),
+      e('div', { className: 'settings-card' },
+        e('h3', null, 'Audit Log'),
+        e('div', { style: { maxHeight: 360, overflow: 'auto' } },
+          (auditLogs || []).slice(0, 50).map(log =>
+            e('div', { key: log.id, style: { padding: '10px 0', borderBottom: '1px solid var(--border)' } },
+              e('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 8 } },
+                e('strong', { style: { fontSize: 12 } }, log.action),
+                e('span', { style: { color: 'var(--text2)', fontSize: 11 } }, fmtDate(log.created_at))
+              ),
+              e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 4, lineHeight: 1.5, wordBreak: 'break-word' } },
+                JSON.stringify(safeJsonParse(log.details, log.details))
+              )
+            )
+          ),
+          (!auditLogs || auditLogs.length === 0) && e('div', { style: { color: '#666', fontSize: 12 } }, 'No audit entries yet')
+        )
+      )
+    )
+  );
+}
+
 // ─── CREATE AGENCY MODAL ────────────────────────────────────────
 function CreateAgencyModal({ onClose, onRefresh }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [companyName, setCompanyName] = useState('');
+  const [plan, setPlan] = useState('free');
+  const [monthlyRate, setMonthlyRate] = useState(0);
+  const [processor, setProcessor] = useState('stripe');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -1429,7 +2159,7 @@ function CreateAgencyModal({ onClose, onRefresh }) {
     try {
       await api('/api/admin/agencies', {
         method: 'POST',
-        body: JSON.stringify({ email, password, name, companyName })
+        body: JSON.stringify({ email, password, name, companyName, plan, monthlyRate, processor })
       });
       onRefresh();
       onClose();
@@ -1454,6 +2184,25 @@ function CreateAgencyModal({ onClose, onRefresh }) {
     e('div', { className: 'form-group' },
       e('label', null, 'Company Name'),
       e('input', { placeholder: 'SMMA Agency', value: companyName, onChange: ev => setCompanyName(ev.target.value) })
+    ),
+    e('div', { className: 'form-group' },
+      e('label', null, 'Plan'),
+      e('select', { value: plan, onChange: ev => setPlan(ev.target.value) },
+        e('option', { value: 'free' }, 'Free'),
+        e('option', { value: 'standard' }, 'Standard'),
+        e('option', { value: 'pro' }, 'Pro')
+      )
+    ),
+    e('div', { className: 'form-group' },
+      e('label', null, 'Monthly Rate'),
+      e('input', { type: 'number', value: monthlyRate, onChange: ev => setMonthlyRate(parseFloat(ev.target.value) || 0) })
+    ),
+    e('div', { className: 'form-group' },
+      e('label', null, 'Processor'),
+      e('select', { value: processor, onChange: ev => setProcessor(ev.target.value) },
+        e('option', { value: 'stripe' }, 'Stripe'),
+        e('option', { value: 'whop' }, 'Whop')
+      )
     ),
     error && e('div', { className: 'error-msg' }, error),
     e('div', { className: 'modal-actions' },
@@ -1762,6 +2511,14 @@ function App() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [agencies, setAgencies] = useState([]);
   const [adminStats, setAdminStats] = useState(null);
+  const [alerts, setAlerts] = useState([]);
+  const [webhookEvents, setWebhookEvents] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [forecast, setForecast] = useState(null);
+  const [marginDashboard, setMarginDashboard] = useState(null);
+  const [syncingAllMeta, setSyncingAllMeta] = useState(false);
+  const [segments, setSegments] = useState([]);
+  const [activeSegmentId, setActiveSegmentId] = useState(null);
   const [toast, setToast] = useState(null);
 
   const showToast = useCallback((message, type = 'info') => {
@@ -1776,11 +2533,13 @@ function App() {
       setUser(me);
 
       if (me.role === 'admin') {
-        const [aRes, sRes, cRes, nRes, seRes, chRes, mRes, uRes] = await Promise.all([
+        const [aRes, sRes, cRes, nRes, seRes, chRes, mRes, uRes, alRes, whRes, auRes, segRes, forecastRes, marginRes] = await Promise.all([
           api('/api/admin/agencies'),
           api('/api/admin/stats'),
           api('/api/customers'), api('/api/notifications'), api('/api/settings'),
           api('/api/charges'), api('/api/metrics'), api('/api/notifications/unread-count'),
+          api('/api/alerts'), api('/api/webhook-events'), api('/api/audit-logs'), api('/api/segments'),
+          api('/api/forecast'), api('/api/margin-dashboard'),
         ]);
         setAgencies(aRes);
         setAdminStats(sRes);
@@ -1790,10 +2549,18 @@ function App() {
         setCharges(chRes);
         setMetrics(mRes);
         setUnreadCount(uRes.count);
+        setAlerts(alRes);
+        setWebhookEvents(whRes);
+        setAuditLogs(auRes);
+        setSegments(segRes);
+        setForecast(forecastRes);
+        setMarginDashboard(marginRes);
       } else {
-        const [cRes, nRes, sRes, chRes, mRes, uRes] = await Promise.all([
+        const [cRes, nRes, sRes, chRes, mRes, uRes, alRes, whRes, auRes, segRes, forecastRes, marginRes] = await Promise.all([
           api('/api/customers'), api('/api/notifications'), api('/api/settings'),
           api('/api/charges'), api('/api/metrics'), api('/api/notifications/unread-count'),
+          api('/api/alerts'), api('/api/webhook-events'), api('/api/audit-logs'), api('/api/segments'),
+          api('/api/forecast'), api('/api/margin-dashboard'),
         ]);
         setCustomers(cRes);
         setNotifications(nRes);
@@ -1801,11 +2568,24 @@ function App() {
         setCharges(chRes);
         setMetrics(mRes);
         setUnreadCount(uRes.count);
+        setAlerts(alRes);
+        setWebhookEvents(whRes);
+        setAuditLogs(auRes);
+        setSegments(segRes);
+        setForecast(forecastRes);
+        setMarginDashboard(marginRes);
       }
     } catch (err) { console.error('Refresh failed', err); }
   }, [token]);
 
-  useEffect(() => { if (token) { refresh(); const iv = setInterval(refresh, 5000); return () => clearInterval(iv); } }, [refresh, token]);
+  useEffect(() => {
+    if (!token) return;
+    refresh();
+    const iv = setInterval(() => {
+      if (document.visibilityState === 'visible') refresh();
+    }, 30000);
+    return () => clearInterval(iv);
+  }, [refresh, token]);
 
   const logout = () => { localStorage.removeItem('paypulse_token'); setToken(null); setUser(null); window.location.reload(); };
 
@@ -1818,10 +2598,14 @@ function App() {
     { key: 'settings', label: 'Settings' },
     { key: 'charges', label: 'Charges' },
     { key: 'metrics', label: 'Metrics' },
+    { key: 'margin', label: 'Margin' },
+    { key: 'ops', label: 'Ops' },
   ];
   const adminNav = [
     { key: 'customers', label: 'Customers' },
     { key: 'admin', label: 'Agencies' },
+    { key: 'margin', label: 'Margin' },
+    { key: 'ops', label: 'Ops' },
     ...(user?.role === 'admin' ? [{ key: 'subadmins', label: 'Sub Admins' }] : []),
     { key: 'admin-settings', label: 'Settings' },
   ];
@@ -1849,13 +2633,67 @@ function App() {
       ),
       e('div', { className: 'nav-link', style: { opacity: 0.5, cursor: 'pointer' }, onClick: logout }, 'Sign Out')
     ),
-    !isAdmin && page === 'customers' && e(CustomersPage, { customers, onRefresh: refresh, settings, showToast }),
+    !isAdmin && page === 'customers' && e(CustomersPage, {
+      customers, onRefresh: refresh, settings, showToast,
+      segments, activeSegmentId, setActiveSegmentId,
+      onCreateSegment: async (name, filters) => {
+        const created = await api('/api/segments', { method: 'POST', body: JSON.stringify({ name, filters }) });
+        setSegments(prev => [created, ...prev]);
+      },
+      onDeleteSegment: async (id) => {
+        await api('/api/segments/' + id, { method: 'DELETE' });
+        setSegments(prev => prev.filter(seg => seg.id !== id));
+        if (activeSegmentId === id) setActiveSegmentId(null);
+      }
+    }),
     !isAdmin && page === 'settings' && e(SettingsPage, { settings, onSave: refresh, showToast }),
     !isAdmin && page === 'inbox' && e(InboxPage, { notifications, onRefresh: refresh, showToast }),
     !isAdmin && page === 'charges' && e(ChargesPage, { charges, showToast }),
     !isAdmin && page === 'metrics' && e(MetricsPage, { metrics, showToast }),
+    !isAdmin && page === 'margin' && e(MarginPage, {
+      marginDashboard,
+      syncingAllMeta,
+      onSyncAllMeta: async () => {
+        setSyncingAllMeta(true);
+        try {
+          const res = await api('/api/meta/sync-all', { method: 'POST', body: JSON.stringify({}) });
+          showToast(`Synced ${res.totalCustomers} client${res.totalCustomers === 1 ? '' : 's'}`, 'success');
+          await refresh();
+        } catch (err) { showToast(err.message, 'error'); }
+        setSyncingAllMeta(false);
+      },
+      showToast
+    }),
+    !isAdmin && page === 'ops' && e(OpsPage, { alerts, webhookEvents, auditLogs, forecast, showToast }),
     isAdmin && page === 'admin' && e(AdminPage, { agencies, adminStats, onRefresh: refresh, showToast }),
-    isAdmin && page === 'customers' && e(CustomersPage, { customers, onRefresh: refresh, settings, showToast }),
+    isAdmin && page === 'customers' && e(CustomersPage, {
+      customers, onRefresh: refresh, settings, showToast,
+      segments, activeSegmentId, setActiveSegmentId,
+      onCreateSegment: async (name, filters) => {
+        const created = await api('/api/segments', { method: 'POST', body: JSON.stringify({ name, filters }) });
+        setSegments(prev => [created, ...prev]);
+      },
+      onDeleteSegment: async (id) => {
+        await api('/api/segments/' + id, { method: 'DELETE' });
+        setSegments(prev => prev.filter(seg => seg.id !== id));
+        if (activeSegmentId === id) setActiveSegmentId(null);
+      }
+    }),
+    isAdmin && page === 'margin' && e(MarginPage, {
+      marginDashboard,
+      syncingAllMeta,
+      onSyncAllMeta: async () => {
+        setSyncingAllMeta(true);
+        try {
+          const res = await api('/api/meta/sync-all', { method: 'POST', body: JSON.stringify({}) });
+          showToast(`Synced ${res.totalCustomers} client${res.totalCustomers === 1 ? '' : 's'}`, 'success');
+          await refresh();
+        } catch (err) { showToast(err.message, 'error'); }
+        setSyncingAllMeta(false);
+      },
+      showToast
+    }),
+    isAdmin && page === 'ops' && e(OpsPage, { alerts, webhookEvents, auditLogs, forecast, showToast }),
     isAdmin && page === 'subadmins' && e(SubAdminsPage, { showToast }),
     isAdmin && page === 'admin-settings' && e(AdminSettingsPage, { user, onSave: refresh, showToast }),
     e(Toast, { toast, onDismiss: () => setToast(null) })

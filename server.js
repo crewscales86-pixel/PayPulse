@@ -7,13 +7,24 @@ const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const path = require('path');
+const crypto = require('crypto');
 const db = require('./db');
 const { v4: uuidv4 } = require('uuid');
 const Stripe = require('stripe');
+const nodemailer = require('nodemailer');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'paypulse-dev-secret-change-in-prod';
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+const STRIPE_WEBHOOK_ROUTE_SECRET =
+  process.env.STRIPE_WEBHOOK_ROUTE_SECRET ||
+  process.env.STRIPE_WEBHOOK_SECRET ||
+  '';
+const STRIPE_SIGNING_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+const META_APP_ID = process.env.META_APP_ID || '';
+const META_APP_SECRET = process.env.META_APP_SECRET || '';
+const META_API_VERSION = process.env.META_API_VERSION || 'v23.0';
+const META_REDIRECT_URI = process.env.META_REDIRECT_URI || `${BASE_URL}/api/meta/callback`;
 
 const app = express();
 
@@ -38,7 +49,7 @@ const authLimiter = rateLimit({
 
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 120, // 120 requests per minute
+  max: 600, // 600 requests per minute
   message: { error: 'Too many requests. Slow down.' },
   standardHeaders: true,
   legacyHeaders: false
@@ -47,7 +58,12 @@ const apiLimiter = rateLimit({
 app.use('/api/', apiLimiter);
 app.use('/api/auth/login', authLimiter);
 
-app.use(bodyParser.json({ limit: '100kb' }));
+app.use(bodyParser.json({
+  limit: '100kb',
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 app.use(bodyParser.urlencoded({ extended: true, limit: '100kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -59,6 +75,293 @@ db.initSchema()
     console.error('  ✗ DB init error:', err.message);
     process.exit(1);
   });
+
+let mailTransporter = null;
+function getMailer() {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_FROM) return null;
+  if (!mailTransporter) {
+    mailTransporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || '587', 10),
+      secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true',
+      auth: process.env.SMTP_USER
+        ? {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS || ''
+          }
+        : undefined
+    });
+  }
+  return mailTransporter;
+}
+
+function safeJsonParse(value, fallback = null) {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function makeEventKey(source, payload, extra = '') {
+  return crypto
+    .createHash('sha256')
+    .update(`${source}:${extra}:${JSON.stringify(payload || {})}`)
+    .digest('hex');
+}
+
+async function audit(action, context = {}) {
+  try {
+    await db.createAuditLog({
+      actor_user_id: context.actor?.id || '',
+      actor_email: context.actor?.email || '',
+      customer_id: context.customer_id || '',
+      target_type: context.target_type || 'system',
+      target_id: context.target_id || 'system',
+      action,
+      details: JSON.stringify(context.details || {})
+    });
+  } catch (err) {
+    console.error('Audit log error:', err.message);
+  }
+}
+
+async function sendEmailAlert(user, subject, text) {
+  try {
+    if (!user?.email_notifications_enabled) return false;
+    const to = user.alert_email || user.email;
+    const transporter = getMailer();
+    if (!to || !transporter) return false;
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM,
+      to,
+      subject,
+      text
+    });
+    return true;
+  } catch (err) {
+    console.error('Email alert error:', err.message);
+    return false;
+  }
+}
+
+const DEFAULT_COMMUNICATION_TEMPLATES = {
+  update_payment_method: {
+    subject: 'Update your payment method',
+    body: 'Hi {{customer_name}}, we need an updated card on file for {{company_name}}. Use this secure link to add or refresh your payment method: {{payment_link}}'
+  },
+  billing_follow_up: {
+    subject: 'Quick billing follow-up',
+    body: 'Hi {{customer_name}}, I wanted to follow up on your billing profile for {{company_name}}. Reply here if you want help or use your payment link: {{payment_link}}'
+  },
+  failed_payment_follow_up: {
+    subject: 'Action needed for your recent payment',
+    body: 'Hi {{customer_name}}, your recent payment for {{company_name}} did not go through. Please update your card here so we can retry: {{payment_link}}'
+  }
+};
+
+function getCommunicationTemplates(user) {
+  return {
+    ...DEFAULT_COMMUNICATION_TEMPLATES,
+    ...safeJsonParse(user?.communication_templates_json, {})
+  };
+}
+
+function renderTemplate(template, vars) {
+  return String(template || '').replace(/\{\{(.*?)\}\}/g, (_, key) => {
+    const value = vars[key.trim()];
+    return value === null || value === undefined ? '' : String(value);
+  });
+}
+
+async function sendDirectEmail(to, subject, text) {
+  const transporter = getMailer();
+  if (!to || !transporter) return false;
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to,
+    subject,
+    text
+  });
+  return true;
+}
+
+async function buildCardSetupLink(user, customer) {
+  if (!user?.stripe_secret_key) return '';
+  const stripeClient = Stripe(user.stripe_secret_key);
+  let stripeCustomerId = customer.stripe_customer_id;
+  if (!stripeCustomerId) {
+    const stripeCustomer = await stripeClient.customers.create({
+      email: customer.email,
+      name: customer.name,
+      metadata: { paypulse_customer_id: customer.id }
+    });
+    stripeCustomerId = stripeCustomer.id;
+    await db.updateCustomer(customer.id, {
+      stripe_customer_id: stripeCustomerId
+    });
+  }
+
+  const session = await stripeClient.checkout.sessions.create({
+    mode: 'payment',
+    line_items: [
+      {
+        price_data: {
+          currency: 'usd',
+          product_data: { name: 'Card Authorization' },
+          unit_amount: 100
+        },
+        quantity: 1
+      }
+    ],
+    customer: stripeCustomerId,
+    success_url: BASE_URL + '/?card_saved=1',
+    cancel_url: BASE_URL + '/?card_cancelled=1',
+    metadata: {
+      paypulse_customer_id: customer.id,
+      paypulse_user_id: user.id
+    }
+  });
+
+  return session.url;
+}
+
+function metaConfigured() {
+  return !!(META_APP_ID && META_APP_SECRET && META_REDIRECT_URI);
+}
+
+function encodeMetaState(payload) {
+  return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+}
+
+function decodeMetaState(value) {
+  try {
+    return JSON.parse(Buffer.from(String(value || ''), 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+async function metaFetch(pathname, params = {}, token) {
+  const url = new URL(`https://graph.facebook.com/${META_API_VERSION}${pathname}`);
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
+  });
+  if (token) url.searchParams.set('access_token', token);
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!res.ok || data.error) {
+    throw new Error(data?.error?.message || `Meta request failed (${res.status})`);
+  }
+  return data;
+}
+
+function parseMetaLeadActions(actions = []) {
+  return actions
+    .filter(action => ['lead', 'onsite_conversion.lead_grouped', 'offsite_conversion.fb_pixel_lead'].includes(action.action_type))
+    .reduce((sum, action) => sum + parseInt(action.value || 0, 10), 0);
+}
+
+async function syncMetaMetricsForCustomer(user, customerId, options = {}) {
+  const customer = await db.getCustomerById(customerId);
+  if (!customer || customer.user_id !== user.id) throw new Error('Customer not found');
+  if (!user?.meta_access_token) throw new Error('Connect Meta first');
+  const mappings = await db.getMetaCampaignMappingsByCustomer(customer.id, user.id);
+  if (!mappings.length) throw new Error('Map at least one campaign first');
+
+  const dateFrom = String(options.dateFrom || new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10));
+  const dateTo = String(options.dateTo || new Date().toISOString().slice(0, 10));
+
+  await db.run(
+    'DELETE FROM ad_metrics WHERE customer_id = ? AND user_id = ? AND source = ? AND date_from = ? AND date_to = ?',
+    [customer.id, user.id, 'meta', dateFrom, dateTo]
+  );
+
+  const created = [];
+  for (const mapping of mappings) {
+    const targetId = mapping.adset_id || mapping.campaign_id;
+    const insight = await metaFetch(`/${targetId}/insights`, {
+      fields: 'campaign_id,campaign_name,adset_id,adset_name,spend,impressions,clicks,ctr,cpc,actions',
+      time_range: JSON.stringify({ since: dateFrom, until: dateTo })
+    }, user.meta_access_token);
+    const row = (insight.data || [])[0];
+    const leads = parseMetaLeadActions(Array.isArray(row?.actions) ? row.actions : []);
+    const metricId = await db.createAdMetric({
+      user_id: user.id,
+      customer_id: customer.id,
+      source: 'meta',
+      ad_account_id: mapping.ad_account_id || '',
+      ad_account_name: mapping.ad_account_name || '',
+      campaign_id: row?.campaign_id || mapping.campaign_id || '',
+      campaign_name: row?.campaign_name || mapping.campaign_name || '',
+      adset_id: row?.adset_id || mapping.adset_id || '',
+      adset_name: row?.adset_name || mapping.adset_name || '',
+      date_from: dateFrom,
+      date_to: dateTo,
+      ad_spend: parseFloat(row?.spend || 0),
+      impressions: parseInt(row?.impressions || 0, 10),
+      clicks: parseInt(row?.clicks || 0, 10),
+      ctr: parseFloat(row?.ctr || 0),
+      cpc: parseFloat(row?.cpc || 0),
+      leads,
+      appointments: parseInt(customer.total_triggers || 0, 10)
+    });
+    created.push(metricId);
+  }
+
+  await audit('meta.sync_completed', {
+    actor: { id: user.id, email: user.email },
+    customer_id: customer.id,
+    target_type: 'customer',
+    target_id: customer.id,
+    details: { date_from: dateFrom, date_to: dateTo, rows: created.length }
+  });
+  return { customer, count: created.length, dateFrom, dateTo };
+}
+
+function toCsv(rows) {
+  if (!rows.length) return '';
+  const headers = Object.keys(rows[0]);
+  const esc = value => {
+    const str = value === null || value === undefined ? '' : String(value);
+    return `"${str.replace(/"/g, '""')}"`;
+  };
+  return [headers.join(','), ...rows.map(row => headers.map(key => esc(row[key])).join(','))].join('\n');
+}
+
+async function buildAlerts(user) {
+  const now = Date.now();
+  const charges = await db.getChargesByUser(user.id);
+  const customers = await db.getCustomersByUser(user.id);
+  const events = await db.getWebhookEventsByUser(user.id, 100);
+  const notes = await db.all(
+    'SELECT * FROM customer_notes WHERE user_id = ? AND recurring = 1 AND is_done = 0 ORDER BY created_at DESC',
+    [user.id]
+  );
+  const failed24h = charges.filter(ch => ch.status === 'failed' && new Date(ch.created_at).getTime() >= now - 86400000).length;
+  const webhookFailures24h = events.filter(evt => evt.status === 'failed' && new Date(evt.created_at).getTime() >= now - 86400000).length;
+  const scheduledRetries = charges.filter(ch => ch.retry_status === 'scheduled').length;
+  const dueFollowups = notes.filter(note => note.next_due_at && new Date(note.next_due_at).getTime() <= now).length;
+  const alerts = [
+    { id: 'failed_24h', level: failed24h > 0 ? 'warn' : 'info', label: 'Failed charges (24h)', value: failed24h, action: 'Review failed customers' },
+    { id: 'no_card', level: customers.some(c => !c.card_on_file) ? 'warn' : 'info', label: 'Customers without card', value: customers.filter(c => !c.card_on_file).length, action: 'Collect payment methods' },
+    { id: 'retry_queue', level: scheduledRetries > 0 ? 'warn' : 'info', label: 'Scheduled retries', value: scheduledRetries, action: 'Work retry queue' },
+    { id: 'webhook_failures', level: webhookFailures24h > 0 ? 'warn' : 'info', label: 'Webhook failures (24h)', value: webhookFailures24h, action: 'Inspect webhook history' },
+    { id: 'due_followups', level: dueFollowups > 0 ? 'warn' : 'info', label: 'Follow-up notes due', value: dueFollowups, action: 'Open customer notes' }
+  ];
+  if (user.role === 'admin' || user.role === 'subadmin') {
+    const pending = await db.all('SELECT COUNT(*) as c FROM users WHERE role = ? AND approved = ?', ['agency', 0]);
+    alerts.push({
+      id: 'pending_approvals',
+      level: parseInt(pending[0]?.c || pending.c || 0, 10) > 0 ? 'warn' : 'info',
+      label: 'Pending approvals',
+      value: parseInt(pending[0]?.c || pending.c || 0, 10),
+      action: 'Review signups'
+    });
+  }
+  return alerts;
+}
 
 // ─── AUTH MIDDLEWARE ─────────────────────────────────────────────
 function requireAuth(req, res, next) {
@@ -75,6 +378,12 @@ function requireAdmin(req, res, next) {
   if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'subadmin'))
     return res.status(403).json({ error: 'Admin only' });
   next();
+}
+
+function pick(obj, allowed) {
+  return Object.fromEntries(
+    Object.entries(obj || {}).filter(([key, value]) => allowed.includes(key) && value !== undefined)
+  );
 }
 
 // ─── AUTH ────────────────────────────────────────────────────────
@@ -209,6 +518,31 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
   }
 });
 
+async function recordWebhookEventStart({ userId, customerId = '', source, eventType, eventKey, secretFragment, payload }) {
+  const existing = await db.getWebhookEventByKey(userId, source, eventKey);
+  if (existing) return { duplicate: true, event: existing };
+  const event = await db.createWebhookEvent({
+    user_id: userId,
+    customer_id: customerId,
+    source,
+    event_type: eventType,
+    event_key: eventKey,
+    secret_fragment: secretFragment,
+    status: 'received',
+    payload: JSON.stringify(payload || {})
+  });
+  return { duplicate: false, event };
+}
+
+async function markWebhookEvent(eventId, status, response = {}, extra = {}) {
+  if (!eventId) return null;
+  return db.updateWebhookEvent(eventId, {
+    status,
+    response: JSON.stringify(response),
+    ...extra
+  });
+}
+
 // ─── POST /webhook/ghl/:secret — agency‑level webhook
 app.post('/webhook/ghl/:secret', async (req, res) => {
   try {
@@ -216,20 +550,39 @@ app.post('/webhook/ghl/:secret', async (req, res) => {
     if (!user) return res.status(403).json({ error: 'Invalid secret' });
 
     const payload = req.body;
+    if (!payload || typeof payload !== 'object') {
+      return res.status(400).json({ error: 'Invalid payload' });
+    }
     const ghlLocationId = payload.location_id || payload.locationId || '';
+    const eventKey =
+      req.headers['x-idempotency-key'] ||
+      payload.event_id ||
+      payload.id ||
+      makeEventKey('ghl', payload, `${user.id}:${ghlLocationId || payload.email || 'agency'}`);
+    const webhookStart = await recordWebhookEventStart({
+      userId: user.id,
+      source: 'ghl',
+      eventType: payload.type || 'appointment.booked',
+      eventKey,
+      secretFragment: String(req.params.secret).slice(0, 8),
+      payload
+    });
+    if (webhookStart.duplicate) {
+      return res.json({ success: true, duplicate: true, eventId: webhookStart.event.id });
+    }
     let customer = null;
 
     if (ghlLocationId) {
       customer = await db.getCustomerByLocationId(ghlLocationId, user.id);
     }
     if (!customer) {
-      customer = await db.getCustomerByEmailAndUser(payload.email, user.id);
+      customer = await db.getCustomerByEmailAndUser((payload.email || '').toLowerCase(), user.id);
     }
     if (!customer) {
       customer = await db.createCustomer({
         user_id: user.id,
-        name: payload.full_name || payload.name || payload.email.split('@')[0],
-        email: payload.email,
+        name: payload.full_name || payload.name || (payload.email ? payload.email.split('@')[0] : `GHL ${Date.now()}`),
+        email: (payload.email || `unknown-${Date.now()}@ghl.auto`).toLowerCase(),
         phone: payload.phone || '',
         whop_member_id: payload.whop_member_id || '',
         whop_payment_method_id: payload.whop_payment_method_id || '',
@@ -242,6 +595,13 @@ app.post('/webhook/ghl/:secret', async (req, res) => {
           payload.whop_payment_method_id || payload.stripe_payment_method_id
         ),
         ghl_location_id: ghlLocationId
+      });
+      await audit('customer.auto_created_from_ghl', {
+        actor: user,
+        customer_id: customer.id,
+        target_type: 'customer',
+        target_id: customer.id,
+        details: { source: 'ghl', ghl_location_id: ghlLocationId, user_id: user.id }
       });
       await db.addNotification({
         user_id: user.id,
@@ -262,7 +622,8 @@ app.post('/webhook/ghl/:secret', async (req, res) => {
       customer = await db.getCustomerById(customer.id);
     }
 
-    db.addNotification({
+    await db.updateWebhookEvent(webhookStart.event.id, { customer_id: customer.id });
+    await db.addNotification({
       user_id: user.id,
       type: 'trigger',
       title: `Trigger fired — ${customer.name}`,
@@ -291,6 +652,11 @@ app.post('/webhook/ghl/:secret', async (req, res) => {
           gclid: payload.gclid
         }
       );
+      await markWebhookEvent(webhookStart.event.id, 'succeeded', {
+        appointmentId: appt.id,
+        chargeId: charge.id,
+        chargeStatus: charge.status
+      });
       return res.json({
         success: true,
         mode: 'appointment_tracking',
@@ -313,6 +679,10 @@ app.post('/webhook/ghl/:secret', async (req, res) => {
         gclid: payload.gclid
       }
     );
+    await markWebhookEvent(webhookStart.event.id, charge.status === 'failed' ? 'failed' : 'succeeded', {
+      chargeId: charge.id,
+      chargeStatus: charge.status
+    });
     res.json({
       success: true,
       chargeId: charge.id,
@@ -323,6 +693,7 @@ app.post('/webhook/ghl/:secret', async (req, res) => {
       locationId: ghlLocationId
     });
   } catch (err) {
+    console.error('GHL webhook error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -335,6 +706,25 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
 
     const locationId = req.params.locationId;
     const payload = req.body;
+    if (!payload || typeof payload !== 'object') {
+      return res.status(400).json({ error: 'Invalid payload' });
+    }
+    const eventKey =
+      req.headers['x-idempotency-key'] ||
+      payload.event_id ||
+      payload.id ||
+      makeEventKey('ghl', payload, `${user.id}:${locationId}`);
+    const webhookStart = await recordWebhookEventStart({
+      userId: user.id,
+      source: 'ghl',
+      eventType: payload.type || 'appointment.booked',
+      eventKey,
+      secretFragment: `${String(req.params.secret).slice(0, 8)}:${locationId.slice(0, 8)}`,
+      payload
+    });
+    if (webhookStart.duplicate) {
+      return res.json({ success: true, duplicate: true, eventId: webhookStart.event.id });
+    }
     let customer = await db.getCustomerByLocationId(locationId, user.id);
 
     if (!customer) {
@@ -359,6 +749,13 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
           payload.whop_payment_method_id || payload.stripe_payment_method_id
         ),
         ghl_location_id: locationId
+      });
+      await audit('customer.auto_created_from_ghl', {
+        actor: user,
+        customer_id: customer.id,
+        target_type: 'customer',
+        target_id: customer.id,
+        details: { source: 'ghl', ghl_location_id: locationId, user_id: user.id }
       });
       await db.addNotification({
         user_id: user.id,
@@ -391,7 +788,8 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
       customer = await db.getCustomerById(customer.id);
     }
 
-    db.addNotification({
+    await db.updateWebhookEvent(webhookStart.event.id, { customer_id: customer.id });
+    await db.addNotification({
       user_id: user.id,
       type: 'trigger',
       title: `Appointment — ${customer.name}`,
@@ -418,6 +816,11 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
           gclid: payload.gclid
         }
       );
+      await markWebhookEvent(webhookStart.event.id, 'succeeded', {
+        appointmentId: appt.id,
+        chargeId: charge.id,
+        chargeStatus: charge.status
+      });
       return res.json({
         success: true,
         mode: 'appointment_tracking',
@@ -441,6 +844,10 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
         gclid: payload.gclid
       }
     );
+    await markWebhookEvent(webhookStart.event.id, charge.status === 'failed' ? 'failed' : 'succeeded', {
+      chargeId: charge.id,
+      chargeStatus: charge.status
+    });
     res.json({
       success: true,
       chargeId: charge.id,
@@ -450,6 +857,7 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
       customerName: customer.name
     });
   } catch (err) {
+    console.error('GHL client webhook error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -479,6 +887,50 @@ async function fireFailWebhook(user, customer, amount, reason) {
   } catch (e) {
     console.error('Failed to send failure webhook:', e.message);
   }
+}
+
+async function scheduleChargeRetry(charge, reason = '') {
+  const retryCount = (parseInt(charge.retry_count, 10) || 0) + 1;
+  const nextRetryAt = new Date(Date.now() + Math.min(retryCount, 3) * 24 * 60 * 60 * 1000).toISOString();
+  return db.updateCharge(charge.id, {
+    retry_count: retryCount,
+    retry_status: 'scheduled',
+    next_retry_at: nextRetryAt,
+    failure_reason: reason || charge.failure_reason || ''
+  });
+}
+
+async function finalizeFailedCharge({ user, customer, charge, amount, reason, notificationBody, shouldWebhook = true }) {
+  await db.updateCustomer(customer.id, { status: 'at_risk' });
+  const updatedCharge = await scheduleChargeRetry(
+    await db.updateCharge(charge.id, {
+      status: 'failed',
+      failure_reason: reason
+    }),
+    reason
+  );
+  await db.addNotification({
+    user_id: user.id,
+    type: 'fail',
+    title: `Charge failed — ${customer.name}`,
+    body: notificationBody || reason
+  });
+  await audit('charge.failed', {
+    actor: user,
+    customer_id: customer.id,
+    target_type: 'charge',
+    target_id: charge.id,
+    details: { customer_id: customer.id, amount, reason, retry_status: 'scheduled' }
+  });
+  await sendEmailAlert(
+    user,
+    `PayPulse failed charge for ${customer.name}`,
+    `A charge for ${customer.name} failed.\nAmount: $${amount.toFixed(2)}\nReason: ${reason}\nA retry has been scheduled automatically.`
+  );
+  if (shouldWebhook) {
+    await fireFailWebhook(user, customer, amount, reason);
+  }
+  return updatedCharge;
 }
 
 // ─── CHARGE PROCESSING ────────────────────────────────────────────
@@ -520,6 +972,13 @@ async function processCharge(user, customer, note = '', utmData = {}) {
         credit - rate
       ).toFixed(2)}`
     });
+    await audit('charge.credit_applied', {
+      actor: user,
+      customer_id: customer.id,
+      target_type: 'charge',
+      target_id: charge.id,
+      details: { customer_id: customer.id, amount: rate, remaining_credit: credit - rate }
+    });
     return db.getChargeById(charge.id);
   }
 
@@ -553,67 +1012,48 @@ async function processCharge(user, customer, note = '', utmData = {}) {
   }
 
   if (!customer.card_on_file) {
-    await db.updateCustomer(customer.id, { status: 'at_risk' });
-    await db.updateCharge(charge.id, {
-      status: 'failed',
-      failure_reason: 'No payment method on file'
+    return finalizeFailedCharge({
+      user,
+      customer,
+      charge,
+      amount: chargeAmount,
+      reason: 'No payment method on file',
+      notificationBody: `$${chargeAmount.toFixed(2)} failed — No payment method on file`
     });
-    await db.addNotification({
-      user_id: user.id,
-      type: 'fail',
-      title: `Charge failed — ${customer.name}`,
-      body: `$${chargeAmount.toFixed(2)} failed — No payment method on file`
-    });
-    await fireFailWebhook(user, customer, chargeAmount, 'No payment method on file');
-    return db.getChargeById(charge.id);
   }
 
   // Real Stripe charging
   if (user.processor === 'stripe') {
     if (!user.stripe_secret_key) {
-      await db.updateCharge(charge.id, {
-        status: 'failed',
-        failure_reason: 'No Stripe Secret Key configured'
+      return finalizeFailedCharge({
+        user,
+        customer,
+        charge,
+        amount: chargeAmount,
+        reason: 'No Stripe Secret Key configured',
+        notificationBody: 'No Stripe Secret Key configured',
+        shouldWebhook: false
       });
-      await db.addNotification({
-        user_id: user.id,
-        type: 'fail',
-        title: `Charge failed — ${customer.name}`,
-        body: 'No Stripe Secret Key configured'
-      });
-      return db.getChargeById(charge.id);
     }
     if (!user.stripe_secret_key.startsWith('sk_')) {
-      await db.updateCharge(charge.id, {
-        status: 'failed',
-        failure_reason:
-          'Invalid Stripe key — must start with sk_live_ or sk_test_'
+      return finalizeFailedCharge({
+        user,
+        customer,
+        charge,
+        amount: chargeAmount,
+        reason: 'Invalid Stripe key — must start with sk_live_ or sk_test_',
+        notificationBody: 'Invalid Stripe key — must start with sk_live_ or sk_test_'
       });
-      await db.addNotification({
-        user_id: user.id,
-        type: 'fail',
-        title: `Charge failed — ${customer.name}`,
-        body:
-          'Invalid Stripe key — must start with sk_live_ or sk_test_'
-      });
-      await db.updateCustomer(customer.id, { status: 'at_risk' });
-      await fireFailWebhook(user, customer, chargeAmount, 'Invalid Stripe key');
-      return db.getChargeById(charge.id);
     }
     if (!customer.stripe_customer_id) {
-      await db.updateCharge(charge.id, {
-        status: 'failed',
-        failure_reason: 'No Stripe customer ID on file'
+      return finalizeFailedCharge({
+        user,
+        customer,
+        charge,
+        amount: chargeAmount,
+        reason: 'No Stripe customer ID on file',
+        notificationBody: 'No Stripe customer ID on file'
       });
-      await db.addNotification({
-        user_id: user.id,
-        type: 'fail',
-        title: `Charge failed — ${customer.name}`,
-        body: 'No Stripe customer ID on file'
-      });
-      await db.updateCustomer(customer.id, { status: 'at_risk' });
-      await fireFailWebhook(user, customer, chargeAmount, 'No Stripe customer ID on file');
-      return db.getChargeById(charge.id);
     }
 
     try {
@@ -660,33 +1100,38 @@ async function processCharge(user, customer, note = '', utmData = {}) {
             paymentIntent.id.slice(-8)
           }`
         });
-      } else {
         await db.updateCharge(charge.id, {
-          status: 'failed',
-          failure_reason: `PaymentIntent status: ${paymentIntent.status}`
+          retry_status: 'none',
+          next_retry_at: null
         });
-        await db.addNotification({
-          user_id: user.id,
-          type: 'fail',
-          title: `Charge failed — ${customer.name}`,
-          body: `Stripe returned status: ${paymentIntent.status}`
+        await audit('charge.succeeded', {
+          actor: user,
+          customer_id: customer.id,
+          target_type: 'charge',
+          target_id: charge.id,
+          details: { customer_id: customer.id, amount: chargeAmount, processor: 'stripe', payment_intent: paymentIntent.id }
+        });
+      } else {
+        await finalizeFailedCharge({
+          user,
+          customer,
+          charge,
+          amount: chargeAmount,
+          reason: `PaymentIntent status: ${paymentIntent.status}`,
+          notificationBody: `Stripe returned status: ${paymentIntent.status}`
         });
       }
     } catch (stripeErr) {
       console.error('Stripe charge error:', stripeErr);
       const reason = stripeErr.message || 'Unknown Stripe error';
-      await db.updateCharge(charge.id, {
-        status: 'failed',
-        failure_reason: reason
+      await finalizeFailedCharge({
+        user,
+        customer,
+        charge,
+        amount: chargeAmount,
+        reason,
+        notificationBody: `Stripe error: ${reason}`
       });
-      await db.addNotification({
-        user_id: user.id,
-        type: 'fail',
-        title: `Charge failed — ${customer.name}`,
-        body: `Stripe error: ${reason}`
-      });
-      await db.updateCustomer(customer.id, { status: 'at_risk' });
-      await fireFailWebhook(user, customer, chargeAmount, reason);
     }
     return db.getChargeById(charge.id);
   }
@@ -728,6 +1173,17 @@ async function processCharge(user, customer, note = '', utmData = {}) {
           title: `Charge successful — ${customer.name}`,
           body: `$${chargeAmount.toFixed(2)} charged via Whop. Payment: ${payment.id}`
         });
+        await db.updateCharge(charge.id, {
+          retry_status: 'none',
+          next_retry_at: null
+        });
+        await audit('charge.succeeded', {
+          actor: user,
+          customer_id: customer.id,
+          target_type: 'charge',
+          target_id: charge.id,
+          details: { customer_id: customer.id, amount: chargeAmount, processor: 'whop', payment_id: payment.id }
+        });
       } else {
         const errorBody = await response.text();
         let failureReason;
@@ -737,34 +1193,26 @@ async function processCharge(user, customer, note = '', utmData = {}) {
         } catch {
           failureReason = errorBody;
         }
-        await db.updateCharge(charge.id, {
-          status: 'failed',
-          failure_reason: failureReason
+        await finalizeFailedCharge({
+          user,
+          customer,
+          charge,
+          amount: chargeAmount,
+          reason: failureReason,
+          notificationBody: `Whop error: ${failureReason}`
         });
-        await db.updateCustomer(customer.id, { status: 'at_risk' });
-        await db.addNotification({
-          user_id: user.id,
-          type: 'fail',
-          title: `Charge failed — ${customer.name}`,
-          body: `Whop error: ${failureReason}`
-        });
-        await fireFailWebhook(user, customer, chargeAmount, failureReason);
       }
     } catch (fetchErr) {
       console.error('Whop charge error:', fetchErr);
       const reason = fetchErr.message || 'Whop network error';
-      await db.updateCharge(charge.id, {
-        status: 'failed',
-        failure_reason: reason
+      await finalizeFailedCharge({
+        user,
+        customer,
+        charge,
+        amount: chargeAmount,
+        reason,
+        notificationBody: `Whop error: ${reason}`
       });
-      await db.updateCustomer(customer.id, { status: 'at_risk' });
-      await db.addNotification({
-        user_id: user.id,
-        type: 'fail',
-        title: `Charge failed — ${customer.name}`,
-        body: `Whop error: ${reason}`
-      });
-      await fireFailWebhook(user, customer, chargeAmount, reason);
     }
     return db.getChargeById(charge.id);
   }
@@ -786,6 +1234,17 @@ async function processCharge(user, customer, note = '', utmData = {}) {
     title: `Charge successful — ${customer.name}`,
     body: `$${chargeAmount.toFixed(2)} charged via ${user.processor}. ${note}`
   });
+  await db.updateCharge(charge.id, {
+    retry_status: 'none',
+    next_retry_at: null
+  });
+  await audit('charge.succeeded', {
+    actor: user,
+    customer_id: customer.id,
+    target_type: 'charge',
+    target_id: charge.id,
+    details: { customer_id: customer.id, amount: chargeAmount, processor: user.processor, simulated: true }
+  });
   return db.getChargeById(charge.id);
 }
 
@@ -795,6 +1254,22 @@ app.post('/webhook/whop/:secret', async (req, res) => {
     const user = await db.getUserByWhopSecret(req.params.secret);
     if (!user) return res.status(403).json({ error: 'Invalid secret' });
     const { event, data } = req.body;
+    const eventKey =
+      req.headers['x-idempotency-key'] ||
+      data?.id ||
+      data?.payment?.id ||
+      makeEventKey('whop', req.body, `${user.id}:${event || 'event'}`);
+    const webhookStart = await recordWebhookEventStart({
+      userId: user.id,
+      source: 'whop',
+      eventType: event || 'unknown',
+      eventKey,
+      secretFragment: String(req.params.secret).slice(0, 8),
+      payload: req.body
+    });
+    if (webhookStart.duplicate) {
+      return res.json({ received: true, duplicate: true, eventId: webhookStart.event.id });
+    }
     if (
       event === 'payment.succeeded' ||
       event === 'membership.went_valid'
@@ -813,6 +1288,7 @@ app.post('/webhook/whop/:secret', async (req, res) => {
         card_on_file: 1,
         whop_member_id: data.user?.id || ''
       });
+      await db.updateWebhookEvent(webhookStart.event.id, { customer_id: customer.id });
       await db.addNotification({
         user_id: user.id,
         type: 'success',
@@ -820,6 +1296,7 @@ app.post('/webhook/whop/:secret', async (req, res) => {
         body: 'Payment succeeded via Whop webhook.'
       });
     }
+    await markWebhookEvent(webhookStart.event.id, 'succeeded', { event });
     res.json({ received: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -829,7 +1306,23 @@ app.post('/webhook/whop/:secret', async (req, res) => {
 // ─── STRIPE WEBHOOK ───────────────────────────────────────────────
 app.post('/webhook/stripe/:secret', async (req, res) => {
   try {
-    const event = req.body;
+    if (!STRIPE_WEBHOOK_ROUTE_SECRET || req.params.secret !== STRIPE_WEBHOOK_ROUTE_SECRET) {
+      return res.status(403).json({ error: 'Invalid Stripe webhook route secret' });
+    }
+
+    let event = req.body;
+    const signature = req.headers['stripe-signature'];
+    if (STRIPE_SIGNING_SECRET && signature) {
+      const stripeForWebhook = Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_webhook_placeholder');
+      event = stripeForWebhook.webhooks.constructEvent(
+        req.rawBody,
+        signature,
+        STRIPE_SIGNING_SECRET
+      );
+    }
+
+    let eventRecord = null;
+    const eventKey = event.id || makeEventKey('stripe', event, event.type || 'event');
 
     if (event.type === 'checkout.session.completed') {
       const obj = event.data.object;
@@ -838,6 +1331,19 @@ app.post('/webhook/stripe/:secret', async (req, res) => {
       if (paypulseCustomerId) {
         const customer = await db.getCustomerById(paypulseCustomerId);
         if (customer) {
+          const webhookStart = await recordWebhookEventStart({
+            userId: customer.user_id,
+            customerId: customer.id,
+            source: 'stripe',
+            eventType: event.type,
+            eventKey,
+            secretFragment: String(req.params.secret).slice(0, 8),
+            payload: event
+          });
+          if (webhookStart.duplicate) {
+            return res.json({ received: true, duplicate: true, eventId: webhookStart.event.id });
+          }
+          eventRecord = webhookStart.event;
           // Retrieve the session to get payment_method and customer
           let stripeCustomerId =
             obj.customer || customer.stripe_customer_id || '';
@@ -874,6 +1380,13 @@ app.post('/webhook/stripe/:secret', async (req, res) => {
             title: `Card saved — ${customer.name}`,
             body: 'Card authorization completed via Stripe Checkout.'
           });
+          await audit('customer.card_saved', {
+            actor: { id: customer.user_id, email: '' },
+            customer_id: customer.id,
+            target_type: 'customer',
+            target_id: customer.id,
+            details: { source: 'stripe_webhook', event_id: event.id || '' }
+          });
         }
       }
     }
@@ -886,6 +1399,19 @@ app.post('/webhook/stripe/:secret', async (req, res) => {
       if (paypulseCustomerId) {
         const customer = await db.getCustomerById(paypulseCustomerId);
         if (customer) {
+          const webhookStart = await recordWebhookEventStart({
+            userId: customer.user_id,
+            customerId: customer.id,
+            source: 'stripe',
+            eventType: event.type,
+            eventKey,
+            secretFragment: String(req.params.secret).slice(0, 8),
+            payload: event
+          });
+          if (webhookStart.duplicate) {
+            return res.json({ received: true, duplicate: true, eventId: webhookStart.event.id });
+          }
+          eventRecord = webhookStart.event;
           await db.createCharge({
             id: uuidv4(),
             user_id: customer.user_id,
@@ -926,6 +1452,19 @@ app.post('/webhook/stripe/:secret', async (req, res) => {
       for (const u of allUsers) {
         let customer = await db.getCustomerByEmailAndUser(email, u.id);
         if (customer) {
+          const webhookStart = await recordWebhookEventStart({
+            userId: customer.user_id,
+            customerId: customer.id,
+            source: 'stripe',
+            eventType: event.type,
+            eventKey,
+            secretFragment: String(req.params.secret).slice(0, 8),
+            payload: event
+          });
+          if (webhookStart.duplicate) {
+            return res.json({ received: true, duplicate: true, eventId: webhookStart.event.id });
+          }
+          eventRecord = webhookStart.event;
           db.updateCustomer(customer.id, {
             card_on_file: 1,
             stripe_payment_method_id: obj.payment_method || ''
@@ -948,6 +1487,19 @@ app.post('/webhook/stripe/:secret', async (req, res) => {
         const charges = await db.getChargesByUser(u.id);
         const match = charges.find(c => c.stripe_charge_id === obj.charge);
         if (match) {
+          const webhookStart = await recordWebhookEventStart({
+            userId: u.id,
+            customerId: match.customer_id,
+            source: 'stripe',
+            eventType: event.type,
+            eventKey,
+            secretFragment: String(req.params.secret).slice(0, 8),
+            payload: event
+          });
+          if (webhookStart.duplicate) {
+            return res.json({ received: true, duplicate: true, eventId: webhookStart.event.id });
+          }
+          eventRecord = webhookStart.event;
           db.createCharge({
             id: uuidv4(),
             user_id: u.id,
@@ -973,8 +1525,12 @@ app.post('/webhook/stripe/:secret', async (req, res) => {
         }
       }
     }
+    if (eventRecord) {
+      await markWebhookEvent(eventRecord.id, 'succeeded', { type: event.type, id: event.id || '' });
+    }
     res.json({ received: true });
   } catch (err) {
+    console.error('Stripe webhook error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1017,8 +1573,22 @@ app.get('/api/stripe/customers', requireAuth, async (req, res) => {
 
 app.post('/api/customers', requireAuth, async (req, res) => {
   try {
+    const allowed = pick(req.body, [
+      'name',
+      'email',
+      'phone',
+      'company_name',
+      'status',
+      'card_on_file',
+      'stripe_customer_id',
+      'stripe_payment_method_id',
+      'whop_member_id',
+      'whop_payment_method_id',
+      'rate_per_trigger',
+      'ghl_location_id'
+    ]);
     const c = await db.createCustomer({
-      ...req.body,
+      ...allowed,
       user_id: req.user.id
     });
     await db.addNotification({
@@ -1026,6 +1596,13 @@ app.post('/api/customers', requireAuth, async (req, res) => {
       type: 'new',
       title: `New customer — ${c.name}`,
       body: `${c.email} added manually.`
+    });
+    await audit('customer.created', {
+      actor: req.user,
+      customer_id: c.id,
+      target_type: 'customer',
+      target_id: c.id,
+      details: { user_id: req.user.id, email: c.email }
     });
     res.json(c);
   } catch (err) {
@@ -1071,17 +1648,43 @@ app.post('/api/customers/import-stripe', requireAuth, async (req, res) => {
 });
 
 app.patch('/api/customers/:id', requireAuth, async (req, res) => {
-  const c = await db.getCustomerById(req.params.id);
-  if (!c || c.user_id !== req.user.id)
-    return res.status(404).json({ error: 'Not found' });
-  const updates = { ...req.body };
-  if (
-    updates.stripe_payment_method_id ||
-    updates.whop_payment_method_id
-  ) {
-    updates.card_on_file = 1;
+  try {
+    const c = await db.getCustomerById(req.params.id);
+    if (!c || c.user_id !== req.user.id)
+      return res.status(404).json({ error: 'Not found' });
+    const updates = pick(req.body, [
+      'name',
+      'email',
+      'phone',
+      'company_name',
+      'status',
+      'card_on_file',
+      'stripe_customer_id',
+      'stripe_payment_method_id',
+      'whop_member_id',
+      'whop_payment_method_id',
+      'rate_per_trigger',
+      'credit_balance',
+      'ghl_location_id'
+    ]);
+    if (
+      updates.stripe_payment_method_id ||
+      updates.whop_payment_method_id
+    ) {
+      updates.card_on_file = 1;
+    }
+    const updated = await db.updateCustomer(req.params.id, updates);
+    await audit('customer.updated', {
+      actor: req.user,
+      customer_id: c.id,
+      target_type: 'customer',
+      target_id: c.id,
+      details: { changed: Object.keys(updates), user_id: req.user.id }
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  res.json(await db.updateCustomer(req.params.id, updates));
 });
 
 app.delete('/api/customers/:id', requireAuth, async (req, res) => {
@@ -1089,6 +1692,13 @@ app.delete('/api/customers/:id', requireAuth, async (req, res) => {
   if (!c || c.user_id !== req.user.id)
     return res.status(404).json({ error: 'Not found' });
   await db.run('DELETE FROM customers WHERE id = ?', [req.params.id]);
+  await audit('customer.deleted', {
+    actor: req.user,
+    customer_id: c.id,
+    target_type: 'customer',
+    target_id: c.id,
+    details: { email: c.email, user_id: req.user.id }
+  });
   res.json({ ok: true });
 });
 
@@ -1146,44 +1756,7 @@ app.post('/api/customers/:id/setup-card', requireAuth, async (req, res) => {
       return res
         .status(400)
         .json({ error: 'Set your Stripe secret key in Settings first' });
-
-    const stripeClient = Stripe(user.stripe_secret_key);
-
-    let stripeCustomerId = customer.stripe_customer_id;
-    if (!stripeCustomerId) {
-      const stripeCustomer = await stripeClient.customers.create({
-        email: customer.email,
-        name: customer.name,
-        metadata: { paypulse_customer_id: customer.id }
-      });
-      stripeCustomerId = stripeCustomer.id;
-      await db.updateCustomer(customer.id, {
-        stripe_customer_id: stripeCustomerId
-      });
-    }
-
-    const session = await stripeClient.checkout.sessions.create({
-      mode: 'payment',
-      line_items: [
-        {
-          price_data: {
-            currency: 'usd',
-            product_data: { name: 'Card Authorization' },
-            unit_amount: 100
-          },
-          quantity: 1
-        }
-      ],
-      customer: stripeCustomerId,
-      success_url: BASE_URL + '/?card_saved=1',
-      cancel_url: BASE_URL + '/?card_cancelled=1',
-      metadata: {
-        paypulse_customer_id: customer.id,
-        paypulse_user_id: user.id
-      }
-    });
-
-    res.json({ url: session.url });
+    res.json({ url: await buildCardSetupLink(user, customer) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1232,8 +1805,101 @@ app.post('/api/charges/:id/retry', requireAuth, async (req, res) => {
 
     // Mark old charge as retried
     await db.updateCharge(oldCharge.id, { status: 'retried' });
+    await db.updateCharge(newCharge.id, {
+      retry_count: (parseInt(oldCharge.retry_count, 10) || 0) + 1,
+      retry_status: newCharge.status === 'failed' ? 'scheduled' : 'completed',
+      next_retry_at: newCharge.status === 'failed' ? newCharge.next_retry_at : null
+    });
+    await audit('charge.retry_requested', {
+      actor: req.user,
+      customer_id: customer.id,
+      target_type: 'charge',
+      target_id: newCharge.id,
+      details: { previous_charge_id: oldCharge.id, customer_id: customer.id }
+    });
 
     res.json(newCharge);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/charges/:id/schedule-retry', requireAuth, async (req, res) => {
+  try {
+    const charge = await db.getChargeById(req.params.id);
+    if (!charge || charge.user_id !== req.user.id)
+      return res.status(404).json({ error: 'Not found' });
+    const nextRetryAt = req.body.nextRetryAt || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const updated = await db.updateCharge(charge.id, {
+      retry_status: 'scheduled',
+      next_retry_at: nextRetryAt,
+      retry_count: (parseInt(charge.retry_count, 10) || 0) + 1
+    });
+    await audit('charge.retry_scheduled', {
+      actor: req.user,
+      customer_id: charge.customer_id,
+      target_type: 'charge',
+      target_id: charge.id,
+      details: { next_retry_at: nextRetryAt, customer_id: charge.customer_id }
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/charges/:id/refund', requireAuth, async (req, res) => {
+  try {
+    const charge = await db.getChargeById(req.params.id);
+    if (!charge || charge.user_id !== req.user.id)
+      return res.status(404).json({ error: 'Not found' });
+    if (charge.status !== 'succeeded')
+      return res.status(400).json({ error: 'Only succeeded charges can be refunded' });
+    const customer = await db.getCustomerById(charge.customer_id);
+    const user = await db.getUserById(req.user.id);
+    const amount = Math.min(
+      parseFloat(req.body.amount || charge.amount),
+      parseFloat(charge.amount || 0) - parseFloat(charge.refunded_amount || 0)
+    );
+    if (amount <= 0) {
+      return res.status(400).json({ error: 'Nothing left to refund' });
+    }
+
+    if (user.processor === 'stripe' && user.stripe_secret_key && charge.stripe_charge_id && !String(charge.stripe_charge_id).startsWith('sim_')) {
+      const stripeClient = Stripe(user.stripe_secret_key);
+      await stripeClient.refunds.create({
+        payment_intent: charge.stripe_charge_id,
+        amount: Math.round(amount * 100)
+      });
+    }
+
+    await db.updateCharge(charge.id, {
+      refunded_amount: (parseFloat(charge.refunded_amount) || 0) + amount,
+      refunded_at: new Date().toISOString(),
+      status: amount === parseFloat(charge.amount) ? 'refunded' : charge.status
+    });
+    await db.createCharge({
+      user_id: req.user.id,
+      customer_id: customer.id,
+      customer_name: customer.name,
+      customer_email: customer.email,
+      amount: -amount,
+      processor: user.processor,
+      status: 'refunded',
+      note: req.body.note || `Refund for charge ${charge.id.slice(-8)}`,
+      stripe_charge_id: charge.stripe_charge_id
+    });
+    await db.updateCustomer(customer.id, {
+      total_charged: Math.max(0, (parseFloat(customer.total_charged) || 0) - amount)
+    });
+    await audit('charge.refunded', {
+      actor: req.user,
+      customer_id: customer.id,
+      target_type: 'charge',
+      target_id: charge.id,
+      details: { customer_id: customer.id, amount, note: req.body.note || '' }
+    });
+    res.json({ ok: true, refunded: amount });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1263,9 +1929,22 @@ app.get('/api/customers/:id/payment-details', requireAuth, async (req, res) => {
     const chargebackCount = charges.filter(
       ch => ch.status === 'chargeback'
     ).length;
+    const notes = await db.getCustomerNotesByCustomer(req.params.id, req.user.id);
+    const webhookEvents = (await db.getWebhookEventsByUser(req.user.id, 200)).filter(evt => evt.customer_id === req.params.id);
+    const auditLogs = await db.getAuditLogsByCustomer(req.params.id, req.user.id, 100);
+    const communications = await db.getCommunicationLogsByCustomer(req.params.id, req.user.id, 100);
+    const adMetrics = await db.getAdMetricsByCustomer(req.params.id);
+    const metaMappings = await db.getMetaCampaignMappingsByCustomer(req.params.id, req.user.id);
     res.json({
       customer: c,
       charges,
+      notes,
+      webhookEvents,
+      auditLogs,
+      communications,
+      adMetrics,
+      metaMappings,
+      communicationTemplates: getCommunicationTemplates(user),
       totalCharged: c.total_charged || 0,
       totalTriggers: c.total_triggers || 0,
       creditBalance: parseFloat(c.credit_balance) || 0,
@@ -1280,6 +1959,220 @@ app.get('/api/customers/:id/payment-details', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Error in payment-details endpoint:', err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/customers/:id/timeline', requireAuth, async (req, res) => {
+  try {
+    const customer = await db.getCustomerById(req.params.id);
+    if (!customer || customer.user_id !== req.user.id)
+      return res.status(404).json({ error: 'Not found' });
+    const [charges, appointments, notes, webhookEvents, auditLogs, communications] = await Promise.all([
+      db.all('SELECT * FROM charges WHERE customer_id = ? ORDER BY created_at DESC LIMIT 100', [customer.id]),
+      db.all('SELECT * FROM appointments WHERE customer_id = ? ORDER BY created_at DESC LIMIT 100', [customer.id]),
+      db.getCustomerNotesByCustomer(customer.id, req.user.id),
+      db.getWebhookEventsByUser(req.user.id, 200),
+      db.getAuditLogsByCustomer(customer.id, req.user.id, 100),
+      db.getCommunicationLogsByCustomer(customer.id, req.user.id, 100)
+    ]);
+    const timeline = [
+      ...charges.map(item => ({ type: 'charge', created_at: item.created_at, title: `${item.status} charge`, body: item.note || item.failure_reason || '', meta: item })),
+      ...appointments.map(item => ({ type: 'appointment', created_at: item.created_at, title: `Appointment ${item.status}`, body: item.note || '', meta: item })),
+      ...notes.map(item => ({ type: 'note', created_at: item.created_at, title: `${item.category} note`, body: item.body, meta: item })),
+      ...webhookEvents.filter(item => item.customer_id === customer.id).map(item => ({ type: 'webhook', created_at: item.created_at, title: `${item.source} webhook ${item.status}`, body: item.event_type || '', meta: item })),
+      ...auditLogs.map(item => ({ type: 'audit', created_at: item.created_at, title: item.action, body: item.details, meta: item })),
+      ...communications.map(item => ({ type: 'communication', created_at: item.created_at, title: `${item.channel} ${item.status}`, body: item.subject || item.body, meta: item }))
+    ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    res.json(timeline);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/customers/:id/communications', requireAuth, async (req, res) => {
+  try {
+    const customer = await db.getCustomerById(req.params.id);
+    if (!customer || customer.user_id !== req.user.id)
+      return res.status(404).json({ error: 'Not found' });
+    res.json(await db.getCommunicationLogsByCustomer(customer.id, req.user.id, 100));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/customers/:id/send-communication', requireAuth, async (req, res) => {
+  try {
+    const customer = await db.getCustomerById(req.params.id);
+    if (!customer || customer.user_id !== req.user.id)
+      return res.status(404).json({ error: 'Not found' });
+    const user = await db.getUserById(req.user.id);
+    const templates = getCommunicationTemplates(user);
+    const templateKey = req.body.templateKey || 'billing_follow_up';
+    const template = templates[templateKey] || DEFAULT_COMMUNICATION_TEMPLATES.billing_follow_up;
+    const paymentLink = req.body.includePaymentLink === false ? '' : await buildCardSetupLink(user, customer).catch(() => '');
+    const vars = {
+      customer_name: customer.name,
+      customer_email: customer.email,
+      company_name: user.company_name || user.name || 'your team',
+      payment_link: paymentLink,
+      rate_per_trigger: parseFloat(customer.rate_per_trigger || 0).toFixed(2),
+      status: customer.status
+    };
+    const channel = req.body.channel === 'sms' ? 'sms' : 'email';
+    const subject = renderTemplate(req.body.subject || template.subject || '', vars).trim();
+    const body = renderTemplate(req.body.body || template.body || '', vars).trim();
+    if (!body) return res.status(400).json({ error: 'Message body required' });
+
+    let status = channel === 'sms' ? 'prepared' : 'queued';
+    let delivered = false;
+    if (channel === 'email') {
+      if (!customer.email) return res.status(400).json({ error: 'Customer email missing' });
+      delivered = await sendDirectEmail(customer.email, subject || 'Message from PayPulse', body);
+      status = delivered ? 'sent' : 'prepared';
+    }
+
+    const log = await db.createCommunicationLog({
+      user_id: user.id,
+      customer_id: customer.id,
+      channel,
+      template_key: templateKey,
+      subject,
+      body,
+      status,
+      metadata: JSON.stringify({
+        to: channel === 'email' ? customer.email : customer.phone || '',
+        payment_link: paymentLink
+      })
+    });
+    await audit('customer.communication_logged', {
+      actor: req.user,
+      customer_id: customer.id,
+      target_type: 'communication',
+      target_id: log.id,
+      details: { customer_id: customer.id, channel, template_key: templateKey, status }
+    });
+    res.json({
+      ok: true,
+      log,
+      delivered,
+      delivery: channel === 'email' ? (delivered ? 'email' : 'copy') : 'copy',
+      paymentLink
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/customers/:id/credits', requireAuth, async (req, res) => {
+  try {
+    const customer = await db.getCustomerById(req.params.id);
+    if (!customer || customer.user_id !== req.user.id)
+      return res.status(404).json({ error: 'Not found' });
+    const amount = parseFloat(req.body.amount || 0);
+    if (amount <= 0) return res.status(400).json({ error: 'Amount must be greater than 0' });
+    const user = await db.getUserById(req.user.id);
+    const updatedCustomer = await db.updateCustomer(customer.id, {
+      credit_balance: (parseFloat(customer.credit_balance) || 0) + amount
+    });
+    await db.createCharge({
+      user_id: user.id,
+      customer_id: customer.id,
+      customer_name: customer.name,
+      customer_email: customer.email,
+      amount,
+      processor: user.processor,
+      status: 'credited',
+      note: req.body.note || 'Manual credit issued'
+    });
+    await audit('customer.credit_issued', {
+      actor: req.user,
+      customer_id: customer.id,
+      target_type: 'customer',
+      target_id: customer.id,
+      details: { customer_id: customer.id, amount, note: req.body.note || '' }
+    });
+    res.json(updatedCustomer);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/customers/:id/notes', requireAuth, async (req, res) => {
+  try {
+    const customer = await db.getCustomerById(req.params.id);
+    if (!customer || customer.user_id !== req.user.id)
+      return res.status(404).json({ error: 'Not found' });
+    res.json(await db.getCustomerNotesByCustomer(customer.id, req.user.id));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/customers/:id/notes', requireAuth, async (req, res) => {
+  try {
+    const customer = await db.getCustomerById(req.params.id);
+    if (!customer || customer.user_id !== req.user.id)
+      return res.status(404).json({ error: 'Not found' });
+    if (!req.body.body) return res.status(400).json({ error: 'Note body required' });
+    const note = await db.createCustomerNote({
+      user_id: req.user.id,
+      customer_id: customer.id,
+      body: req.body.body,
+      category: req.body.category || 'internal',
+      recurring: !!req.body.recurring,
+      next_due_at: req.body.nextDueAt || ''
+    });
+    await audit('customer.note_added', {
+      actor: req.user,
+      customer_id: customer.id,
+      target_type: 'note',
+      target_id: note.id,
+      details: { customer_id: customer.id, recurring: !!req.body.recurring, next_due_at: req.body.nextDueAt || '' }
+    });
+    res.json(note);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/notes/:id', requireAuth, async (req, res) => {
+  try {
+    const note = await db.getCustomerNoteById(req.params.id);
+    if (!note || note.user_id !== req.user.id)
+      return res.status(404).json({ error: 'Not found' });
+    const updates = pick(req.body, ['body', 'category', 'recurring', 'next_due_at', 'is_done']);
+    if (updates.recurring !== undefined) updates.recurring = updates.recurring ? 1 : 0;
+    if (updates.is_done !== undefined) updates.is_done = updates.is_done ? 1 : 0;
+    const updated = await db.updateCustomerNote(note.id, updates);
+    await audit('customer.note_updated', {
+      actor: req.user,
+      customer_id: note.customer_id,
+      target_type: 'note',
+      target_id: note.id,
+      details: { customer_id: note.customer_id, changed: Object.keys(updates) }
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/notes/:id', requireAuth, async (req, res) => {
+  try {
+    const note = await db.getCustomerNoteById(req.params.id);
+    if (!note || note.user_id !== req.user.id)
+      return res.status(404).json({ error: 'Not found' });
+    await db.deleteCustomerNote(note.id);
+    await audit('customer.note_deleted', {
+      actor: req.user,
+      customer_id: note.customer_id,
+      target_type: 'note',
+      target_id: note.id,
+      details: { customer_id: note.customer_id }
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -1357,7 +2250,9 @@ app.post('/api/notifications/read', requireAuth, (req, res) => {
 });
 
 app.get('/api/notifications/unread-count', requireAuth, (req, res) => {
-  res.json({ count: db.getUnreadCount(req.user.id) });
+  Promise.resolve(db.getUnreadCount(req.user.id))
+    .then(count => res.json({ count }))
+    .catch(err => res.status(500).json({ error: err.message }));
 });
 
 // ─── SETTINGS API ─────────────────────────────────────────────────
@@ -1379,6 +2274,11 @@ app.get('/api/settings', requireAuth, async (req, res) => {
     ghlWebhookSecret: user.ghl_webhook_secret,
     whopWebhookUrl: `${BASE_URL}/webhook/whop/${user.whop_webhook_secret}`,
     failedChargeWebhookUrl: user.failed_charge_webhook_url || '',
+    metaConnected: !!user.meta_access_token,
+    metaAdAccountId: user.meta_ad_account_id || '',
+    metaAdAccountName: user.meta_ad_account_name || '',
+    metaConfigured: metaConfigured(),
+    metaRedirectUri: META_REDIRECT_URI || `${BASE_URL}/api/meta/callback`,
     plan: user.plan,
     monthlyRate: user.monthly_rate
   });
@@ -1409,11 +2309,431 @@ app.post('/api/settings', requireAuth, async (req, res) => {
       req.body.appointmentTrackingMode ? 1 : 0;
   if (req.body.failedChargeWebhookUrl !== undefined)
     updates.failed_charge_webhook_url = req.body.failedChargeWebhookUrl;
+  if (req.body.metaAdAccountId !== undefined)
+    updates.meta_ad_account_id = req.body.metaAdAccountId;
+  if (req.body.metaAdAccountName !== undefined)
+    updates.meta_ad_account_name = req.body.metaAdAccountName;
+  await audit('settings.updated', {
+    actor: req.user,
+    target_type: 'user',
+    target_id: req.user.id,
+    details: { changed: Object.keys(updates) }
+  });
   res.json(await db.updateUser(req.user.id, updates));
 });
 
-app.post('/api/settings/note-templates', requireAuth, (req, res) => {
+app.post('/api/settings/note-templates', requireAuth, async (req, res) => {
   res.json({ templates: [] });
+});
+
+app.get('/api/meta/status', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.user.id);
+    res.json({
+      configured: metaConfigured(),
+      connected: !!user?.meta_access_token,
+      adAccountId: user?.meta_ad_account_id || '',
+      adAccountName: user?.meta_ad_account_name || '',
+      tokenExpiresAt: user?.meta_token_expires_at || ''
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/meta/connect-url', requireAuth, async (req, res) => {
+  try {
+    if (!metaConfigured()) return res.status(400).json({ error: 'Meta app is not configured on the server' });
+    const state = encodeMetaState({ userId: req.user.id, ts: Date.now() });
+    const url = new URL(`https://www.facebook.com/${META_API_VERSION}/dialog/oauth`);
+    url.searchParams.set('client_id', META_APP_ID);
+    url.searchParams.set('redirect_uri', META_REDIRECT_URI);
+    url.searchParams.set('state', state);
+    url.searchParams.set('scope', 'ads_read,business_management');
+    res.json({ url: url.toString() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/meta/callback', async (req, res) => {
+  try {
+    if (!metaConfigured()) throw new Error('Meta app is not configured on the server');
+    if (req.query.error) throw new Error(String(req.query.error_description || req.query.error));
+    const state = decodeMetaState(req.query.state);
+    if (!state?.userId) throw new Error('Invalid Meta OAuth state');
+    const code = String(req.query.code || '');
+    if (!code) throw new Error('Missing Meta OAuth code');
+
+    const tokenData = await metaFetch('/oauth/access_token', {
+      client_id: META_APP_ID,
+      client_secret: META_APP_SECRET,
+      redirect_uri: META_REDIRECT_URI,
+      code
+    });
+
+    let accessToken = tokenData.access_token;
+    let expiresIn = tokenData.expires_in || 0;
+    try {
+      const longLived = await metaFetch('/oauth/access_token', {
+        grant_type: 'fb_exchange_token',
+        client_id: META_APP_ID,
+        client_secret: META_APP_SECRET,
+        fb_exchange_token: accessToken
+      });
+      accessToken = longLived.access_token || accessToken;
+      expiresIn = longLived.expires_in || expiresIn;
+    } catch {}
+
+    await db.updateUser(state.userId, {
+      meta_access_token: accessToken,
+      meta_token_expires_at: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : ''
+    });
+
+    res.send(`<!doctype html><html><body style="font-family:system-ui;padding:24px;background:#071410;color:#e8fff6"><h2>Meta connected</h2><p>You can close this window and return to PayPulse.</p><script>window.opener&&window.opener.postMessage({type:'paypulse-meta-connected'},'*');setTimeout(()=>window.close(),700);</script></body></html>`);
+  } catch (err) {
+    res.status(500).send(`<!doctype html><html><body style="font-family:system-ui;padding:24px;background:#190909;color:#fff0f0"><h2>Meta connection failed</h2><p>${String(err.message || err)}</p></body></html>`);
+  }
+});
+
+app.get('/api/meta/ad-accounts', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.user.id);
+    if (!user?.meta_access_token) return res.status(400).json({ error: 'Connect Meta first' });
+    const data = await metaFetch('/me/adaccounts', {
+      fields: 'id,name,account_id,currency,account_status'
+    }, user.meta_access_token);
+    res.json(data.data || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/meta/select-ad-account', requireAuth, async (req, res) => {
+  try {
+    const accountId = String(req.body.adAccountId || '');
+    const accountName = String(req.body.adAccountName || '');
+    if (!accountId) return res.status(400).json({ error: 'Ad account required' });
+    await db.updateUser(req.user.id, {
+      meta_ad_account_id: accountId,
+      meta_ad_account_name: accountName
+    });
+    await audit('meta.ad_account_selected', {
+      actor: req.user,
+      target_type: 'meta_account',
+      target_id: accountId,
+      details: { account_name: accountName }
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/meta/campaigns', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.user.id);
+    if (!user?.meta_access_token) return res.status(400).json({ error: 'Connect Meta first' });
+    const adAccountId = String(req.query.adAccountId || user.meta_ad_account_id || '');
+    if (!adAccountId) return res.status(400).json({ error: 'Select an ad account first' });
+    const normalized = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+    const data = await metaFetch(`/${normalized}/campaigns`, {
+      fields: 'id,name,status,effective_status',
+      limit: 200
+    }, user.meta_access_token);
+    res.json(data.data || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/meta/adsets', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.user.id);
+    if (!user?.meta_access_token) return res.status(400).json({ error: 'Connect Meta first' });
+    const campaignId = String(req.query.campaignId || '');
+    if (!campaignId) return res.status(400).json({ error: 'Campaign required' });
+    const data = await metaFetch(`/${campaignId}/adsets`, {
+      fields: 'id,name,effective_status,status',
+      limit: 200
+    }, user.meta_access_token);
+    res.json(data.data || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/customers/:customerId/meta-mappings', requireAuth, async (req, res) => {
+  try {
+    const customer = await db.getCustomerById(req.params.customerId);
+    if (!customer || customer.user_id !== req.user.id) return res.status(404).json({ error: 'Customer not found' });
+    res.json(await db.getMetaCampaignMappingsByCustomer(customer.id, req.user.id));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/customers/:customerId/meta-mappings', requireAuth, async (req, res) => {
+  try {
+    const customer = await db.getCustomerById(req.params.customerId);
+    if (!customer || customer.user_id !== req.user.id) return res.status(404).json({ error: 'Customer not found' });
+    const mappings = Array.isArray(req.body.mappings) ? req.body.mappings : [];
+    const cleaned = mappings
+      .filter(item => item && item.ad_account_id && item.campaign_id)
+      .map(item => ({
+        ad_account_id: String(item.ad_account_id),
+        ad_account_name: String(item.ad_account_name || ''),
+        campaign_id: String(item.campaign_id),
+        campaign_name: String(item.campaign_name || ''),
+        adset_id: String(item.adset_id || ''),
+        adset_name: String(item.adset_name || '')
+      }));
+    const saved = await db.replaceMetaCampaignMappings(customer.id, req.user.id, cleaned);
+    await audit('meta.mappings_updated', {
+      actor: req.user,
+      customer_id: customer.id,
+      target_type: 'customer',
+      target_id: customer.id,
+      details: { mapping_count: saved.length }
+    });
+    res.json(saved);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/customers/:customerId/meta-sync', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.user.id);
+    const result = await syncMetaMetricsForCustomer(user, req.params.customerId, req.body || {});
+    res.json({ ok: true, count: result.count, customerId: req.params.customerId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/meta/sync-all', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.user.id);
+    const customers = await db.getCustomersByUser(req.user.id);
+    const results = [];
+    for (const customer of customers) {
+      const mappings = await db.getMetaCampaignMappingsByCustomer(customer.id, req.user.id);
+      if (!mappings.length) continue;
+      const synced = await syncMetaMetricsForCustomer(user, customer.id, req.body || {});
+      results.push({ customerId: customer.id, customerName: customer.name, count: synced.count });
+    }
+    res.json({ ok: true, synced: results, totalCustomers: results.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/alerts', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.user.id);
+    res.json(await buildAlerts(user));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/audit-logs', requireAuth, async (req, res) => {
+  try {
+    res.json(await db.getAuditLogsByUser(req.user.id, 200));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/webhook-events', requireAuth, async (req, res) => {
+  try {
+    res.json(await db.getWebhookEventsByUser(req.user.id, 200));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/communications', requireAuth, async (req, res) => {
+  try {
+    res.json(await db.getCommunicationLogsByUser(req.user.id, 200));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/forecast', requireAuth, async (req, res) => {
+  try {
+    const [charges, customers] = await Promise.all([
+      db.getChargesByUser(req.user.id),
+      db.getCustomersByUser(req.user.id)
+    ]);
+    const now = Date.now();
+    const trailing30 = charges.filter(ch => ch.status === 'succeeded' && new Date(ch.created_at).getTime() >= now - 30 * 86400000);
+    const trailing14Failures = charges.filter(ch => ch.status === 'failed' && new Date(ch.created_at).getTime() >= now - 14 * 86400000);
+    const scheduledRetries = charges.filter(ch => ch.retry_status === 'scheduled');
+    const trailingRevenue = trailing30.reduce((sum, ch) => sum + (parseFloat(ch.amount) || 0), 0);
+    const activeCustomers = customers.filter(c => c.status === 'active');
+    const atRiskCustomers = customers.filter(c => c.status === 'at_risk');
+    const noCardCustomers = customers.filter(c => !c.card_on_file && c.status !== 'paused');
+    const avgDailyRevenue = trailingRevenue / 30;
+    const recentTriggerDays = new Set(trailing30.map(ch => String(ch.created_at).slice(0, 10))).size || 1;
+    const avgRevenuePerActiveCustomer = activeCustomers.length
+      ? trailingRevenue / activeCustomers.length
+      : 0;
+    const scheduledRetryRevenue = scheduledRetries.reduce((sum, ch) => sum + (parseFloat(ch.amount) || 0), 0);
+    const atRiskExposure = atRiskCustomers.reduce((sum, customer) => sum + (parseFloat(customer.rate_per_trigger) || 0), 0);
+    const noCardExposure = noCardCustomers.reduce((sum, customer) => sum + (parseFloat(customer.rate_per_trigger) || 0), 0);
+    const recoveryRate = trailing14Failures.length
+      ? Math.min(0.65, scheduledRetries.length / trailing14Failures.length || 0.25)
+      : 0.25;
+    const projectedRecoveryRevenue = scheduledRetryRevenue * recoveryRate;
+    const projectedNext30Revenue = trailingRevenue + projectedRecoveryRevenue;
+
+    res.json({
+      trailing30Revenue,
+      avgDailyRevenue,
+      projectedNext30Revenue,
+      projectedRecoveryRevenue,
+      scheduledRetryRevenue,
+      atRiskExposure,
+      noCardExposure,
+      avgRevenuePerActiveCustomer,
+      activeCustomers: activeCustomers.length,
+      atRiskCustomers: atRiskCustomers.length,
+      noCardCustomers: noCardCustomers.length,
+      recentTriggerDays,
+      recoveryRate
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/margin-dashboard', requireAuth, async (req, res) => {
+  try {
+    const [customers, charges, adMetrics] = await Promise.all([
+      db.getCustomersByUser(req.user.id),
+      db.getChargesByUser(req.user.id),
+      db.getAdMetricsByUser(req.user.id)
+    ]);
+
+    const byCustomer = customers.map(customer => {
+      const customerCharges = charges.filter(ch => ch.customer_id === customer.id && ch.status === 'succeeded');
+      const customerMetrics = adMetrics.filter(metric => metric.customer_id === customer.id);
+      const spend = customerMetrics.reduce((sum, metric) => sum + (parseFloat(metric.ad_spend) || 0), 0);
+      const clicks = customerMetrics.reduce((sum, metric) => sum + (parseInt(metric.clicks || 0, 10) || 0), 0);
+      const impressions = customerMetrics.reduce((sum, metric) => sum + (parseInt(metric.impressions || 0, 10) || 0), 0);
+      const leads = customerMetrics.reduce((sum, metric) => sum + (parseInt(metric.leads || 0, 10) || 0), 0);
+      const revenue = customerCharges.reduce((sum, ch) => sum + (parseFloat(ch.amount) || 0), 0);
+      const booked = parseInt(customer.total_triggers || 0, 10) || 0;
+      const margin = revenue - spend;
+      return {
+        customerId: customer.id,
+        customerName: customer.name,
+        status: customer.status,
+        spend,
+        revenue,
+        margin,
+        clicks,
+        impressions,
+        leads,
+        booked,
+        ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+        cpl: leads > 0 ? spend / leads : 0,
+        costPerBooked: booked > 0 ? spend / booked : 0,
+        revenuePerBooked: booked > 0 ? revenue / booked : 0
+      };
+    }).sort((a, b) => b.margin - a.margin);
+
+    res.json({
+      totals: {
+        spend: byCustomer.reduce((sum, row) => sum + row.spend, 0),
+        revenue: byCustomer.reduce((sum, row) => sum + row.revenue, 0),
+        margin: byCustomer.reduce((sum, row) => sum + row.margin, 0),
+        booked: byCustomer.reduce((sum, row) => sum + row.booked, 0),
+        leads: byCustomer.reduce((sum, row) => sum + row.leads, 0)
+      },
+      customers: byCustomer
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/segments', requireAuth, async (req, res) => {
+  try {
+    const segments = await db.getSavedSegmentsByUser(req.user.id);
+    res.json(segments.map(seg => ({
+      ...seg,
+      filters: safeJsonParse(seg.filters_json, {})
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/segments', requireAuth, async (req, res) => {
+  try {
+    if (!req.body.name) return res.status(400).json({ error: 'Name required' });
+    const segment = await db.createSavedSegment({
+      user_id: req.user.id,
+      name: req.body.name,
+      filters_json: JSON.stringify(req.body.filters || {})
+    });
+    await audit('segment.saved', {
+      actor: req.user,
+      target_type: 'segment',
+      target_id: segment.id,
+      details: { name: req.body.name }
+    });
+    res.json({
+      ...segment,
+      filters: safeJsonParse(segment.filters_json, {})
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/segments/:id', requireAuth, async (req, res) => {
+  try {
+    const segment = await db.getSavedSegmentById(req.params.id);
+    if (!segment || segment.user_id !== req.user.id)
+      return res.status(404).json({ error: 'Not found' });
+    await db.deleteSavedSegment(segment.id);
+    await audit('segment.deleted', {
+      actor: req.user,
+      target_type: 'segment',
+      target_id: segment.id,
+      details: { name: segment.name }
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/export/:type', requireAuth, async (req, res) => {
+  try {
+    let rows = [];
+    if (req.params.type === 'customers') {
+      rows = await db.getCustomersByUser(req.user.id);
+    } else if (req.params.type === 'charges') {
+      rows = await db.getChargesByUser(req.user.id);
+    } else if (req.params.type === 'failures') {
+      rows = (await db.getChargesByUser(req.user.id)).filter(charge => charge.status === 'failed');
+    } else if (req.params.type === 'metrics') {
+      rows = await db.getAdMetricsByUser(req.user.id);
+    } else {
+      return res.status(404).json({ error: 'Unknown export type' });
+    }
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${req.params.type}.csv"`);
+    res.send(toCsv(rows));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── STATS API ────────────────────────────────────────────────────
@@ -1624,11 +2944,24 @@ app.patch('/api/admin/agencies/:id', requireAuth, requireAdmin, async (req, res)
     updates.active = req.body.active ? 1 : 0;
   if (req.body.processor !== undefined)
     updates.processor = req.body.processor;
-  res.json(await db.updateUser(req.params.id, updates));
+  const updated = await db.updateUser(req.params.id, updates);
+  await audit('agency.updated', {
+    actor: req.user,
+    target_type: 'agency',
+    target_id: req.params.id,
+    details: { changed: Object.keys(updates) }
+  });
+  res.json(updated);
 });
 
 app.delete('/api/admin/agencies/:id', requireAuth, requireAdmin, async (req, res) => {
   await db.run('DELETE FROM users WHERE id = ? AND role = ?', [req.params.id, 'agency']);
+  await audit('agency.deleted', {
+    actor: req.user,
+    target_type: 'agency',
+    target_id: req.params.id,
+    details: {}
+  });
   res.json({ ok: true });
 });
 
@@ -1639,12 +2972,29 @@ app.get('/api/admin/pending', requireAuth, requireAdmin, async (req, res) => {
 });
 
 app.post('/api/admin/approve/:id', requireAuth, requireAdmin, async (req, res) => {
-  await db.updateUser(req.params.id, { approved: 1 });
+  const approvedUser = await db.updateUser(req.params.id, { approved: 1 });
+  await audit('agency.approved', {
+    actor: req.user,
+    target_type: 'agency',
+    target_id: req.params.id,
+    details: { approved_email: approvedUser?.email || '' }
+  });
+  await sendEmailAlert(
+    { ...approvedUser, email_notifications_enabled: 1, alert_email: approvedUser?.email },
+    'Your PayPulse account has been approved',
+    'Your PayPulse agency account is now approved. You can sign in and start using the dashboard.'
+  );
   res.json({ ok: true });
 });
 
 app.post('/api/admin/reject/:id', requireAuth, requireAdmin, async (req, res) => {
   await db.run('DELETE FROM users WHERE id = ? AND role = ?', [req.params.id, 'agency']);
+  await audit('agency.rejected', {
+    actor: req.user,
+    target_type: 'agency',
+    target_id: req.params.id,
+    details: {}
+  });
   res.json({ ok: true });
 });
 
@@ -1666,7 +3016,7 @@ app.post('/api/customers/:customerId/ad-metrics', requireAuth, async (req, res) 
       leads,
       appointments
     } = req.body;
-    const id = db.createAdMetric({
+    const id = await db.createAdMetric({
       user_id: req.user.id,
       customer_id: customerId,
       source: source || 'facebook',
@@ -1704,7 +3054,10 @@ app.get('/api/customers/:customerId/ad-metrics', requireAuth, async (req, res) =
 
 app.delete('/api/ad-metrics/:id', requireAuth, async (req, res) => {
   try {
-    db.deleteAdMetric(req.params.id);
+    const metric = await db.getAdMetricById(req.params.id);
+    if (!metric || metric.user_id !== req.user.id)
+      return res.status(404).json({ error: 'Not found' });
+    await db.deleteAdMetric(req.params.id);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1753,23 +3106,30 @@ app.post('/api/admin/agencies', requireAuth, requireAdmin, async (req, res) => {
       return res.status(409).json({ error: 'Email already registered' });
     const hash = await bcrypt.hash(password, 10);
     const user = await db.createUser({
-      email,
+      email: email.toLowerCase().trim(),
       password_hash: hash,
       name,
       company_name: companyName || '',
       role: 'agency',
-      plan: 'free',
-      monthlyRate: 0,
-      processor: 'stripe'
+      plan: plan || 'free',
+      monthly_rate: monthlyRate ?? 0,
+      processor: processor || 'stripe',
+      approved: 1
+    });
+    await audit('agency.created', {
+      actor: req.user,
+      target_type: 'agency',
+      target_id: user.id,
+      details: { email: user.email, plan: user.plan, monthly_rate: user.monthly_rate, processor: user.processor }
     });
     res.json({
       id: user.id,
       email: user.email,
       name: user.name,
-      companyName: user.companyName,
-      plan: 'free',
-      monthlyRate: 0,
-      processor: 'stripe',
+      companyName: user.company_name,
+      plan: user.plan,
+      monthlyRate: user.monthly_rate,
+      processor: user.processor,
       stripeCustomerId: null,
       subscriptionUrl: null
     });
