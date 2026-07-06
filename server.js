@@ -1465,10 +1465,10 @@ app.get('/api/admin/stats', requireAuth, requireAdmin, async (req, res) => {
   res.json(await db.getAdminStats());
 });
 
-// ─── SEED DEMO DATA ─────────────────────────────────────────────
-app.post('/api/seed-demo', requireAuth, async (req, res) => {
+// ─── SEED DEMO DATA (admin only, seeds into selected agency) ────
+app.post('/api/admin/seed-demo/:agencyId', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.params.agencyId;
 
     // Delete ALL existing customers for clean seed
     const existing = await db.getCustomersByUser(userId);
@@ -1478,11 +1478,11 @@ app.post('/api/seed-demo', requireAuth, async (req, res) => {
     }
 
     const clients = [
-      { name: 'Pro Painters', company: 'Pro Painters Toronto', email: 'pro@painting.com', rate: 147, status: 'active', triggers: 14 },
-      { name: 'Fresh Coat Painting', company: 'Fresh Coat Painting Inc.', email: 'info@freshcoat.com', rate: 147, status: 'active', triggers: 12 },
-      { name: 'Deck Masters', company: 'Deck Masters Ottawa', email: 'info@deckmasters.com', rate: 197, status: 'active', triggers: 10 },
-      { name: 'Fence Experts', company: 'Fence Experts GTA', email: 'dispatch@fenceexperts.com', rate: 197, status: 'new', triggers: 2 },
-      { name: 'Precision Decks', company: 'Precision Deck & Fence', email: 'office@precisiondecks.com', rate: 197, status: 'at_risk', triggers: 5 },
+      { name: 'Pro Painters', company: 'Pro Painters Toronto', email: 'pro@painting.com', rate: 147, status: 'active', triggers: 7, succeeded: 7 },
+      { name: 'Fresh Coat Painting', company: 'Fresh Coat Painting Inc.', email: 'info@freshcoat.com', rate: 147, status: 'active', triggers: 6, succeeded: 6 },
+      { name: 'Deck Masters', company: 'Deck Masters Ottawa', email: 'info@deckmasters.com', rate: 197, status: 'active', triggers: 5, succeeded: 5 },
+      { name: 'Fence Experts', company: 'Fence Experts GTA', email: 'dispatch@fenceexperts.com', rate: 197, status: 'new', triggers: 1, succeeded: 1 },
+      { name: 'Precision Decks', company: 'Precision Deck & Fence', email: 'office@precisiondecks.com', rate: 197, status: 'at_risk', triggers: 3, succeeded: 2 },
     ];
 
     const created = [];
