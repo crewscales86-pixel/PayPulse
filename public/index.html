@@ -1674,16 +1674,16 @@ function SettingsPage({ settings, onSave, showToast }) {
         e('h3', null, 'Webhook URLs'),
         e('div', { className: 'form-group' },
           e('label', null, 'Whop Webhook URL \u2014 Paste into Whop \u2192 Settings \u2192 Webhooks'),
-          e('div', { className: 'webhook-box' }, s.whopWebhookUrl || s.whop_webhook_url || 'Loading...'),
-          e('button', { className: 'copy-btn', onClick: () => copy(s.whopWebhookUrl || s.whop_webhook_url) }, 'Copy'),
+          e('div', { className: 'webhook-box' }, (s?.whopWebhookUrl || s?.whop_webhook_url || 'Loading...')),
+          e('button', { className: 'copy-btn', onClick: () => copy(s?.whopWebhookUrl || s?.whop_webhook_url || '') }, 'Copy'),
           e('div', { style: { color:'var(--text2)', fontSize:12, marginTop:8 } },
             'Events: ', e('span', { style: { color:'var(--text)' } }, 'payment.succeeded  membership.went_valid')
           )
         ),
         e('div', { className: 'form-group' },
           e('label', null, 'GHL Trigger URL \u2014 Agency-level webhook (fallback)'),
-          e('div', { className: 'webhook-box blue' }, s.ghlWebhookUrl || s.ghl_webhook_url || 'Loading...'),
-          e('button', { className: 'copy-btn', onClick: () => copy(s.ghlWebhookUrl || s.ghl_webhook_url) }, 'Copy'),
+          e('div', { className: 'webhook-box blue' }, (s?.ghlWebhookUrl || s?.ghl_webhook_url || 'Loading...')),
+          e('button', { className: 'copy-btn', onClick: () => copy(s?.ghlWebhookUrl || s?.ghl_webhook_url || '') }, 'Copy'),
           e('div', { style: { color:'var(--text2)', fontSize:12, marginTop:8 } },
             'Per-client routing: ', e('span', { style: { color:'var(--blue)' } }, '/webhook/ghl/{secret}/{locationId}'),
             ' \u2014 paste each client\'s Location ID in their profile to get a unique URL per GHL sub-account.'
