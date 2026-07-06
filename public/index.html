@@ -685,23 +685,19 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
       const s = new Sortable(el, {
         group: 'kanban',
         animation: 200,
-        easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
         ghostClass: 'sortable-ghost',
-        onEnd: (evt) => {
-          // Revert Sortable's DOM change — put element back so React can reconcile
+        onEnd: function(evt) {
           if (evt.from !== evt.to) {
-            const ref = evt.from.children[evt.oldIndex] || null;
-            evt.from.insertBefore(evt.item, ref);
+            evt.from.insertBefore(evt.item, evt.from.children[evt.oldIndex] || null);
           }
-          const colEl = evt.to.closest('.kanban-col');
-          const colIdx = Array.from(colEl.parentNode.children).indexOf(colEl);
-          const newStatus = colKeys[colIdx];
-          const customerId = evt.item.getAttribute('data-customer-id');
-          if (!customerId) return;
-          api('/api/customers/' + customerId, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) })
-            .then(() => onRefresh())
-            .catch(err => showToast('Update failed: ' + err.message, 'error'));
-        }
+          var colEl = evt.to.closest('.kanban-col');
+          var colIdx = Array.prototype.indexOf.call(colEl.parentNode.children, colEl);
+          var newStatus = colKeys[colIdx];
+          var cid = evt.item.getAttribute('data-customer-id');
+          if (!cid) return;
+          api('/api/customers/' + cid, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) })
+            .then(function() { onRefresh(); })
+            .catch(function(err) { showToast('Update failed: ' + err.message, 'error'); });
         }
       });
       sortables.push(s);
