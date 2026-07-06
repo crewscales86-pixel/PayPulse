@@ -113,7 +113,7 @@ app.post('/api/auth/login', async (req, res) => {
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
-    if (!user.approved) return res.status(403).json({ error: 'Account pending approval. Contact your admin.' });
+    if (!user.approved && user.role !== 'admin') return res.status(403).json({ error: 'Account pending approval. Contact your admin.' });
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
       JWT_SECRET,

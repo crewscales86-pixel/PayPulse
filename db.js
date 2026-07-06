@@ -555,7 +555,7 @@ async function ensureAdmin() {
     const adminEmail = process.env.ADMIN_EMAIL || 'admin@paypulse.co';
     const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
     const hash = bcrypt.hashSync(adminPass, 10);
-    await createUser({ email: adminEmail, name: 'Admin', password_hash: hash, role: 'admin', company_name: 'PayPulse', plan: 'admin' });
+    await createUser({ email: adminEmail, name: 'Admin', password_hash: hash, role: 'admin', company_name: 'PayPulse', plan: 'admin', approved: 1 });
     console.log('  ✓ Admin created: ' + adminEmail + ' / ' + adminPass);
   } else {
     console.log('  ✓ Admin exists: ' + existing.email);
