@@ -454,7 +454,7 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // ─── SIGNUP (self-service, requires admin approval) ──────────────
-app.post('/api/auth/signup', async (req, res) => {
+app.post('/api/auth/signup', authLimiter, async (req, res) => {
   try {
     const { name, email, password, companyName } = req.body;
     if (!name || !email || !password)
@@ -1280,7 +1280,7 @@ app.post('/webhook/whop/:secret', async (req, res) => {
       if (!customer)
         customer = await db.createCustomer({
           user_id: user.id,
-          name: name || email.split('@')[0],
+          name: name || (email ? email.split('@')[0] : 'Whop Customer'),
           email,
           whop_member_id: data.user?.id || ''
         });
@@ -1465,7 +1465,7 @@ app.post('/webhook/stripe/:secret', async (req, res) => {
             return res.json({ received: true, duplicate: true, eventId: webhookStart.event.id });
           }
           eventRecord = webhookStart.event;
-          db.updateCustomer(customer.id, {
+          await db.updateCustomer(customer.id, {
             card_on_file: 1,
             stripe_payment_method_id: obj.payment_method || ''
           });
@@ -1500,7 +1500,7 @@ app.post('/webhook/stripe/:secret', async (req, res) => {
             return res.json({ received: true, duplicate: true, eventId: webhookStart.event.id });
           }
           eventRecord = webhookStart.event;
-          db.createCharge({
+          await db.createCharge({
             id: uuidv4(),
             user_id: u.id,
             customer_id: match.customer_id,
@@ -2244,9 +2244,13 @@ app.get('/api/notifications', requireAuth, async (req, res) => {
   res.json(await db.getNotificationsByUser(req.user.id));
 });
 
-app.post('/api/notifications/read', requireAuth, (req, res) => {
-  db.markAllRead(req.user.id);
-  res.json({ ok: true });
+app.post('/api/notifications/read', requireAuth, async (req, res) => {
+  try {
+    await db.markAllRead(req.user.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/notifications/unread-count', requireAuth, (req, res) => {

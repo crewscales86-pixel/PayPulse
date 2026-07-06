@@ -1444,7 +1444,7 @@ function SettingsPage({ settings, onSave, showToast }) {
 }
 
 // ─── INBOX PAGE ─────────────────────────────────────────────────
-function InboxPage({ notifications, onRefresh }) {
+function InboxPage({ notifications, onRefresh, showToast }) {
   const markAll = async () => { try { await api('/api/notifications/read', {method:'POST'}); onRefresh(); } catch (err) { showToast(err.message, 'error'); } };
 
   const iconFor = (type) => {
