@@ -687,19 +687,21 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
         animation: 200,
         easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
         ghostClass: 'sortable-ghost',
-        chosenClass: 'sortable-chosen',
-        dragClass: 'sortable-drag',
-        onEnd: async (evt) => {
-          const customerId = evt.item.dataset.customerId;
-          const newStatus = evt.to.id.replace('kanban-', '');
-          if (!customerId || !newStatus) return;
-          try {
-            await api('/api/customers/' + customerId, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) });
-            // Don't call onRefresh — the 5s auto-refresh picks it up.
-            // Refresh mid-drag destroys Sortable DOM and causes black screen.
-          } catch (err) {
-            showToast('Failed to update status: ' + err.message, 'error');
+        onEnd: (evt) => {
+          // Revert Sortable's DOM change — put element back so React can reconcile
+          if (evt.from !== evt.to) {
+            const ref = evt.from.children[evt.oldIndex] || null;
+            evt.from.insertBefore(evt.item, ref);
           }
+          const colEl = evt.to.closest('.kanban-col');
+          const colIdx = Array.from(colEl.parentNode.children).indexOf(colEl);
+          const newStatus = colKeys[colIdx];
+          const customerId = evt.item.getAttribute('data-customer-id');
+          if (!customerId) return;
+          api('/api/customers/' + customerId, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) })
+            .then(() => onRefresh())
+            .catch(err => showToast('Update failed: ' + err.message, 'error'));
+        }
         }
       });
       sortables.push(s);
