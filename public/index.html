@@ -608,13 +608,6 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
   const [noteDueAt, setNoteDueAt] = useState('');
   const [creditAmount, setCreditAmount] = useState('');
   const [creditNote, setCreditNote] = useState('');
-  const [metaCampaigns, setMetaCampaigns] = useState([]);
-  const [metaRoutes, setMetaRoutes] = useState([]);
-  const [metaAdsetsByCampaign, setMetaAdsetsByCampaign] = useState({});
-  const [savingMetaMappings, setSavingMetaMappings] = useState(false);
-  const [syncingMeta, setSyncingMeta] = useState(false);
-  const [metaDateFrom, setMetaDateFrom] = useState(new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10));
-  const [metaDateTo, setMetaDateTo] = useState(new Date().toISOString().slice(0, 10));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -626,25 +619,6 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
       setDetails(detailData);
       setTimeline(timelineData);
       setNewRate(detailData?.ratePerTrigger || customer.rate_per_trigger);
-      const existingRoutes = (detailData?.metaMappings || []).map(item => ({
-        campaign_id: item.campaign_id || '',
-        adset_id: item.adset_id || ''
-      }));
-      setMetaRoutes(existingRoutes.length ? existingRoutes : [{ campaign_id: '', adset_id: '' }]);
-      if (settings?.metaConnected && settings?.metaAdAccountId) {
-        const campaigns = await api('/api/meta/campaigns?adAccountId=' + encodeURIComponent(settings.metaAdAccountId));
-        setMetaCampaigns(campaigns);
-        const campaignIds = [...new Set(existingRoutes.map(route => route.campaign_id).filter(Boolean))];
-        if (campaignIds.length) {
-          const entries = await Promise.all(campaignIds.map(async campaignId => [campaignId, await api('/api/meta/adsets?campaignId=' + encodeURIComponent(campaignId))]));
-          setMetaAdsetsByCampaign(Object.fromEntries(entries));
-        } else {
-          setMetaAdsetsByCampaign({});
-        }
-      } else {
-        setMetaCampaigns([]);
-        setMetaAdsetsByCampaign({});
-      }
     } catch (err) {
       showToast(err.message || 'Failed to load customer details', 'error');
     }
@@ -772,85 +746,12 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
     }
   };
 
-  const saveMetaMappings = async () => {
-    if (!settings?.metaAdAccountId) {
-      showToast('Select a Meta ad account in Settings first', 'warn');
-      return;
-    }
-    setSavingMetaMappings(true);
-    try {
-      const mappings = metaRoutes.filter(route => route.campaign_id).map(route => {
-        const campaign = metaCampaigns.find(item => item.id === route.campaign_id);
-        const adset = (metaAdsetsByCampaign[route.campaign_id] || []).find(item => item.id === route.adset_id);
-        return {
-          ad_account_id: settings.metaAdAccountId,
-          ad_account_name: settings.metaAdAccountName || '',
-          campaign_id: route.campaign_id,
-          campaign_name: campaign?.name || '',
-          adset_id: route.adset_id || '',
-          adset_name: adset?.name || ''
-        };
-      });
-      await api('/api/customers/' + customer.id + '/meta-mappings', {
-        method: 'POST',
-        body: JSON.stringify({ mappings })
-      });
-      showToast('Meta campaign mapping saved', 'success');
-      await load();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-    setSavingMetaMappings(false);
-  };
-
-  const syncMetaMetrics = async () => {
-    setSyncingMeta(true);
-    try {
-      await api('/api/customers/' + customer.id + '/meta-sync', {
-        method: 'POST',
-        body: JSON.stringify({ dateFrom: metaDateFrom, dateTo: metaDateTo })
-      });
-      showToast('Meta metrics synced', 'success');
-      await load();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-    setSyncingMeta(false);
-  };
-
-  const loadAdsetsForCampaign = async (campaignId) => {
-    if (!campaignId || metaAdsetsByCampaign[campaignId]) return;
-    try {
-      const adsets = await api('/api/meta/adsets?campaignId=' + encodeURIComponent(campaignId));
-      setMetaAdsetsByCampaign(prev => ({ ...prev, [campaignId]: adsets }));
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const updateMetaRoute = async (index, patch) => {
-    const next = metaRoutes.map((route, idx) => idx === index ? { ...route, ...patch } : route);
-    setMetaRoutes(next);
-    if (patch.campaign_id) await loadAdsetsForCampaign(patch.campaign_id);
-  };
-
   if (loading) return e('div', { className: 'modal-back', onClick: onClose },
     e('div', { className: 'modal wide' }, e('h3', null, 'Loading...'))
   );
 
-  const d = details || { charges: [], notes: [], webhookEvents: [], auditLogs: [], adMetrics: [], metaMappings: [], totalCharged: 0, totalTriggers: 0, creditBalance: 0, failureCount: 0, chargebackCount: 0, ratePerTrigger: customer.rate_per_trigger, cardOnFile: false };
+  const d = details || { charges: [], notes: [], webhookEvents: [], auditLogs: [], adMetrics: [], totalCharged: 0, totalTriggers: 0, creditBalance: 0, failureCount: 0, chargebackCount: 0, ratePerTrigger: customer.rate_per_trigger, cardOnFile: false };
   const c = d.customer || customer;
-  const adMetricTotals = (d.adMetrics || []).reduce((acc, item) => {
-    acc.spend += parseFloat(item.ad_spend || 0);
-    acc.impressions += parseInt(item.impressions || 0, 10);
-    acc.clicks += parseInt(item.clicks || 0, 10);
-    acc.leads += parseInt(item.leads || 0, 10);
-    return acc;
-  }, { spend: 0, impressions: 0, clicks: 0, leads: 0 });
-  const profit = (parseFloat(d.totalCharged || 0) || 0) - adMetricTotals.spend;
-  const ctr = adMetricTotals.impressions > 0 ? ((adMetricTotals.clicks / adMetricTotals.impressions) * 100).toFixed(2) : '0.00';
-  const cpl = adMetricTotals.leads > 0 ? (adMetricTotals.spend / adMetricTotals.leads).toFixed(2) : '0.00';
-  const costPerBooked = (d.totalTriggers || 0) > 0 ? (adMetricTotals.spend / d.totalTriggers).toFixed(2) : '0.00';
 
   return e('div', { className: 'modal-back', onClick: ev => ev.target === ev.currentTarget && onClose() },
     e('div', { className: 'modal wide', style: { maxWidth: 980 } },
@@ -894,67 +795,6 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
               e('input', { type: 'number', placeholder: 'Amount', value: creditAmount, onChange: ev => setCreditAmount(ev.target.value) }),
               e('input', { placeholder: 'Reason', value: creditNote, onChange: ev => setCreditNote(ev.target.value) }),
               e('button', { className: 'btn-sm green', onClick: issueCredit }, 'Issue')
-            )
-          )
-        )
-      ),
-
-      e('div', { className: 'detail-section' },
-        e('h4', null, 'Meta Margin Tracking'),
-        !settings?.metaConnected && e('div', { style: { color: 'var(--warn)', fontSize: 12 } }, 'Connect Meta in Settings to map campaigns and sync spend.'),
-        settings?.metaConnected && !settings?.metaAdAccountId && e('div', { style: { color: 'var(--warn)', fontSize: 12 } }, 'Select a primary Meta ad account in Settings first.'),
-        settings?.metaConnected && settings?.metaAdAccountId && e('div', { style: { display: 'grid', gap: 12 } },
-          e('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10 } },
-            [
-              ['Ad Spend', '$' + adMetricTotals.spend.toFixed(2), 'red'],
-              ['Leads', adMetricTotals.leads, 'blue'],
-              ['CTR', ctr + '%', 'blue'],
-              ['Cost / Booked', '$' + costPerBooked, 'yellow'],
-              ['Profit', '$' + profit.toFixed(2), profit >= 0 ? 'green' : 'red']
-            ].map(([label, value, tone]) =>
-              e('div', { key: label, className: 'detail-stat' },
-                e('div', { className: 'detail-stat-label' }, label),
-                e('div', { className: 'detail-stat-value ' + tone, style: { fontSize: 18 } }, value)
-              )
-            )
-          ),
-          e('div', { style: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 10, padding: 12 } },
-            e('div', { style: { fontSize: 12, color: 'var(--text2)', marginBottom: 8 } }, 'Route specific campaigns or ad sets from this ad account to this client'),
-            e('div', { style: { display: 'grid', gap: 10, marginBottom: 10 } },
-              metaRoutes.map((route, index) =>
-                e('div', { key: index, style: { display: 'grid', gridTemplateColumns: '1.2fr 1.2fr auto', gap: 8, alignItems: 'center' } },
-                  e('select', {
-                    value: route.campaign_id || '',
-                    onChange: ev => updateMetaRoute(index, { campaign_id: ev.target.value, adset_id: '' })
-                  },
-                    e('option', { value: '' }, 'Select campaign'),
-                    metaCampaigns.map(campaign =>
-                      e('option', { key: campaign.id, value: campaign.id }, campaign.name)
-                    )
-                  ),
-                  e('select', {
-                    value: route.adset_id || '',
-                    onChange: ev => updateMetaRoute(index, { adset_id: ev.target.value })
-                  },
-                    e('option', { value: '' }, 'All ad sets in campaign'),
-                    (metaAdsetsByCampaign[route.campaign_id] || []).map(adset =>
-                      e('option', { key: adset.id, value: adset.id }, adset.name)
-                    )
-                  ),
-                  e('button', { className: 'btn-sm', onClick: () => setMetaRoutes(prev => prev.filter((_, idx) => idx !== index)), disabled: metaRoutes.length === 1 }, 'Remove')
-                )
-              ),
-              metaCampaigns.length === 0 && e('div', { style: { color: '#666', fontSize: 12 } }, 'No campaigns found for the selected ad account.')
-            ),
-            e('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' } },
-              e('button', { className: 'btn-sm', onClick: () => setMetaRoutes(prev => [...prev, { campaign_id: '', adset_id: '' }]) }, 'Add Route'),
-              e('button', { className: 'btn-sm', onClick: saveMetaMappings, disabled: savingMetaMappings }, savingMetaMappings ? 'Saving...' : 'Save Mapping'),
-              e('input', { type: 'date', value: metaDateFrom, onChange: ev => setMetaDateFrom(ev.target.value), style: { width: 160 } }),
-              e('input', { type: 'date', value: metaDateTo, onChange: ev => setMetaDateTo(ev.target.value), style: { width: 160 } }),
-              e('button', { className: 'btn-sm green', onClick: syncMetaMetrics, disabled: syncingMeta || metaRoutes.filter(route => route.campaign_id).length === 0 }, syncingMeta ? 'Syncing...' : 'Sync Meta Data')
-            ),
-            e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 10 } },
-              'CPL: $', cpl, ' · Clicks: ', adMetricTotals.clicks, ' · Impressions: ', adMetricTotals.impressions
             )
           )
         )
@@ -1471,26 +1311,10 @@ function SettingsPage({ settings, onSave, showToast }) {
   const [s, setS] = useState(settings || {});
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const [metaAccounts, setMetaAccounts] = useState([]);
-  const [metaLoading, setMetaLoading] = useState(false);
 
   useEffect(() => { if (settings && !dirty) setS(settings); }, [settings, dirty]);
 
   const update = (patch) => { setDirty(true); setS(prev => ({...prev, ...patch})); };
-
-  const loadMetaAccounts = useCallback(async () => {
-    if (!s.metaConnected) return;
-    setMetaLoading(true);
-    try {
-      const accounts = await api('/api/meta/ad-accounts');
-      setMetaAccounts(accounts);
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-    setMetaLoading(false);
-  }, [s.metaConnected, showToast]);
-
-  useEffect(() => { if (s.metaConnected) loadMetaAccounts(); }, [s.metaConnected, loadMetaAccounts]);
 
   const save = async () => {
     setSaving(true);
@@ -1501,8 +1325,6 @@ function SettingsPage({ settings, onSave, showToast }) {
         whopApiKey: s.whopApiKey, whopCompanyId: s.whopCompanyId,
         appointmentTrackingMode: s.appointmentTrackingMode,
         failedChargeWebhookUrl: s.failedChargeWebhookUrl || '',
-        metaAdAccountId: s.metaAdAccountId || '',
-        metaAdAccountName: s.metaAdAccountName || ''
       }) });
       setDirty(false);
       showToast('Settings saved!', 'success');
@@ -1514,32 +1336,6 @@ function SettingsPage({ settings, onSave, showToast }) {
   };
 
   const copy = (text) => { navigator.clipboard.writeText(text); };
-  const selectedMetaAccount = metaAccounts.find(account => String(account.id) === String(s.metaAdAccountId));
-
-  const connectMeta = async () => {
-    try {
-      const { url } = await api('/api/meta/connect-url');
-      const popup = window.open(url, 'paypulse-meta', 'width=720,height=760');
-      const poll = setInterval(async () => {
-        if (popup && popup.closed) {
-          clearInterval(poll);
-          onSave();
-          return;
-        }
-        try {
-          const status = await api('/api/meta/status');
-          if (status.connected) {
-            clearInterval(poll);
-            onSave();
-            showToast('Meta connected', 'success');
-            if (popup && !popup.closed) popup.close();
-          }
-        } catch {}
-      }, 1500);
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
 
   return e('div', { className: 'page' },
     e('div', { className: 'settings-grid' },
@@ -1601,58 +1397,11 @@ function SettingsPage({ settings, onSave, showToast }) {
         )
       ),
       e('div', { className: 'settings-card' },
-        e('h3', null, 'Meta Ads'),
-        !s.metaConfigured && e('div', { style: { color: 'var(--warn)', fontSize: 12, lineHeight: 1.5 } },
-          e('div', { style: { fontWeight: 700, marginBottom: 8 } }, 'Platform setup required'),
-          e('div', { style: { marginBottom: 10 } },
-            'Agencies should not enter Meta app secrets here. ',
-            'The platform owner sets Meta once on Railway, and then every agency just clicks ',
-            e('strong', null, 'Connect Meta Ads'),
-            ' with their own Meta login.'
-          ),
-          e('div', { style: { background: 'rgba(255,170,0,0.08)', border: '1px solid rgba(255,170,0,0.22)', borderRadius: 10, padding: 12, color: 'var(--text)' } },
-            e('div', { style: { fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--text2)', marginBottom: 8 } }, 'Railway Env Needed'),
-            e('div', { style: { fontFamily: 'monospace', fontSize: 11, lineHeight: 1.8 } },
-              'META_APP_ID', e('br'),
-              'META_APP_SECRET', e('br'),
-              'META_REDIRECT_URI=', s.metaRedirectUri || (window.location.origin + '/api/meta/callback')
-            )
-          )
-        ),
-        s.metaConfigured && !s.metaConnected && e('div', null,
-          e('div', { style: { color: 'var(--text2)', fontSize: 12, lineHeight: 1.5, marginBottom: 12 } },
-            'Each agency account connects its own Meta ad account here once. Then you map campaigns to each client and sync spend, clicks, CTR, and leads natively.'
-          ),
-          e('button', { className: 'btn-primary', onClick: connectMeta, style: { width: 'auto' } }, 'Connect Meta Ads')
-        ),
-        s.metaConfigured && s.metaConnected && e('div', null,
-          e('div', { style: { color: 'var(--accent)', fontSize: 12, fontWeight: 700, marginBottom: 12 } }, 'Meta connected'),
-          e('div', { className: 'form-group' },
-            e('label', null, 'Primary Ad Account'),
-            e('select', {
-              value: s.metaAdAccountId || '',
-              onChange: ev => {
-                const chosen = metaAccounts.find(account => String(account.id) === String(ev.target.value));
-                update({
-                  metaAdAccountId: ev.target.value,
-                  metaAdAccountName: chosen?.name || ''
-                });
-              }
-            },
-              e('option', { value: '' }, metaLoading ? 'Loading accounts...' : 'Select an ad account'),
-              metaAccounts.map(account =>
-                e('option', { key: account.id, value: account.id }, `${account.name} (${account.account_id || account.id})`)
-              )
-            )
-          ),
-          selectedMetaAccount && e('div', { style: { color: 'var(--text2)', fontSize: 11, marginBottom: 10 } },
-            'Selected account: ', selectedMetaAccount.name, '. This connection belongs only to this agency login.'
-          ),
-          e('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
-            e('button', { className: 'btn-sm', onClick: connectMeta }, 'Reconnect Meta'),
-            e('button', { className: 'btn-sm', onClick: loadMetaAccounts }, metaLoading ? 'Refreshing...' : 'Refresh Accounts'),
-            e('button', { className: 'btn-sm green', onClick: save }, saving ? 'Saving...' : 'Save Meta Setup')
-          )
+        e('h3', { style: { opacity: 0.6 } }, 'Meta Ads'),
+        e('div', { style: { color: 'var(--text3)', fontSize: 13, lineHeight: 1.5, padding: '20px 0', textAlign: 'center', border: '1px dashed var(--border)', borderRadius: 10 } },
+          e('div', { style: { fontSize: 24, marginBottom: 8 } }, '🚧'),
+          e('div', { style: { fontWeight: 700, color: 'var(--text2)', marginBottom: 4 } }, 'Coming Soon'),
+          e('div', { style: { fontSize: 12 } }, 'Connect your Meta ad accounts to track campaign spend and leads per client.')
         )
       ),
       e('div', { className: 'settings-card' },
