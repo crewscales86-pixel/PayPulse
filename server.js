@@ -113,6 +113,7 @@ app.post('/api/auth/login', async (req, res) => {
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!user.approved) return res.status(403).json({ error: 'Account pending approval. Contact your admin.' });
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
       JWT_SECRET,
@@ -138,6 +139,42 @@ app.post('/api/auth/login', async (req, res) => {
             }
           : null
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── SIGNUP (self-service, requires admin approval) ──────────────
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    const { name, email, password, companyName } = req.body;
+    if (!name || !email || !password)
+      return res.status(400).json({ error: 'Name, email, and password required' });
+    if (password.length < 6)
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    const existing = await db.getUserByEmail(email.toLowerCase().trim());
+    if (existing) return res.status(409).json({ error: 'An account with this email already exists' });
+    const hash = bcrypt.hashSync(password, 10);
+    const user = await db.createUser({
+      email: email.toLowerCase().trim(),
+      name,
+      password_hash: hash,
+      role: 'agency',
+      company_name: companyName || '',
+      approved: 0,
+      plan: 'free'
+    });
+    // Notify admin
+    const admins = await db.listUsers('admin');
+    for (const a of admins) {
+      await db.addNotification({
+        user_id: a.id,
+        type: 'new',
+        title: `New signup pending: ${user.name}`,
+        body: `${user.email} — ${user.company_name || 'No company'} needs approval`
+      });
+    }
+    res.json({ ok: true, message: 'Account created! Awaiting admin approval.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1591,6 +1628,22 @@ app.patch('/api/admin/agencies/:id', requireAuth, requireAdmin, async (req, res)
 });
 
 app.delete('/api/admin/agencies/:id', requireAuth, requireAdmin, async (req, res) => {
+  await db.run('DELETE FROM users WHERE id = ? AND role = ?', [req.params.id, 'agency']);
+  res.json({ ok: true });
+});
+
+// ─── ADMIN: PENDING APPROVALS ───────────────────────────────────
+app.get('/api/admin/pending', requireAuth, requireAdmin, async (req, res) => {
+  const pending = await db.all('SELECT id, name, email, company_name, created_at FROM users WHERE role = ? AND approved = ? ORDER BY created_at DESC', ['agency', 0]);
+  res.json(pending);
+});
+
+app.post('/api/admin/approve/:id', requireAuth, requireAdmin, async (req, res) => {
+  await db.updateUser(req.params.id, { approved: 1 });
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/reject/:id', requireAuth, requireAdmin, async (req, res) => {
   await db.run('DELETE FROM users WHERE id = ? AND role = ?', [req.params.id, 'agency']);
   res.json({ ok: true });
 });

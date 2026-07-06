@@ -42,6 +42,7 @@ async function initSchema() {
         ghl_webhook_secret TEXT DEFAULT '',
         whop_webhook_secret TEXT DEFAULT '',
         failed_charge_webhook_url TEXT DEFAULT '',
+        approved INTEGER DEFAULT 0,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
       CREATE TABLE IF NOT EXISTS customers (
@@ -147,6 +148,7 @@ async function initSchema() {
                 appointment_tracking_mode INTEGER DEFAULT 0,
                 ghl_webhook_secret TEXT DEFAULT '', whop_webhook_secret TEXT DEFAULT '',
                 failed_charge_webhook_url TEXT DEFAULT '',
+                approved INTEGER DEFAULT 0,
                 created_at TEXT DEFAULT (datetime('now'))
               );
       CREATE TABLE IF NOT EXISTS customers (
@@ -237,6 +239,17 @@ async function initSchema() {
     } catch (e) { /* ignore migration errors */ }
   }
 
+  // Migration: add approved column to users
+  try {
+    if (USE_PG) {
+      await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS approved INTEGER DEFAULT 0`);
+    } else {
+      const cols = sqliteDb.prepare("PRAGMA table_info(users)").all();
+      if (!cols.find(c => c.name === 'approved')) {
+        sqliteDb.exec(`ALTER TABLE users ADD COLUMN approved INTEGER DEFAULT 0`);
+      }
+    }
+  } catch (e) { /* ignore */ }
 }
 
 // ─── HELPERS ────────────────────────────────────────────────────
@@ -282,18 +295,18 @@ function createUser(data) {
   if (USE_PG) {
     // PG path: return promise
     return pgPool.query(
-      `INSERT INTO users (id, email, name, password_hash, role, company_name, processor, plan, monthly_rate, ghl_webhook_secret, whop_webhook_secret)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+      `INSERT INTO users (id, email, name, password_hash, role, company_name, processor, plan, monthly_rate, ghl_webhook_secret, whop_webhook_secret, approved)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
       [id, data.email, data.name, data.password_hash, data.role || 'agency', data.company_name || '',
-       data.processor || 'stripe', data.plan || 'free', data.monthly_rate || 97, ghlSecret, whopSecret]
+       data.processor || 'stripe', data.plan || 'free', data.monthly_rate || 97, ghlSecret, whopSecret, data.approved !== undefined ? (data.approved ? 1 : 0) : 1]
     ).then(() => getUserById(id));
   }
   // SQLite path: synchronous
   sqliteDb.prepare(
-    `INSERT INTO users (id, email, name, password_hash, role, company_name, processor, plan, monthly_rate, ghl_webhook_secret, whop_webhook_secret)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO users (id, email, name, password_hash, role, company_name, processor, plan, monthly_rate, ghl_webhook_secret, whop_webhook_secret, approved)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(id, data.email, data.name, data.password_hash, data.role || 'agency', data.company_name || '',
-    data.processor || 'stripe', data.plan || 'free', data.monthly_rate || 97, ghlSecret, whopSecret);
+    data.processor || 'stripe', data.plan || 'free', data.monthly_rate || 97, ghlSecret, whopSecret, data.approved !== undefined ? (data.approved ? 1 : 0) : 1);
   return getUserById(id);
 }
 

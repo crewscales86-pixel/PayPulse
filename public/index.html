@@ -355,18 +355,42 @@ function AuthPage({ onAuth }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState('login'); // 'login' | 'signup'
+  const [name, setName] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [signupDone, setSignupDone] = useState(false);
 
   const submit = async () => {
-    setError(''); setLoading(true);
-    try {
-      const res = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
-      localStorage.setItem('paypulse_token', res.token);
-      onAuth();
-    } catch (err) { setError(err.message); }
-    setLoading(false);
+    if (mode === 'login') {
+      setError(''); setLoading(true);
+      try {
+        const res = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+        localStorage.setItem('paypulse_token', res.token);
+        onAuth();
+      } catch (err) { setError(err.message); }
+      setLoading(false);
+    } else {
+      setError(''); setLoading(true);
+      try {
+        const res = await api('/api/auth/signup', { method: 'POST', body: JSON.stringify({ name, email, password, companyName }) });
+        setSignupDone(true);
+      } catch (err) { setError(err.message); }
+      setLoading(false);
+    }
   };
 
   const handleKeyDown = (ev) => { if (ev.key === 'Enter' && !loading) submit(); };
+
+  if (signupDone) return e('div', { className: 'auth-wrap' },
+    e('div', { className: 'auth-box', style: { textAlign: 'center' } },
+      e('div', { style: { fontSize: 48, marginBottom: 16 } }, '✅'),
+      e('h2', { style: { marginBottom: 12 } }, 'Account created!'),
+      e('div', { style: { color: 'var(--text2)', fontSize: 14, marginBottom: 20, lineHeight: 1.6 } },
+        'Your account is pending admin approval. You\'ll be able to log in once an admin approves your account.'
+      ),
+      e('button', { className: 'btn-primary', onClick: () => { setMode('login'); setSignupDone(false); setError(''); } }, 'Back to Login')
+    )
+  );
 
   return e('div', { className: 'auth-wrap' },
     e('div', { className: 'auth-box' },
@@ -375,9 +399,17 @@ function AuthPage({ onAuth }) {
         e('span', { className: 'auth-logo-text' }, 'PAYPULSE')
       ),
       e('div', { className: 'auth-subtitle', style: { color: 'var(--text2)', fontSize: 14, marginBottom: 28, textAlign: 'center' } },
-        'Pay-Per-Appointment Billing for SMMAs'
+        mode === 'login' ? 'Pay-Per-Appointment Billing for SMMAs' : 'Create your agency account'
       ),
       error && e('div', { className: 'error-msg', style: { marginBottom: 12 } }, error),
+      mode === 'signup' && e('div', { className: 'form-group' },
+        e('label', null, 'Your Name'),
+        e('input', { placeholder: 'John Smith', value: name, onChange: ev => setName(ev.target.value) })
+      ),
+      mode === 'signup' && e('div', { className: 'form-group' },
+        e('label', null, 'Company Name'),
+        e('input', { placeholder: 'My Agency Inc.', value: companyName, onChange: ev => setCompanyName(ev.target.value) })
+      ),
       e('div', { className: 'form-group' },
         e('label', null, 'Email'),
         e('input', { type: 'email', placeholder: 'you@company.com', value: email, onChange: ev => setEmail(ev.target.value), onKeyDown: handleKeyDown })
@@ -387,14 +419,10 @@ function AuthPage({ onAuth }) {
         e('input', { type: 'password', placeholder: '••••••••', value: password, onChange: ev => setPassword(ev.target.value), onKeyDown: handleKeyDown })
       ),
       e('button', { className: 'btn-primary', onClick: submit, disabled: loading, style: { marginTop: 8 } },
-        loading ? 'Signing in...' : 'Log In'
+        loading ? 'Please wait...' : (mode === 'login' ? 'Log In' : 'Create Account')
       ),
-      e('div', { style: { textAlign:'center', marginTop:20, color:'var(--text2)', fontSize:12 } },
-        'Need an account? Contact your administrator.'
-      ),
-      e('div', { style: { textAlign:'center', marginTop:8, color:'var(--text3)', fontSize:11, lineHeight:1.5 } },
-        'Agencies: accounts are created for you by the admin. ',
-        'Admins: log in with your credentials, then go to Admin Panel → Create Agency to add users.'
+      e('div', { style: { textAlign:'center', marginTop:20, color:'var(--text2)', fontSize:12, cursor:'pointer' }, onClick: () => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); } },
+        mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Log in'
       )
     )
   );
@@ -1438,8 +1466,13 @@ function CreateAgencyModal({ onClose, onRefresh }) {
 }
 
 // ─── ADMIN PANEL ────────────────────────────────────────────────
-function AdminPage({ agencies, adminStats, onRefresh }) {
+function AdminPage({ agencies, adminStats, onRefresh, showToast }) {
   const [showModal, setShowModal] = useState(null);
+  const [pending, setPending] = useState([]);
+
+  useEffect(() => {
+    api('/api/admin/pending').then(setPending).catch(() => {});
+  }, [agencies]);
 
   const updateAgency = async (id, data) => {
     try {
@@ -1479,6 +1512,25 @@ function AdminPage({ agencies, adminStats, onRefresh }) {
       e('div', { className: 'admin-card stat-card' },
         e('div', { className: 'stat-label' }, 'Total Customers'),
         e('div', { className: 'stat-value' }, adminStats?.totalCustomers || 0)
+      )
+    ),
+    pending.length > 0 && e('div', { className: 'settings-card', style: { marginBottom: 20, border: '1px solid var(--yellow)' } },
+      e('h3', { style: { color: 'var(--yellow)', marginBottom: 14 } }, '⏳ Pending Approvals (' + pending.length + ')'),
+      e('div', null,
+        pending.map(u =>
+          e('div', { key: u.id, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--border)' } },
+            e('div', { style: { flex: 1 } },
+              e('div', { style: { fontWeight: 600, fontSize: 13 } }, u.name),
+              e('div', { style: { color: 'var(--text2)', fontSize: 11 } }, u.email + (u.company_name ? ' · ' + u.company_name : ''))
+            ),
+            e('button', { className: 'btn-sm green', style: { padding: '4px 12px', fontSize: 10 }, onClick: async () => {
+              try { await api('/api/admin/approve/' + u.id, { method: 'POST' }); showToast(u.name + ' approved!', 'success'); onRefresh(); } catch (err) { showToast(err.message, 'error'); }
+            } }, '✓ Approve'),
+            e('button', { className: 'btn-sm', style: { padding: '4px 12px', fontSize: 10, color:'var(--danger)' }, onClick: async () => {
+              try { await api('/api/admin/reject/' + u.id, { method: 'POST' }); showToast(u.name + ' rejected', 'info'); onRefresh(); } catch (err) { showToast(err.message, 'error'); }
+            } }, '✕ Reject')
+          )
+        )
       )
     ),
     e('div', { className: 'table-wrap', style: { marginTop:20 } },
