@@ -604,9 +604,6 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
   const [retrying, setRetrying] = useState(null);
   const [savingCard, setSavingCard] = useState(false);
   const [noteBody, setNoteBody] = useState('');
-  const [noteCategory, setNoteCategory] = useState('internal');
-  const [noteRecurring, setNoteRecurring] = useState(false);
-  const [noteDueAt, setNoteDueAt] = useState('');
   const [creditUnits, setCreditUnits] = useState('1');
   const [creditNote, setCreditNote] = useState('');
   const [showNotesList, setShowNotesList] = useState(false);
@@ -726,16 +723,11 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
       await api('/api/customers/' + customer.id + '/notes', {
         method: 'POST',
         body: JSON.stringify({
-          body: noteBody,
-          category: noteCategory,
-          recurring: noteRecurring,
-          nextDueAt: noteRecurring ? noteDueAt : ''
+          body: noteBody
         })
       });
       showToast('Note added', 'success');
       setNoteBody('');
-      setNoteRecurring(false);
-      setNoteDueAt('');
       setShowNotesList(true);
       await load();
     } catch (err) {
@@ -746,6 +738,16 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
   const toggleNoteDone = async (note) => {
     try {
       await api('/api/notes/' + note.id, { method: 'PATCH', body: JSON.stringify({ is_done: !note.is_done }) });
+      await load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const deleteNote = async (note) => {
+    try {
+      await api('/api/notes/' + note.id, { method: 'DELETE' });
+      showToast('Note deleted', 'success');
       await load();
     } catch (err) {
       showToast(err.message, 'error');
@@ -845,19 +847,12 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
       ),
 
       e('div', { className: 'detail-section' },
-        e('h4', null, 'Internal Notes & Follow-ups'),
+        e('h4', null, 'Notes'),
         e('div', { style: { display: 'grid', gridTemplateColumns: '1.15fr 0.85fr', gap: 12, alignItems: 'start' } },
           e('div', { style: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 } },
             e('div', { style: { fontSize: 11, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 8 } }, 'Write Note'),
-            e('textarea', { value: noteBody, onChange: ev => setNoteBody(ev.target.value), placeholder: 'Add internal note, follow-up, or billing note...', style: { minHeight: 104, marginBottom: 10 } }),
-            e('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
-              e('select', { value: noteCategory, onChange: ev => setNoteCategory(ev.target.value), style: { minWidth: 140, width: 'auto' } },
-                e('option', { value: 'internal' }, 'Internal'),
-                e('option', { value: 'follow_up' }, 'Follow-up'),
-                e('option', { value: 'billing' }, 'Billing')
-              ),
-              e('label', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 } }, e('input', { type: 'checkbox', checked: noteRecurring, onChange: ev => setNoteRecurring(ev.target.checked), style: { width: 'auto' } }), 'Recurring'),
-              noteRecurring && e('input', { type: 'datetime-local', value: noteDueAt, onChange: ev => setNoteDueAt(ev.target.value), style: { width: 'auto' } }),
+            e('textarea', { value: noteBody, onChange: ev => setNoteBody(ev.target.value), placeholder: 'Add a note...', style: { minHeight: 104, marginBottom: 10 } }),
+            e('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' } },
               e('button', { className: 'btn-sm green', onClick: addNote }, 'Save Note')
             )
           ),
@@ -871,8 +866,11 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
                   (d.notes || []).map(note =>
                     e('div', { key: note.id, style: { padding: '8px 0', borderBottom: '1px solid var(--border)' } },
                       e('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 8 } },
-                        e('strong', { style: { fontSize: 12 } }, note.category.replace('_', ' ')),
-                        e('button', { className: 'btn-sm', style: { padding: '2px 8px', fontSize: 10 }, onClick: () => toggleNoteDone(note) }, note.is_done ? 'Reopen' : 'Done')
+                        e('strong', { style: { fontSize: 12 } }, 'Note'),
+                        e('div', { style: { display: 'flex', gap: 6, flexShrink: 0 } },
+                          e('button', { className: 'btn-sm', style: { padding: '2px 8px', fontSize: 10 }, onClick: () => toggleNoteDone(note) }, note.is_done ? 'Reopen' : 'Done'),
+                          e('button', { className: 'btn-sm', style: { padding: '2px 8px', fontSize: 10 }, onClick: () => deleteNote(note) }, 'Delete')
+                        )
                       ),
                       e('div', { style: { fontSize: 12, color: 'var(--text2)', marginTop: 4, lineHeight: 1.5 } }, note.body),
                       note.next_due_at && e('div', { style: { fontSize: 11, color: 'var(--blue)', marginTop: 4 } }, 'Due ' + fmtDate(note.next_due_at))
