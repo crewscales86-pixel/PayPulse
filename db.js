@@ -70,6 +70,7 @@ async function initSchema() {
         total_triggers INTEGER DEFAULT 0,
         credit_balance REAL DEFAULT 0,
         ghl_location_id TEXT DEFAULT '',
+        ghl_contact_id TEXT DEFAULT '',
         contact_created_at TIMESTAMPTZ DEFAULT NOW(),
         last_contacted_at TIMESTAMPTZ NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
@@ -78,6 +79,7 @@ async function initSchema() {
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
         customer_id TEXT NOT NULL,
+        appointment_id TEXT DEFAULT '',
         customer_name TEXT DEFAULT '',
         customer_email TEXT DEFAULT '',
         amount REAL NOT NULL,
@@ -105,6 +107,8 @@ async function initSchema() {
         date TEXT DEFAULT '',
         time TEXT DEFAULT '',
         note TEXT DEFAULT '',
+        charge_id TEXT DEFAULT '',
+        source_webhook_event_id TEXT DEFAULT '',
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
       CREATE TABLE IF NOT EXISTS notifications (
@@ -207,6 +211,20 @@ async function initSchema() {
       );
       CREATE UNIQUE INDEX IF NOT EXISTS webhook_events_event_key_idx
         ON webhook_events (user_id, source, event_key);
+      CREATE INDEX IF NOT EXISTS customers_user_email_idx
+        ON customers (user_id, email);
+      CREATE INDEX IF NOT EXISTS customers_user_location_idx
+        ON customers (user_id, ghl_location_id);
+      CREATE INDEX IF NOT EXISTS customers_user_status_idx
+        ON customers (user_id, status);
+      CREATE INDEX IF NOT EXISTS charges_user_customer_idx
+        ON charges (user_id, customer_id);
+      CREATE INDEX IF NOT EXISTS charges_user_status_idx
+        ON charges (user_id, status);
+      CREATE INDEX IF NOT EXISTS appointments_user_customer_idx
+        ON appointments (user_id, customer_id);
+      CREATE INDEX IF NOT EXISTS appointments_user_status_idx
+        ON appointments (user_id, status);
     `);
   } else {
     sqliteDb.exec(`
@@ -239,12 +257,14 @@ async function initSchema() {
         total_charged REAL DEFAULT 0, total_triggers INTEGER DEFAULT 0,
         credit_balance REAL DEFAULT 0,
         ghl_location_id TEXT DEFAULT '',
+        ghl_contact_id TEXT DEFAULT '',
         contact_created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         last_contacted_at TIMESTAMP NULL,
         created_at TEXT DEFAULT (datetime('now'))
       );
       CREATE TABLE IF NOT EXISTS charges (
         id TEXT PRIMARY KEY, user_id TEXT NOT NULL, customer_id TEXT NOT NULL,
+        appointment_id TEXT DEFAULT '',
         customer_name TEXT DEFAULT '', customer_email TEXT DEFAULT '',
         amount REAL NOT NULL, processor TEXT DEFAULT 'stripe',
         status TEXT DEFAULT 'pending', stripe_charge_id TEXT DEFAULT '',
@@ -259,7 +279,8 @@ async function initSchema() {
       CREATE TABLE IF NOT EXISTS appointments (
         id TEXT PRIMARY KEY, user_id TEXT NOT NULL, customer_id TEXT NOT NULL,
         status TEXT DEFAULT 'pending', date TEXT DEFAULT '', time TEXT DEFAULT '',
-        note TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now'))
+        note TEXT DEFAULT '', charge_id TEXT DEFAULT '',
+        source_webhook_event_id TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now'))
       );
       CREATE TABLE IF NOT EXISTS notifications (
         id TEXT PRIMARY KEY, user_id TEXT NOT NULL, type TEXT NOT NULL,
@@ -290,6 +311,20 @@ async function initSchema() {
       );
       CREATE UNIQUE INDEX IF NOT EXISTS webhook_events_event_key_idx
         ON webhook_events (user_id, source, event_key);
+      CREATE INDEX IF NOT EXISTS customers_user_email_idx
+        ON customers (user_id, email);
+      CREATE INDEX IF NOT EXISTS customers_user_location_idx
+        ON customers (user_id, ghl_location_id);
+      CREATE INDEX IF NOT EXISTS customers_user_status_idx
+        ON customers (user_id, status);
+      CREATE INDEX IF NOT EXISTS charges_user_customer_idx
+        ON charges (user_id, customer_id);
+      CREATE INDEX IF NOT EXISTS charges_user_status_idx
+        ON charges (user_id, status);
+      CREATE INDEX IF NOT EXISTS appointments_user_customer_idx
+        ON appointments (user_id, customer_id);
+      CREATE INDEX IF NOT EXISTS appointments_user_status_idx
+        ON appointments (user_id, status);
       CREATE TABLE IF NOT EXISTS customer_notes (
         id TEXT PRIMARY KEY, user_id TEXT NOT NULL, customer_id TEXT NOT NULL,
         body TEXT NOT NULL, category TEXT DEFAULT 'internal', recurring INTEGER DEFAULT 0,
@@ -315,11 +350,13 @@ async function initSchema() {
         status TEXT DEFAULT 'prepared', metadata TEXT DEFAULT '',
         created_at TEXT DEFAULT (datetime('now'))
       );
+      CREATE INDEX IF NOT EXISTS notes_user_customer_idx
+        ON customer_notes (user_id, customer_id);
     `);
   }
 
-  // Migrations: add contact_created_at, last_contacted_at to customers
-  const customerCols = ['contact_created_at', 'last_contacted_at'];
+  // Migrations: add customer/appointment linkage columns and timestamps
+  const customerCols = ['contact_created_at', 'last_contacted_at', 'ghl_contact_id'];
   for (const col of customerCols) {
     try {
       if (USE_PG) {
@@ -333,6 +370,48 @@ async function initSchema() {
     } catch (e) {
       // ignore migration errors (column already exists etc.)
     }
+  }
+  const chargeCols = ['appointment_id'];
+  for (const col of chargeCols) {
+    try {
+      if (USE_PG) {
+        await pgPool.query(`ALTER TABLE charges ADD COLUMN IF NOT EXISTS ${col} TEXT DEFAULT ''`);
+      } else {
+        const cols = sqliteDb.prepare("PRAGMA table_info(charges)").all();
+        if (!cols.find(c => c.name === col)) {
+          sqliteDb.exec(`ALTER TABLE charges ADD COLUMN ${col} TEXT DEFAULT ''`);
+        }
+      }
+    } catch (e) {
+      // ignore migration errors
+    }
+  }
+  const appointmentCols = ['charge_id', 'source_webhook_event_id'];
+  for (const col of appointmentCols) {
+    try {
+      if (USE_PG) {
+        await pgPool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS ${col} TEXT DEFAULT ''`);
+      } else {
+        const cols = sqliteDb.prepare("PRAGMA table_info(appointments)").all();
+        if (!cols.find(c => c.name === col)) {
+          sqliteDb.exec(`ALTER TABLE appointments ADD COLUMN ${col} TEXT DEFAULT ''`);
+        }
+      }
+    } catch (e) {
+      // ignore migration errors
+    }
+  }
+  if (!USE_PG) {
+    sqliteDb.exec(`CREATE INDEX IF NOT EXISTS customers_user_email_idx ON customers (user_id, email)`);
+    sqliteDb.exec(`CREATE INDEX IF NOT EXISTS customers_user_location_idx ON customers (user_id, ghl_location_id)`);
+    sqliteDb.exec(`CREATE INDEX IF NOT EXISTS customers_user_status_idx ON customers (user_id, status)`);
+    sqliteDb.exec(`CREATE INDEX IF NOT EXISTS charges_user_customer_idx ON charges (user_id, customer_id)`);
+    sqliteDb.exec(`CREATE INDEX IF NOT EXISTS charges_user_status_idx ON charges (user_id, status)`);
+    sqliteDb.exec(`CREATE INDEX IF NOT EXISTS appointments_user_customer_idx ON appointments (user_id, customer_id)`);
+    sqliteDb.exec(`CREATE INDEX IF NOT EXISTS appointments_user_status_idx ON appointments (user_id, status)`);
+    sqliteDb.exec(`CREATE INDEX IF NOT EXISTS notes_user_customer_idx ON customer_notes (user_id, customer_id)`);
+  } else {
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS notes_user_customer_idx ON customer_notes (user_id, customer_id)`);
   }
 
   // Migration: add failed_charge_webhook_url to users
@@ -557,19 +636,19 @@ function createCustomer(data) {
       : (data.stripe_payment_method_id || data.whop_payment_method_id ? 1 : 0);
   if (USE_PG) {
     return pgPool.query(
-      `INSERT INTO customers (id, user_id, name, company_name, email, phone, status, card_on_file, stripe_customer_id, stripe_payment_method_id, whop_member_id, whop_payment_method_id, rate_per_trigger, ghl_location_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      `INSERT INTO customers (id, user_id, name, company_name, email, phone, status, card_on_file, stripe_customer_id, stripe_payment_method_id, whop_member_id, whop_payment_method_id, rate_per_trigger, ghl_location_id, ghl_contact_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [id, data.user_id, data.name, data.company_name || '', email, data.phone || '', data.status || 'new',
        cardOnFile, data.stripe_customer_id || '', data.stripe_payment_method_id || '',
-       data.whop_member_id || '', data.whop_payment_method_id || '', ratePerTrigger, data.ghl_location_id || '']
+       data.whop_member_id || '', data.whop_payment_method_id || '', ratePerTrigger, data.ghl_location_id || '', data.ghl_contact_id || '']
     ).then(() => getCustomerById(id));
   }
   sqliteDb.prepare(
-    `INSERT INTO customers (id, user_id, name, company_name, email, phone, status, card_on_file, stripe_customer_id, stripe_payment_method_id, whop_member_id, whop_payment_method_id, rate_per_trigger, ghl_location_id)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO customers (id, user_id, name, company_name, email, phone, status, card_on_file, stripe_customer_id, stripe_payment_method_id, whop_member_id, whop_payment_method_id, rate_per_trigger, ghl_location_id, ghl_contact_id)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(id, data.user_id, data.name, data.company_name || '', email, data.phone || '', data.status || 'new',
     cardOnFile, data.stripe_customer_id || '', data.stripe_payment_method_id || '',
-    data.whop_member_id || '', data.whop_payment_method_id || '', ratePerTrigger, data.ghl_location_id || '');
+    data.whop_member_id || '', data.whop_payment_method_id || '', ratePerTrigger, data.ghl_location_id || '', data.ghl_contact_id || '');
   return getCustomerById(id);
 }
 
@@ -579,6 +658,18 @@ function getCustomerByEmailAndUser(email, userId) {
   return get('SELECT * FROM customers WHERE LOWER(email) = LOWER(?) AND user_id = ?', [email, userId]);
 }
 function getCustomerByLocationId(locationId, userId) { return get('SELECT * FROM customers WHERE ghl_location_id = ? AND user_id = ?', [locationId, userId]); }
+function getCustomerByContactId(contactId, userId) { return get('SELECT * FROM customers WHERE ghl_contact_id = ? AND user_id = ?', [contactId, userId]); }
+function getCustomerByPhoneAndUser(phone, userId) {
+  const value = String(phone || '').trim();
+  if (!value) return null;
+  const normalized = value.replace(/[^0-9+]/g, '');
+  return get(
+    `SELECT * FROM customers
+     WHERE REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '(', ''), ')', '') LIKE ?
+     AND user_id = ?`,
+    [`%${normalized}%`, userId]
+  );
+}
 
 function updateCustomer(id, updates) {
   const keys = Object.keys(updates);
@@ -597,17 +688,17 @@ function createCharge(data) {
   const id = uuid();
   if (USE_PG) {
     return pgPool.query(
-      `INSERT INTO charges (id, user_id, customer_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, failure_reason, note, utm_source, utm_medium, utm_campaign, gclid)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-      [id, data.user_id, data.customer_id, data.customer_name, data.customer_email, data.amount,
+      `INSERT INTO charges (id, user_id, customer_id, appointment_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, failure_reason, note, utm_source, utm_medium, utm_campaign, gclid)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+      [id, data.user_id, data.customer_id, data.appointment_id || '', data.customer_name, data.customer_email, data.amount,
        data.processor, data.status, data.stripe_charge_id || '', data.failure_reason || '', data.note || '',
        data.utm_source || '', data.utm_medium || '', data.utm_campaign || '', data.gclid || '']
     ).then(() => getChargeById(id));
   }
   sqliteDb.prepare(
-    `INSERT INTO charges (id, user_id, customer_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, failure_reason, note, utm_source, utm_medium, utm_campaign, gclid)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-  ).run(id, data.user_id, data.customer_id, data.customer_name, data.customer_email, data.amount,
+    `INSERT INTO charges (id, user_id, customer_id, appointment_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, failure_reason, note, utm_source, utm_medium, utm_campaign, gclid)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+  ).run(id, data.user_id, data.customer_id, data.appointment_id || '', data.customer_name, data.customer_email, data.amount,
     data.processor, data.status, data.stripe_charge_id || '', data.failure_reason || '', data.note || '',
     data.utm_source || '', data.utm_medium || '', data.utm_campaign || '', data.gclid || '');
   return getChargeById(id);
@@ -633,13 +724,15 @@ function createAppointment(data) {
   const id = uuid();
   if (USE_PG) {
     return pgPool.query(
-      `INSERT INTO appointments (id, user_id, customer_id, status, date, time, note) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [id, data.user_id, data.customer_id, data.status || 'pending', data.date || '', data.time || '', data.note || '']
+      `INSERT INTO appointments (id, user_id, customer_id, status, date, time, note, charge_id, source_webhook_event_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [id, data.user_id, data.customer_id, data.status || 'pending', data.date || '', data.time || '', data.note || '', data.charge_id || '', data.source_webhook_event_id || '']
     ).then(() => getAppointmentById(id));
   }
   sqliteDb.prepare(
-    `INSERT INTO appointments (id, user_id, customer_id, status, date, time, note) VALUES (?,?,?,?,?,?,?)`
-  ).run(id, data.user_id, data.customer_id, data.status || 'pending', data.date || '', data.time || '', data.note || '');
+    `INSERT INTO appointments (id, user_id, customer_id, status, date, time, note, charge_id, source_webhook_event_id)
+     VALUES (?,?,?,?,?,?,?,?,?)`
+  ).run(id, data.user_id, data.customer_id, data.status || 'pending', data.date || '', data.time || '', data.note || '', data.charge_id || '', data.source_webhook_event_id || '');
   return getAppointmentById(id);
 }
 
@@ -1066,7 +1159,7 @@ module.exports = {
   initSchema,
   all, run, get,
   createUser, getUserByEmail, getUserById, getUserByGhlSecret, getUserByWhopSecret, updateUser, listUsers,
-  createCustomer, getCustomerById, getCustomersByUser, getCustomerByEmailAndUser, getCustomerByLocationId, updateCustomer,
+  createCustomer, getCustomerById, getCustomersByUser, getCustomerByEmailAndUser, getCustomerByLocationId, getCustomerByContactId, getCustomerByPhoneAndUser, updateCustomer,
   createCharge, getChargeById, getChargesByUser, updateCharge,
   createAppointment, getAppointmentById, getAppointmentsByUser, updateAppointment,
   addNotification, getNotificationsByUser, markAllRead, deleteNotification, getUnreadCount,

@@ -560,6 +560,15 @@ app.post('/webhook/ghl/:secret', async (req, res) => {
       return res.status(400).json({ error: 'Invalid payload' });
     }
     const ghlLocationId = payload.location_id || payload.locationId || '';
+    const ghlContactId = payload.contact_id || payload.contactId || payload.contact?.id || '';
+    const phone = payload.phone || payload.contact_phone || payload.contact?.phone || '';
+    const isAppointmentEvent = !!(
+      payload.appointment_date ||
+      payload.appointment_time ||
+      payload.appointment_id ||
+      payload.appointmentId ||
+      String(payload.type || '').toLowerCase().includes('appointment')
+    );
     const eventKey =
       req.headers['x-idempotency-key'] ||
       payload.event_id ||
@@ -584,6 +593,12 @@ app.post('/webhook/ghl/:secret', async (req, res) => {
     if (!customer) {
       customer = await db.getCustomerByEmailAndUser((payload.email || '').toLowerCase(), user.id);
     }
+    if (!customer && ghlContactId) {
+      customer = await db.getCustomerByContactId(ghlContactId, user.id);
+    }
+    if (!customer && phone) {
+      customer = await db.getCustomerByPhoneAndUser(phone, user.id);
+    }
     if (!customer) {
       customer = await db.createCustomer({
         user_id: user.id,
@@ -600,7 +615,8 @@ app.post('/webhook/ghl/:secret', async (req, res) => {
         card_on_file: !!(
           payload.whop_payment_method_id || payload.stripe_payment_method_id
         ),
-        ghl_location_id: ghlLocationId
+        ghl_location_id: ghlLocationId,
+        ghl_contact_id: ghlContactId
       });
       await audit('customer.auto_created_from_ghl', {
         actor: user,
@@ -623,12 +639,28 @@ app.post('/webhook/ghl/:secret', async (req, res) => {
       await db.updateCustomer(customer.id, {
         card_on_file: 1,
         whop_member_id: payload.whop_member_id || '',
-        stripe_payment_method_id: payload.stripe_payment_method_id || ''
+        stripe_payment_method_id: payload.stripe_payment_method_id || '',
+        ghl_contact_id: ghlContactId || customer.ghl_contact_id || ''
       });
+      customer = await db.getCustomerById(customer.id);
+    }
+    if (ghlContactId && !customer.ghl_contact_id) {
+      await db.updateCustomer(customer.id, { ghl_contact_id: ghlContactId });
       customer = await db.getCustomerById(customer.id);
     }
 
     await db.updateWebhookEvent(webhookStart.event.id, { customer_id: customer.id });
+    const appointmentData = isAppointmentEvent
+      ? await db.createAppointment({
+          user_id: user.id,
+          customer_id: customer.id,
+          status: 'booked',
+          date: payload.appointment_date || '',
+          time: payload.appointment_time || '',
+          note: payload.note || '',
+          source_webhook_event_id: webhookStart.event.id
+        })
+      : null;
     await db.addNotification({
       user_id: user.id,
       type: 'trigger',
@@ -638,15 +670,30 @@ app.post('/webhook/ghl/:secret', async (req, res) => {
       }`
     });
 
-    if (user.appointment_tracking_mode) {
-      const appt = await db.createAppointment({
+    if (user.appointment_tracking_mode && isAppointmentEvent) {
+      await db.addNotification({
         user_id: user.id,
-        customer_id: customer.id,
-        status: 'booked',
-        date: payload.appointment_date || '',
-        time: payload.appointment_time || '',
-        note: payload.note || ''
+        type: 'success',
+        title: `Appointment booked — ${customer.name}`,
+        body: `Appointment created for ${customer.name}. Charge will happen when the appointment is marked Showed.`
       });
+      await markWebhookEvent(webhookStart.event.id, 'succeeded', {
+        appointmentId: appointmentData.id,
+        chargeId: null,
+        chargeStatus: 'pending'
+      });
+      return res.json({
+        success: true,
+        mode: 'appointment_tracking',
+        appointmentId: appointmentData.id,
+        chargeId: null,
+        chargeStatus: 'pending',
+        customerId: customer.id,
+        locationId: ghlLocationId
+      });
+    }
+
+    if (appointmentData) {
       const charge = await processCharge(
         user,
         customer,
@@ -656,17 +703,18 @@ app.post('/webhook/ghl/:secret', async (req, res) => {
           utm_medium: payload.utm_medium,
           utm_campaign: payload.utm_campaign,
           gclid: payload.gclid
-        }
+        },
+        { appointmentId: appointmentData.id }
       );
       await markWebhookEvent(webhookStart.event.id, 'succeeded', {
-        appointmentId: appt.id,
+        appointmentId: appointmentData.id,
         chargeId: charge.id,
         chargeStatus: charge.status
       });
       return res.json({
         success: true,
-        mode: 'appointment_tracking',
-        appointmentId: appt.id,
+        mode: 'appointment_linked_charge',
+        appointmentId: appointmentData.id,
         chargeId: charge.id,
         chargeStatus: charge.status,
         customerId: customer.id,
@@ -715,6 +763,15 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
     if (!payload || typeof payload !== 'object') {
       return res.status(400).json({ error: 'Invalid payload' });
     }
+    const ghlContactId = payload.contact_id || payload.contactId || payload.contact?.id || '';
+    const phone = payload.phone || payload.contact_phone || payload.contact?.phone || '';
+    const isAppointmentEvent = !!(
+      payload.appointment_date ||
+      payload.appointment_time ||
+      payload.appointment_id ||
+      payload.appointmentId ||
+      String(payload.type || '').toLowerCase().includes('appointment')
+    );
     const eventKey =
       req.headers['x-idempotency-key'] ||
       payload.event_id ||
@@ -732,6 +789,12 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
       return res.json({ success: true, duplicate: true, eventId: webhookStart.event.id });
     }
     let customer = await db.getCustomerByLocationId(locationId, user.id);
+    if (!customer && ghlContactId) {
+      customer = await db.getCustomerByContactId(ghlContactId, user.id);
+    }
+    if (!customer && phone) {
+      customer = await db.getCustomerByPhoneAndUser(phone, user.id);
+    }
 
     if (!customer) {
       customer = await db.createCustomer({
@@ -754,7 +817,8 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
         card_on_file: !!(
           payload.whop_payment_method_id || payload.stripe_payment_method_id
         ),
-        ghl_location_id: locationId
+        ghl_location_id: locationId,
+        ghl_contact_id: ghlContactId
       });
       await audit('customer.auto_created_from_ghl', {
         actor: user,
@@ -785,16 +849,32 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
     ) {
       await db.updateCustomer(customer.id, { name: payload.full_name });
     }
+    if (ghlContactId && !customer.ghl_contact_id) {
+      await db.updateCustomer(customer.id, { ghl_contact_id: ghlContactId });
+      customer = await db.getCustomerById(customer.id);
+    }
     if (payload.whop_payment_method_id || payload.stripe_payment_method_id) {
       await db.updateCustomer(customer.id, {
         card_on_file: 1,
         whop_member_id: payload.whop_member_id || '',
-        stripe_payment_method_id: payload.stripe_payment_method_id || ''
+        stripe_payment_method_id: payload.stripe_payment_method_id || '',
+        ghl_contact_id: ghlContactId || customer.ghl_contact_id || ''
       });
       customer = await db.getCustomerById(customer.id);
     }
 
     await db.updateWebhookEvent(webhookStart.event.id, { customer_id: customer.id });
+    const appointmentData = isAppointmentEvent
+      ? await db.createAppointment({
+          user_id: user.id,
+          customer_id: customer.id,
+          status: 'booked',
+          date: payload.appointment_date || '',
+          time: payload.appointment_time || '',
+          note: payload.note || '',
+          source_webhook_event_id: webhookStart.event.id
+        })
+      : null;
     await db.addNotification({
       user_id: user.id,
       type: 'trigger',
@@ -802,15 +882,31 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
       body: `GHL Location ${locationId} fired. $${customer.rate_per_trigger} charge ready.`
     });
 
-    if (user.appointment_tracking_mode) {
-      const appt = await db.createAppointment({
+    if (user.appointment_tracking_mode && isAppointmentEvent) {
+      await db.addNotification({
         user_id: user.id,
-        customer_id: customer.id,
-        status: 'booked',
-        date: payload.appointment_date || '',
-        time: payload.appointment_time || '',
-        note: payload.note || ''
+        type: 'success',
+        title: `Appointment booked — ${customer.name}`,
+        body: `Appointment created for ${customer.name}. Charge will happen when the appointment is marked Showed.`
       });
+      await markWebhookEvent(webhookStart.event.id, 'succeeded', {
+        appointmentId: appointmentData.id,
+        chargeId: null,
+        chargeStatus: 'pending'
+      });
+      return res.json({
+        success: true,
+        mode: 'appointment_tracking',
+        appointmentId: appointmentData.id,
+        chargeId: null,
+        chargeStatus: 'pending',
+        customerId: customer.id,
+        locationId,
+        customerName: customer.name
+      });
+    }
+
+    if (appointmentData) {
       const charge = await processCharge(
         user,
         customer,
@@ -820,17 +916,18 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
           utm_medium: payload.utm_medium,
           utm_campaign: payload.utm_campaign,
           gclid: payload.gclid
-        }
+        },
+        { appointmentId: appointmentData.id }
       );
       await markWebhookEvent(webhookStart.event.id, 'succeeded', {
-        appointmentId: appt.id,
+        appointmentId: appointmentData.id,
         chargeId: charge.id,
         chargeStatus: charge.status
       });
       return res.json({
         success: true,
-        mode: 'appointment_tracking',
-        appointmentId: appt.id,
+        mode: 'appointment_linked_charge',
+        appointmentId: appointmentData.id,
         chargeId: charge.id,
         chargeStatus: charge.status,
         customerId: customer.id,
@@ -944,7 +1041,7 @@ async function finalizeFailedCharge({ user, customer, charge, amount, reason, no
 }
 
 // ─── CHARGE PROCESSING ────────────────────────────────────────────
-async function processCharge(user, customer, note = '', utmData = {}) {
+async function processCharge(user, customer, note = '', utmData = {}, opts = {}) {
   const rate = parseFloat(customer.rate_per_trigger) || 0;
   const credit = parseFloat(customer.credit_balance) || 0;
 
@@ -966,6 +1063,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
       addUtm({
         user_id: user.id,
         customer_id: customer.id,
+        appointment_id: opts.appointmentId || '',
         customer_name: customer.name,
         customer_email: customer.email,
         amount: rate,
@@ -992,6 +1090,9 @@ async function processCharge(user, customer, note = '', utmData = {}) {
       target_id: charge.id,
       details: { customer_id: customer.id, amount: rate, remaining_credit: credit - rate }
     });
+    if (opts.appointmentId) {
+      await db.updateAppointment(opts.appointmentId, { charge_id: charge.id });
+    }
     return db.getChargeById(charge.id);
   }
 
@@ -1007,6 +1108,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
     addUtm({
       user_id: user.id,
       customer_id: customer.id,
+      appointment_id: opts.appointmentId || '',
       customer_name: customer.name,
       customer_email: customer.email,
       amount: chargeAmount,
@@ -1022,6 +1124,9 @@ async function processCharge(user, customer, note = '', utmData = {}) {
   // Reset credit balance if partial credit was used
   if (creditUsed > 0) {
     await db.updateCustomer(customer.id, { credit_balance: 0 });
+  }
+  if (opts.appointmentId) {
+    await db.updateAppointment(opts.appointmentId, { charge_id: charge.id });
   }
 
   if (!customer.card_on_file) {
@@ -2200,15 +2305,16 @@ app.patch('/api/appointments/:id', requireAuth, async (req, res) => {
   // When status changes to 'no_show': issue credit
   if (oldStatus !== updated.status && updated.status === 'no_show') {
     const customer = await db.getCustomerById(updated.customer_id);
-    if (customer) {
+    if (customer && !updated.charge_id) {
       const currentCredit = parseFloat(customer.credit_balance) || 0;
       const rate = parseFloat(customer.rate_per_trigger) || 147;
       await db.updateCustomer(customer.id, {
         credit_balance: currentCredit + rate
       });
-      await db.createCharge({
+      const creditCharge = await db.createCharge({
         user_id: user.id,
         customer_id: customer.id,
+        appointment_id: updated.id,
         customer_name: customer.name,
         customer_email: customer.email,
         amount: rate,
@@ -2216,6 +2322,7 @@ app.patch('/api/appointments/:id', requireAuth, async (req, res) => {
         status: 'credited',
         note: 'No-show credit'
       });
+      await db.updateAppointment(updated.id, { charge_id: creditCharge.id });
       await db.addNotification({
         user_id: user.id,
         type: 'success',
@@ -2238,8 +2345,18 @@ app.patch('/api/appointments/:id', requireAuth, async (req, res) => {
   ) {
     const customer = await db.getCustomerById(updated.customer_id);
     if (customer) {
-      // Already charged on booking — no additional charge
-      return res.json({ ...updated, alreadyCharged: true });
+      if (updated.charge_id) {
+        return res.json({ ...updated, alreadyCharged: true });
+      }
+      const charge = await processCharge(
+        user,
+        customer,
+        `Appointment showed — ${customer.name}`,
+        {},
+        { appointmentId: updated.id }
+      );
+      await db.updateAppointment(updated.id, { charge_id: charge.id });
+      return res.json({ ...updated, chargeId: charge.id, chargeStatus: charge.status });
     }
   }
   res.json(updated);
