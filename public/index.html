@@ -10,7 +10,6 @@
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -248,6 +247,8 @@
   .cust-card:hover { border-color: rgba(42,245,152,0.26); transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0,0,0,0.22); }
   .cust-card.sortable-chosen { border-color: var(--accent); box-shadow: 0 12px 28px rgba(0,200,83,0.15); transform: scale(1.02); }
   .cust-card.sortable-ghost { opacity: 0.4; border-style: dashed; }
+  .cust-card.dragging { opacity: 0.45; transform: scale(0.98); }
+  .customer-wrap.dragging .cust-card { opacity: 0.45; transform: scale(0.98); }
   .cust-card:active { cursor: grabbing; }
   .cust-name { font-weight: 800; font-size: 15px; margin-bottom: 3px; }
   .cust-rate { font-weight: 800; color: var(--blue); font-size: 14px; margin-bottom: 4px; }
@@ -950,6 +951,8 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
   const [detailModal, setDetailModal] = useState(null);
   const [note, setNote] = useState('');
   const [syncModal, setSyncModal] = useState(false);
+  const [draggingCustomerId, setDraggingCustomerId] = useState(null);
+  const [dragOverStatus, setDragOverStatus] = useState(null);
 
   const processors = { all: 'All', whop: 'Whop', stripe: 'Stripe' };
 
@@ -965,41 +968,22 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
     byStatus[s].push(c);
   });
 
-  // Drag-and-drop kanban (init once on mount, no refresh to prevent DOM clash)
   const colKeys = ['new', 'active', 'at_risk', 'paused'];
-  const sortableRef = useRef(null);
-  useEffect(() => {
-    if (typeof Sortable === 'undefined') return; // CDN not loaded — skip drag
-    const sortables = [];
-    colKeys.forEach(key => {
-      const el = document.getElementById('kanban-' + key);
-      if (!el) return;
-      const s = new Sortable(el, {
-        group: 'kanban',
-        animation: 200,
-        ghostClass: 'sortable-ghost',
-        onEnd: async function(evt) {
-          try {
-            var colEl = evt?.to?.closest?.('.kanban-col');
-            var newStatus = colEl?.dataset?.status || 'new';
-            if (!colKeys.includes(newStatus)) newStatus = 'new';
-            var cid = evt?.item?.getAttribute?.('data-customer-id');
-            if (!cid) return;
-            await api('/api/customers/' + cid, {
-              method: 'PATCH',
-              body: JSON.stringify({ status: newStatus })
-            });
-            await onRefresh();
-          } catch (err) {
-            showToast('Update failed: ' + (err.message || 'Unknown error'), 'error');
-          }
-        }
+
+  const updateCustomerStatus = async (customerId, newStatus) => {
+    const cust = customers.find(c => c.id === customerId);
+    if (!cust || cust.status === newStatus) return;
+    try {
+      await api('/api/customers/' + customerId, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: newStatus })
       });
-      sortables.push(s);
-    });
-    sortableRef.current = sortables;
-    return () => sortables.forEach(s => s.destroy());
-  }, [customers.length]);
+      showToast(`${cust.name} moved to ${newStatus.replace('_', ' ')}`, 'success');
+      await onRefresh();
+    } catch (err) {
+      showToast('Update failed: ' + (err.message || 'Unknown error'), 'error');
+    }
+  };
 
   const doCharge = async () => {
     setChargeModal({ ...chargeModal, loading: true });
@@ -1080,7 +1064,22 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
     ),
     e('div', { className: 'kanban' },
       colConfig.map(col =>
-        e('div', { key: col.key, className: 'kanban-col', 'data-status': col.key },
+        e('div', {
+          key: col.key,
+          className: 'kanban-col' + (dragOverStatus === col.key ? ' drag-over' : ''),
+          'data-status': col.key,
+          onDragOver: ev => { ev.preventDefault(); setDragOverStatus(col.key); },
+          onDragLeave: ev => {
+            if (ev.currentTarget.contains(ev.relatedTarget)) return;
+            setDragOverStatus(null);
+          },
+          onDrop: async ev => {
+            ev.preventDefault();
+            setDragOverStatus(null);
+            const customerId = ev.dataTransfer.getData('text/plain');
+            if (customerId) await updateCustomerStatus(customerId, col.key);
+          }
+        },
           e('div', { className: 'kanban-col-header' },
             e('span', { className: 'dot', style: { background: col.color } }),
             col.label,
@@ -1088,7 +1087,21 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
           ),
           e('div', { id: 'kanban-' + col.key, className: 'kanban-sortable' },
             byStatus[col.key].map(c =>
-              e('div', { key: c.id, 'data-customer-id': c.id },
+              e('div', {
+                key: c.id,
+                'data-customer-id': c.id,
+                className: 'customer-wrap' + (draggingCustomerId === c.id ? ' dragging' : ''),
+                draggable: true,
+                onDragStart: ev => {
+                  ev.dataTransfer.setData('text/plain', c.id);
+                  ev.dataTransfer.effectAllowed = 'move';
+                  setDraggingCustomerId(c.id);
+                },
+                onDragEnd: () => {
+                  setDraggingCustomerId(null);
+                  setDragOverStatus(null);
+                }
+              },
                 e(CustomerCard, {
                   customer: c,
                   onCharge: setChargeModal,
