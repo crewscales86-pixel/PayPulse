@@ -1257,7 +1257,8 @@ function SyncFromStripeModal({ onClose, onImported, showToast }) {
     try {
       const res = await api('/api/customers/import-stripe', { method: 'POST', body: JSON.stringify({ customerIds: ids }) });
       showToast(`✓ ${res.imported} imported · ${res.skipped} skipped`, 'success');
-      onImported(); onClose();
+      await onImported();
+      onClose();
     } catch (err) { showToast(err.message, 'error'); }
     setImporting(false);
   };
