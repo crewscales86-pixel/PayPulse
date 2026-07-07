@@ -952,15 +952,21 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
         group: 'kanban',
         animation: 200,
         ghostClass: 'sortable-ghost',
-        onEnd: function(evt) {
-          var colEl = evt.to.closest('.kanban-col');
-          var colIdx = Array.prototype.indexOf.call(colEl.parentNode.children, colEl);
-          var newStatus = colKeys[colIdx];
-          var cid = evt.item.getAttribute('data-customer-id');
-          if (!cid) return;
-          api('/api/customers/' + cid, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) })
-            .then(function() { onRefresh(); })
-            .catch(function(err) { showToast('Update failed: ' + err.message, 'error'); });
+        onEnd: async function(evt) {
+          try {
+            var colEl = evt?.to?.closest?.('.kanban-col');
+            var newStatus = colEl?.dataset?.status || 'new';
+            if (!colKeys.includes(newStatus)) newStatus = 'new';
+            var cid = evt?.item?.getAttribute?.('data-customer-id');
+            if (!cid) return;
+            await api('/api/customers/' + cid, {
+              method: 'PATCH',
+              body: JSON.stringify({ status: newStatus })
+            });
+            await onRefresh();
+          } catch (err) {
+            showToast('Update failed: ' + (err.message || 'Unknown error'), 'error');
+          }
         }
       });
       sortables.push(s);
@@ -1048,7 +1054,7 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
     ),
     e('div', { className: 'kanban' },
       colConfig.map(col =>
-        e('div', { key: col.key, className: 'kanban-col' },
+        e('div', { key: col.key, className: 'kanban-col', 'data-status': col.key },
           e('div', { className: 'kanban-col-header' },
             e('span', { className: 'dot', style: { background: col.color } }),
             col.label,
