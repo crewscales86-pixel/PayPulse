@@ -44,6 +44,7 @@ const EMAIL_FROM = process.env.EMAIL_FROM || process.env.SMTP_FROM || SUPPORT_EM
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const SENTRY_DSN = process.env.SENTRY_DSN || '';
 const SENTRY_ENVIRONMENT = process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development';
+const PROCESS_ROLE = String(process.env.PAYPULSE_PROCESS_ROLE || 'web').toLowerCase();
 
 const app = express();
 app.set('trust proxy', 1);
@@ -1562,6 +1563,7 @@ async function retryFailedCharge(user, oldCharge, actor = user) {
 const backgroundWorkerId = `paypulse-${process.pid}-${uuidv4().slice(0, 8)}`;
 let backgroundJobTimer = null;
 let backgroundJobRun = null;
+let backupTimer = null;
 
 async function processBackgroundJob(job) {
   const claimedJob = await db.claimBackgroundJob(job.id, backgroundWorkerId);
@@ -1645,6 +1647,30 @@ function startBackgroundJobs(options = {}) {
     backgroundJobTimer.unref();
   }
   runCycle();
+}
+
+function startBackupScheduler() {
+  if (backupTimer) return;
+  const BACKUP_ENABLED =
+    String(process.env.BACKUP_ENABLED || 'true').toLowerCase() !== 'false';
+  if (!BACKUP_ENABLED) return;
+  const BACKUP_INTERVAL_HOURS = Math.max(
+    parseInt(process.env.BACKUP_INTERVAL_HOURS || '24', 10) || 24,
+    1
+  );
+  const { createBackupSnapshot } = require('./backup');
+  const runBackup = async () => {
+    try {
+      const result = await createBackupSnapshot();
+      if (!result.skipped) {
+        console.log(`Backup created: ${result.filePath}`);
+      }
+    } catch (err) {
+      console.error('Backup scheduler error:', err.message);
+    }
+  };
+  backupTimer = setInterval(runBackup, BACKUP_INTERVAL_HOURS * 60 * 60 * 1000);
+  runBackup();
 }
 
 // ─── WHOP WEBHOOK ─────────────────────────────────────────────
@@ -3536,16 +3562,32 @@ async function startServer() {
   });
 }
 
+async function startWorkerProcess() {
+  await bootstrap().catch(err => {
+    captureError(err, { message: 'DB init error during worker start' });
+    process.exit(1);
+  });
+  startBackgroundJobs({ keepAlive: true });
+  startBackupScheduler();
+  console.log(`PayPulse worker running with poll interval ${BACKGROUND_JOB_POLL_MS}ms`);
+}
+
 module.exports = {
   app,
   bootstrap,
   startBackgroundJobs,
+  startBackupScheduler,
   processDueBackgroundJobs,
   retryFailedCharge,
   processCharge,
-  startServer
+  startServer,
+  startWorkerProcess
 };
 
 if (require.main === module) {
-  startServer();
+  if (PROCESS_ROLE === 'worker') {
+    startWorkerProcess();
+  } else {
+    startServer();
+  }
 }
