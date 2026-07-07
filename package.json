@@ -7,8 +7,9 @@
     "start": "node server.js",
     "worker": "node worker.js",
     "backup": "node backup.js",
+    "bug-bash": "node scripts/bug-bash.js",
     "dev": "node server.js",
-    "check": "node -c server.js && node -c db.js && node -c worker.js && node -c backup.js"
+    "check": "node -c server.js && node -c db.js && node -c worker.js && node -c backup.js && node -c scripts/bug-bash.js"
   },
   "dependencies": {
     "@sentry/node": "^10.11.0",

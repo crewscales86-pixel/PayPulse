@@ -1,0 +1,16 @@
+name: Uptime Check
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ready:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check PayPulse readiness
+        run: |
+          curl --fail --silent --show-error --max-time 20 \
+            https://paypulse-production-15d7.up.railway.app/api/ready
