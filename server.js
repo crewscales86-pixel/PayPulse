@@ -39,7 +39,7 @@ const BACKGROUND_JOB_BATCH_SIZE = Math.max(
 );
 const REQUIRE_POSTGRES_IN_PROD =
   String(process.env.REQUIRE_POSTGRES_IN_PROD || 'true').toLowerCase() !== 'false';
-const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || process.env.SMTP_FROM || '';
+const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || process.env.ADMIN_EMAIL || process.env.SMTP_FROM || 'paypulsesupport@proton.me';
 const EMAIL_FROM = process.env.EMAIL_FROM || process.env.SMTP_FROM || SUPPORT_EMAIL || '';
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const SENTRY_DSN = process.env.SENTRY_DSN || '';
@@ -489,13 +489,25 @@ async function buildAlerts(user) {
 }
 
 // ─── AUTH MIDDLEWARE ─────────────────────────────────────────────
-function requireAuth(req, res, next) {
+function pausedAccountMessage(user) {
+  const reason = user?.paused_reason ? ` Reason: ${user.paused_reason}.` : '';
+  return `Account paused.${reason} Contact ${SUPPORT_EMAIL} to restore access.`;
+}
+
+async function requireAuth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'No token' });
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET);
+    const user = await db.getUserById(payload.id);
+    if (!user) return res.status(403).json({ error: 'Invalid token' });
+    if (user.role === 'agency' && !user.active) {
+      return res.status(403).json({ error: pausedAccountMessage(user), paused: true, supportEmail: SUPPORT_EMAIL });
+    }
+    req.user = { ...payload, role: user.role, email: user.email };
     next();
-  } catch {
+  } catch (err) {
+    captureError(err, { message: 'Auth middleware error' });
     return res.status(403).json({ error: 'Invalid token' });
   }
 }
@@ -554,6 +566,9 @@ app.post('/api/auth/login', async (req, res) => {
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
     if (!user.approved && user.role !== 'admin') return res.status(403).json({ error: 'Account pending approval. Contact your admin.' });
+    if (user.role === 'agency' && !user.active) {
+      return res.status(403).json({ error: pausedAccountMessage(user), paused: true, supportEmail: SUPPORT_EMAIL });
+    }
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
       JWT_SECRET,
@@ -651,12 +666,16 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
       processor: user.processor,
       plan: user.plan,
       active: user.active,
+      billingStatus: user.billing_status || 'current',
+      pausedReason: user.paused_reason || '',
       appointmentTrackingMode: !!user.appointment_tracking_mode,
       subscription:
         user.role === 'agency'
           ? {
               active: !!user.active,
               plan: user.plan,
+              billingStatus: user.billing_status || 'current',
+              pausedReason: user.paused_reason || '',
               stripeSubscriptionId: user.stripe_subscription_id,
               hasStripe: !!user.stripe_subscription_id
             }
@@ -681,6 +700,127 @@ async function recordWebhookEventStart({ userId, customerId = '', source, eventT
     payload: JSON.stringify(payload || {})
   });
   return { duplicate: false, event };
+}
+
+function stripeObjectId(value) {
+  if (!value) return '';
+  return typeof value === 'string' ? value : value.id || '';
+}
+
+async function notifyAdmins(title, body) {
+  const admins = await db.listUsers('admin');
+  for (const admin of admins) {
+    await db.addNotification({
+      user_id: admin.id,
+      type: 'warn',
+      title,
+      body
+    });
+    await sendDirectEmail(admin.email, title, body);
+  }
+}
+
+async function updateAgencyBillingFromStripe(event) {
+  const obj = event?.data?.object || {};
+  const customerId = stripeObjectId(obj.customer);
+  const subscriptionId =
+    stripeObjectId(obj.subscription) ||
+    stripeObjectId(obj.parent?.subscription_details?.subscription);
+  const agency = await db.getUserByStripeBillingRef({ customerId, subscriptionId });
+  if (!agency) return false;
+
+  const now = new Date().toISOString();
+  const eventType = event.type || '';
+  const subscriptionStatus = obj.status || '';
+  const paymentError =
+    obj.last_payment_error?.message ||
+    obj.last_finalization_error?.message ||
+    (obj.status_transitions?.marked_uncollectible_at ? 'Invoice marked uncollectible' : '');
+
+  if (eventType === 'invoice.payment_failed' || eventType === 'invoice.payment_action_required') {
+    const reason = eventType === 'invoice.payment_action_required'
+      ? 'Payment action required for monthly subscription'
+      : 'Monthly subscription payment failed';
+    await db.updateUser(agency.id, {
+      active: 0,
+      billing_status: 'failed',
+      paused_reason: reason,
+      paused_at: agency.paused_at || now,
+      last_payment_failed_at: now,
+      last_payment_error: paymentError || reason,
+      stripe_customer_id: customerId || agency.stripe_customer_id || '',
+      stripe_subscription_id: subscriptionId || agency.stripe_subscription_id || ''
+    });
+    await notifyAdmins(
+      `Agency paused - ${agency.company_name || agency.name}`,
+      `${agency.email} was paused because the PayPulse monthly subscription payment failed. Contact them or ask them to update payment.`
+    );
+    await sendDirectEmail(
+      agency.email,
+      'PayPulse account paused - payment issue',
+      `Your PayPulse account is paused because your monthly subscription payment did not go through. Contact ${SUPPORT_EMAIL} to restore access.`
+    );
+    await audit('agency.billing_failed_paused', {
+      actor: { id: 'stripe', email: 'stripe-webhook' },
+      target_type: 'agency',
+      target_id: agency.id,
+      details: { event_id: event.id || '', event_type: eventType, customer_id: customerId, subscription_id: subscriptionId }
+    });
+    return true;
+  }
+
+  if (eventType === 'customer.subscription.deleted' || ['past_due', 'unpaid', 'canceled', 'incomplete_expired'].includes(subscriptionStatus)) {
+    const reason = subscriptionStatus === 'canceled' || eventType === 'customer.subscription.deleted'
+      ? 'Monthly subscription canceled'
+      : `Monthly subscription ${subscriptionStatus.replace('_', ' ')}`;
+    await db.updateUser(agency.id, {
+      active: 0,
+      billing_status: subscriptionStatus || 'canceled',
+      paused_reason: reason,
+      paused_at: agency.paused_at || now,
+      last_payment_failed_at: now,
+      last_payment_error: reason,
+      stripe_customer_id: customerId || agency.stripe_customer_id || '',
+      stripe_subscription_id: subscriptionId || agency.stripe_subscription_id || ''
+    });
+    await notifyAdmins(
+      `Agency paused - ${agency.company_name || agency.name}`,
+      `${agency.email} was paused because their subscription status is ${subscriptionStatus || 'deleted'}.`
+    );
+    await audit('agency.subscription_paused', {
+      actor: { id: 'stripe', email: 'stripe-webhook' },
+      target_type: 'agency',
+      target_id: agency.id,
+      details: { event_id: event.id || '', event_type: eventType, status: subscriptionStatus }
+    });
+    return true;
+  }
+
+  if (eventType === 'invoice.payment_succeeded' || eventType === 'invoice.paid' || ['active', 'trialing'].includes(subscriptionStatus)) {
+    await db.updateUser(agency.id, {
+      active: 1,
+      billing_status: 'current',
+      paused_reason: '',
+      paused_at: null,
+      last_payment_succeeded_at: now,
+      last_payment_error: '',
+      stripe_customer_id: customerId || agency.stripe_customer_id || '',
+      stripe_subscription_id: subscriptionId || agency.stripe_subscription_id || ''
+    });
+    await notifyAdmins(
+      `Agency billing current - ${agency.company_name || agency.name}`,
+      `${agency.email} is active again after a successful PayPulse subscription payment.`
+    );
+    await audit('agency.billing_current', {
+      actor: { id: 'stripe', email: 'stripe-webhook' },
+      target_type: 'agency',
+      target_id: agency.id,
+      details: { event_id: event.id || '', event_type: eventType, status: subscriptionStatus }
+    });
+    return true;
+  }
+
+  return false;
 }
 
 async function markWebhookEvent(eventId, status, response = {}, extra = {}) {
@@ -1748,6 +1888,20 @@ app.post('/webhook/stripe/:secret', async (req, res) => {
 
     let eventRecord = null;
     const eventKey = event.id || makeEventKey('stripe', event, event.type || 'event');
+
+    if ([
+      'invoice.payment_failed',
+      'invoice.payment_action_required',
+      'invoice.payment_succeeded',
+      'invoice.paid',
+      'customer.subscription.updated',
+      'customer.subscription.deleted'
+    ].includes(event.type)) {
+      const handledAgencyBilling = await updateAgencyBillingFromStripe(event);
+      if (handledAgencyBilling) {
+        return res.json({ received: true, agencyBilling: true });
+      }
+    }
 
     if (event.type === 'checkout.session.completed') {
       const obj = event.data.object;
@@ -3263,38 +3417,62 @@ app.get('/api/admin/stats', requireAuth, requireAdmin, async (req, res) => {
 
 app.get('/api/admin/agencies', requireAuth, requireAdmin, async (req, res) => {
   const agencies = await db.listUsers('agency');
-  const result = [];
-  for (const u of agencies) {
-    const custs = await db.getCustomersByUser(u.id);
-    const stats = await db.getStats(u.id);
-    result.push({
-      id: u.id,
-      name: u.name,
-      email: u.email,
-      companyName: u.company_name,
-      plan: u.plan,
-      monthlyRate: u.monthly_rate,
-      active: !!u.active,
-      processor: u.processor,
-      stripeCustomerId: u.stripe_customer_id,
-      stripeSubscriptionId: u.stripe_subscription_id,
-      totalCustomers: custs.length,
-      totalCharged: stats.totalCharged
-    });
-  }
+  const result = agencies.map(u => ({
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    companyName: u.company_name,
+    plan: u.plan,
+    monthlyRate: u.monthly_rate,
+    approved: !!u.approved,
+    active: !!u.active,
+    processor: u.processor,
+    billingStatus: u.billing_status || 'current',
+    pausedReason: u.paused_reason || '',
+    pausedAt: u.paused_at || '',
+    lastPaymentFailedAt: u.last_payment_failed_at || '',
+    lastPaymentSucceededAt: u.last_payment_succeeded_at || '',
+    lastPaymentError: u.last_payment_error || '',
+    stripeCustomerId: u.stripe_customer_id,
+    stripeSubscriptionId: u.stripe_subscription_id,
+    accountStatus: !u.approved ? 'pending' : u.active ? 'active' : 'paused'
+  }));
   res.json(result);
 });
 
 app.patch('/api/admin/agencies/:id', requireAuth, requireAdmin, async (req, res) => {
   const updates = {};
+  const now = new Date().toISOString();
   if (req.body.plan !== undefined) updates.plan = req.body.plan;
   if (req.body.monthlyRate !== undefined)
     updates.monthly_rate = req.body.monthlyRate;
-  if (req.body.active !== undefined)
+  if (req.body.active !== undefined) {
     updates.active = req.body.active ? 1 : 0;
+    if (req.body.active) {
+      updates.billing_status = req.body.billingStatus || 'current';
+      updates.paused_reason = '';
+      updates.paused_at = null;
+      updates.last_payment_error = '';
+    } else {
+      updates.billing_status = req.body.billingStatus || 'manual_pause';
+      updates.paused_reason = req.body.pausedReason || 'Manually paused by admin';
+      updates.paused_at = now;
+    }
+  }
+  if (req.body.billingStatus !== undefined)
+    updates.billing_status = req.body.billingStatus;
+  if (req.body.pausedReason !== undefined)
+    updates.paused_reason = req.body.pausedReason;
   if (req.body.processor !== undefined)
     updates.processor = req.body.processor;
   const updated = await db.updateUser(req.params.id, updates);
+  if (updates.active === 0) {
+    await sendDirectEmail(
+      updated.email,
+      'PayPulse account paused',
+      `Your PayPulse account is paused. ${updated.paused_reason || 'Please resolve the account issue.'} Contact ${SUPPORT_EMAIL} to restore access.`
+    );
+  }
   await audit('agency.updated', {
     actor: req.user,
     target_type: 'agency',
@@ -3556,7 +3734,7 @@ async function startServer() {
     console.log(`\n╔═══════════════════════════════════════════════════════╗`);
     console.log(`║  ⚡ PAYPULSE running at http://localhost:${PORT}           ║`);
     console.log(`╠════════════════════════════════════════════════════════╣`);
-    console.log(`║  Admin:       ${adminEmail} / ${adminPass}${jwtSecretSet ? '' : ' ⚠️  DEFAULT JWT SECRET'}   ║`);
+    console.log(`║  Admin:       ${adminEmail} / ${adminPass.replace(/./g, '•')}${jwtSecretSet ? '' : ' ⚠️  DEFAULT JWT SECRET'}   ║`);
     console.log(`║  Background:  ${ENABLE_BACKGROUND_JOBS ? `on (${BACKGROUND_JOB_POLL_MS}ms)` : 'off'}                       ║`);
     console.log(`╚═══════════════════════════════════════════════════════╝\n`);
   });
