@@ -1421,6 +1421,14 @@ function SettingsPage({ settings, onSave, showToast }) {
 // ─── INBOX PAGE ─────────────────────────────────────────────────
 function InboxPage({ notifications, onRefresh, showToast }) {
   const markAll = async () => { try { await api('/api/notifications/read', {method:'POST'}); onRefresh(); } catch (err) { showToast(err.message, 'error'); } };
+  const deleteOne = async (id) => {
+    if (!confirm('Delete this notification?')) return;
+    try {
+      await api('/api/notifications/' + id, { method: 'DELETE' });
+      showToast('Notification deleted', 'success');
+      onRefresh();
+    } catch (err) { showToast(err.message, 'error'); }
+  };
 
   const iconFor = (type) => {
     const style = { width:'36px', height:'36px', borderRadius:'8px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'16px', flexShrink:0 };
@@ -1444,7 +1452,8 @@ function InboxPage({ notifications, onRefresh, showToast }) {
             e('div', { className: 'notif-body' }, n.body),
             e('div', { className: 'notif-time' }, fmtDate(n.created_at))
           ),
-          e('button', { className: 'notif-view', onClick: () => { window.location.hash = 'customers'; } }, 'View')
+          e('button', { className: 'notif-view', onClick: () => { window.location.hash = 'customers'; } }, 'View'),
+          e('button', { className: 'notif-view', style: { background: 'rgba(255,68,68,0.12)', color: 'var(--danger)' }, onClick: () => deleteOne(n.id) }, 'Delete')
         )
       ),
       notifications.length === 0 && e('div', { style: { padding: 40, textAlign:'center', color:'#555' } }, 'No notifications yet')

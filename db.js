@@ -675,6 +675,10 @@ function addNotification(data) {
 
 function getNotificationsByUser(userId) { return all('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC', [userId]); }
 function markAllRead(userId) { return run('UPDATE notifications SET read = 1 WHERE user_id = ?', [userId]); }
+function deleteNotification(id, userId) {
+  if (USE_PG) return pgPool.query('DELETE FROM notifications WHERE id = $1 AND user_id = $2', [id, userId]);
+  return sqliteDb.prepare('DELETE FROM notifications WHERE id = ? AND user_id = ?').run(id, userId);
+}
 function getUnreadCount(userId) {
   if (USE_PG) return pgPool.query('SELECT COUNT(*) as c FROM notifications WHERE user_id = $1 AND read = 0', [userId]).then(r => parseInt(r.rows[0].c));
   return sqliteDb.prepare('SELECT COUNT(*) as c FROM notifications WHERE user_id = ? AND read = 0').get(userId).c;
@@ -1065,7 +1069,7 @@ module.exports = {
   createCustomer, getCustomerById, getCustomersByUser, getCustomerByEmailAndUser, getCustomerByLocationId, updateCustomer,
   createCharge, getChargeById, getChargesByUser, updateCharge,
   createAppointment, getAppointmentById, getAppointmentsByUser, updateAppointment,
-  addNotification, getNotificationsByUser, markAllRead, getUnreadCount,
+  addNotification, getNotificationsByUser, markAllRead, deleteNotification, getUnreadCount,
   createAdMetric, getAdMetricById, getAdMetricsByCustomer, getAdMetricsByUser, deleteAdMetric,
   createAuditLog, getAuditLogsByUser, getAuditLogsByCustomer,
   createWebhookEvent, getWebhookEventById, getWebhookEventByKey, updateWebhookEvent, getWebhookEventsByUser,

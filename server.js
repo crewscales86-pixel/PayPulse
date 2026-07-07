@@ -2256,6 +2256,15 @@ app.post('/api/notifications/read', requireAuth, async (req, res) => {
   }
 });
 
+app.delete('/api/notifications/:id', requireAuth, async (req, res) => {
+  try {
+    await db.deleteNotification(req.params.id, req.user.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/notifications/unread-count', requireAuth, (req, res) => {
   Promise.resolve(db.getUnreadCount(req.user.id))
     .then(count => res.json({ count }))
