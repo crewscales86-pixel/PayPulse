@@ -5,321 +5,65 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PayPulse — Interactive Setup Guide</title>
 <style>
-  :root {
-    --bg: #0a0a0a;
-    --bg2: #131313;
-    --card: #181818;
-    --card2: #1f1f1f;
-    --border: #262626;
-    --border2: #353535;
-    --text: #ffffff;
-    --text2: #b4b4b4;
-    --text3: #6e6e6e;
-    --green: #00c853;
-    --green2: rgba(0,200,83,0.12);
-    --green3: rgba(0,200,83,0.22);
-    --green4: rgba(0,200,83,0.05);
-    --blue: #00b4ff;
-    --blue2: rgba(0,180,255,0.12);
-    --yellow: #ffd700;
-    --yellow2: rgba(255,215,0,0.12);
-    --red: #ff3b3b;
-    --red2: rgba(255,59,59,0.12);
-    --purple: #a855f7;
-    --purple2: rgba(168,85,247,0.12);
-    --orange: #ff6b35;
-    --orange2: rgba(255,107,53,0.12);
-  }
+  :root { --bg: #0a0a0a; --bg2: #131313; --card: #181818; --card2: #1f1f1f; --border: #262626; --border2: #353535; --text: #ffffff; --text2: #b4b4b4; --text3: #6e6e6e; --green: #00c853; --green2: rgba(0,200,83,0.12); --green3: rgba(0,200,83,0.22); --green4: rgba(0,200,83,0.05); --blue: #00b4ff; --blue2: rgba(0,180,255,0.12); --yellow: #ffd700; --yellow2: rgba(255,215,0,0.12); --red: #ff3b3b; --red2: rgba(255,59,59,0.12); --purple: #a855f7; --purple2: rgba(168,85,247,0.12); --orange: #ff6b35; --orange2: rgba(255,107,53,0.12); }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
-  html, body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    min-height: 100vh;
-    overflow-x: hidden;
-  }
-  body {
-    background-image:
-      radial-gradient(circle at 20% 0%, rgba(0,200,83,0.04), transparent 40%),
-      radial-gradient(circle at 80% 100%, rgba(0,180,255,0.03), transparent 40%);
-  }
-
-  /* ── TOP BAR ─────────────────────────────────── */
-  .topbar {
-    position: sticky; top: 0; z-index: 100;
-    background: rgba(10,10,10,0.95);
-    backdrop-filter: blur(20px);
-    border-bottom: 1px solid var(--border);
-    padding: 14px 32px;
-    display: flex; align-items: center; justify-content: space-between;
-  }
-  .logo {
-    display: flex; align-items: center; gap: 10px;
-    font-size: 14px; font-weight: 900; letter-spacing: 0.18em; color: var(--green);
-  }
-  .logo-icon {
-    width: 28px; height: 28px; background: var(--green); border-radius: 7px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 16px; color: #000;
-  }
-  .progress {
-    flex: 1; max-width: 360px; margin: 0 24px;
-    height: 6px; background: var(--border); border-radius: 100px; overflow: hidden;
-  }
+  html, body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 100vh; overflow-x: hidden; }
+  body { background-image: radial-gradient(circle at 20% 0%, rgba(0,200,83,0.04), transparent 40%), radial-gradient(circle at 80% 100%, rgba(0,180,255,0.03), transparent 40%); }
+  .topbar { position: sticky; top: 0; z-index: 100; background: rgba(10,10,10,0.95); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border); padding: 14px 32px; display: flex; align-items: center; justify-content: space-between; }
+  .logo { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 900; letter-spacing: 0.18em; color: var(--green); }
+  .logo-icon { width: 28px; height: 28px; background: var(--green); border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #000; }
+  .progress { flex: 1; max-width: 360px; margin: 0 24px; height: 6px; background: var(--border); border-radius: 100px; overflow: hidden; }
   .progress-bar { height: 100%; background: var(--green); border-radius: 100px; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
   .step-counter { font-size: 11px; color: var(--text3); font-weight: 700; letter-spacing: 0.12em; }
   .step-counter strong { color: var(--text); }
-
-  /* ── STAGE ───────────────────────────────────── */
   .stage { max-width: 1100px; margin: 0 auto; padding: 50px 32px 100px; }
   .scene { display: none; animation: fadeUp 0.5s ease; }
   .scene.active { display: block; }
   @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-
-  /* ── HERO/STORY ──────────────────────────────── */
   .story-num { font-size: 11px; font-weight: 800; letter-spacing: 0.22em; color: var(--green); margin-bottom: 12px; }
   .story-title { font-size: 44px; font-weight: 900; line-height: 1.1; margin-bottom: 18px; }
   .story-subtitle { font-size: 17px; color: var(--text2); line-height: 1.6; margin-bottom: 36px; max-width: 720px; }
-
-  /* ── BUTTONS ─────────────────────────────────── */
   .btn-row { display: flex; gap: 12px; align-items: center; }
-  .btn {
-    padding: 14px 28px; border-radius: 9px; font-size: 13px; font-weight: 800;
-    cursor: pointer; transition: all 0.2s; letter-spacing: 0.08em; text-transform: uppercase;
-    border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 8px;
-  }
+  .btn { padding: 14px 28px; border-radius: 9px; font-size: 13px; font-weight: 800; cursor: pointer; transition: all 0.2s; letter-spacing: 0.08em; text-transform: uppercase; border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 8px; }
   .btn-primary { background: var(--green); color: #000; }
   .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,200,83,0.3); }
   .btn-ghost { background: transparent; color: var(--text2); border: 1px solid var(--border2); }
   .btn-ghost:hover { color: var(--text); border-color: var(--text3); }
-  .btn-disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
-
-  /* ── CARDS / GRIDS ───────────────────────────── */
   .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; margin: 32px 0; }
-  .choice {
-    background: var(--card); border: 2px solid var(--border); border-radius: 14px; padding: 28px 24px;
-    cursor: pointer; transition: all 0.2s; position: relative;
-  }
-  .choice:hover { border-color: var(--green); background: var(--card2); transform: translateY(-2px); }
-  .choice.selected { border-color: var(--green); background: var(--green4); }
-  .choice-icon { font-size: 34px; margin-bottom: 14px; }
-  .choice-name { font-size: 17px; font-weight: 800; margin-bottom: 6px; }
-  .choice-desc { font-size: 12px; color: var(--text2); line-height: 1.5; }
-
-  /* ── MOCK UI (looks like PayPulse) ────────── */
-  .mockup-wrap {
-    background: var(--bg2); border: 1px solid var(--border); border-radius: 14px;
-    padding: 0; overflow: hidden; margin: 28px 0; position: relative;
-  }
-  .mockup-bar {
-    background: var(--card); border-bottom: 1px solid var(--border);
-    padding: 10px 18px; display: flex; align-items: center; gap: 8px;
-    font-size: 10px; color: var(--text3); font-family: 'SF Mono', Consolas, monospace;
-  }
+  .feature-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 24px; transition: all 0.2s; }
+  .feature-card:hover { border-color: var(--green); transform: translateY(-2px); }
+  .feature-icon { font-size: 28px; margin-bottom: 12px; }
+  .feature-name { font-size: 15px; font-weight: 800; margin-bottom: 6px; }
+  .feature-desc { font-size: 12px; color: var(--text2); line-height: 1.5; }
+  .mockup-wrap { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 0; overflow: hidden; margin: 28px 0; position: relative; }
+  .mockup-bar { background: var(--card); border-bottom: 1px solid var(--border); padding: 10px 18px; display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--text3); font-family: 'SF Mono', Consolas, monospace; }
   .mockup-dots { display: flex; gap: 5px; }
   .mockup-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border2); }
   .mockup-dots :nth-child(1) { background: #ff5f57; }
   .mockup-dots :nth-child(2) { background: #ffbd2e; }
   .mockup-dots :nth-child(3) { background: #28c941; }
   .mockup-url { background: var(--bg); padding: 4px 14px; border-radius: 5px; flex: 1; max-width: 360px; }
-  .mockup-content { padding: 28px; min-height: 360px; }
-
-  /* ── FAKE INPUTS ─────────────────────────────── */
-  .fc-lbl {
-    font-size: 10px; font-weight: 800; letter-spacing: 0.14em; color: var(--text3);
-    text-transform: uppercase; display: block; margin-bottom: 8px;
-  }
-  .fc-inp {
-    width: 100%; background: var(--bg2); border: 1px solid var(--border2); border-radius: 8px;
-    padding: 12px 14px; color: var(--text); font-size: 13px; font-family: inherit;
-    transition: all 0.15s; margin-bottom: 16px;
-  }
-  .fc-inp.glow { border-color: var(--green); box-shadow: 0 0 0 4px var(--green2); }
-
-  /* ── HOTSPOTS ────────────────────────────────── */
-  .hotspot {
-    position: absolute; border: 3px solid var(--green); border-radius: 12px;
-    animation: pulse 1.6s infinite; pointer-events: none;
-  }
-  @keyframes pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(0,200,83,0.6); }
-    50% { box-shadow: 0 0 0 12px rgba(0,200,83,0); }
-  }
-  .hotspot-label {
-    position: absolute; background: var(--green); color: #000;
-    padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 800;
-    letter-spacing: 0.1em; text-transform: uppercase;
-  }
-
-  /* ── INSTRUCTION PANEL ──────────────────────── */
-  .instructions {
-    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-    padding: 24px; margin: 24px 0;
-  }
-  .inst-title {
-    font-size: 11px; font-weight: 800; letter-spacing: 0.18em; color: var(--green);
-    margin-bottom: 16px; text-transform: uppercase;
-  }
-  .inst-list { list-style: none; counter-reset: step; }
-  .inst-list li {
-    counter-increment: step; padding: 12px 0 12px 44px; position: relative;
-    border-bottom: 1px solid var(--border); font-size: 14px; line-height: 1.6;
-  }
-  .inst-list li:last-child { border-bottom: none; }
-  .inst-list li::before {
-    content: counter(step); position: absolute; left: 0; top: 12px;
-    width: 28px; height: 28px; background: var(--green); color: #000;
-    border-radius: 50%; display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 900;
-  }
-  .inst-list code {
-    background: var(--bg); padding: 2px 8px; border-radius: 4px;
-    font-family: 'SF Mono', Consolas, monospace; font-size: 12px; color: var(--green);
-  }
-  .inst-list strong { color: var(--text); }
-
-  /* ── CALLOUTS ────────────────────────────────── */
-  .callout {
-    border-radius: 10px; padding: 16px 18px; margin: 18px 0;
-    font-size: 13px; line-height: 1.6; display: flex; gap: 14px; align-items: flex-start;
-  }
-  .callout-icon { font-size: 22px; flex-shrink: 0; line-height: 1; }
-  .callout-info { background: var(--blue2); border-left: 3px solid var(--blue); color: var(--text); }
-  .callout-warn { background: var(--orange2); border-left: 3px solid var(--orange); color: var(--text); }
-  .callout-tip { background: var(--green4); border-left: 3px solid var(--green); color: var(--text); }
-  .callout-danger { background: var(--red2); border-left: 3px solid var(--red); color: var(--text); }
-
-  /* ── PIPELINE BOARD MOCK ─────────────────────── */
-  .kanban { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-  .kanban-col {
-    background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
-    padding: 12px; min-height: 200px;
-  }
-  .kanban-head {
-    font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
-    padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 10px;
-    display: flex; justify-content: space-between; align-items: center;
-  }
-  .kanban-head .count { background: var(--card2); color: var(--text2); padding: 2px 8px; border-radius: 100px; font-size: 10px; }
-  .kanban-card {
-    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-    padding: 10px 12px; margin-bottom: 8px; cursor: pointer; transition: all 0.15s;
-  }
-  .kanban-card:hover { border-color: var(--green); }
-  .kanban-card-name { font-size: 12px; font-weight: 800; margin-bottom: 4px; }
-  .kanban-card-email { font-size: 10px; color: var(--text3); margin-bottom: 6px; }
-  .kanban-card-pm {
-    display: inline-block; font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 100px;
-    background: var(--green3); color: var(--green); border: 1px solid var(--green);
-  }
-  .kanban-card-pm.none { background: var(--red2); color: var(--red); border-color: var(--red); }
-
-  /* ── NAV BOTTOM ──────────────────────────────── */
-  .nav-row {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-top: 50px; padding-top: 32px; border-top: 1px solid var(--border);
-  }
-
-  /* ── FEATURE TILES ───────────────────────────── */
-  .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 24px 0; }
-  .feature-tile {
-    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    padding: 18px; transition: all 0.15s;
-  }
-  .feature-tile:hover { border-color: var(--green); }
-  .feature-emoji { font-size: 22px; margin-bottom: 10px; }
-  .feature-title { font-size: 13px; font-weight: 800; margin-bottom: 4px; }
-  .feature-desc { font-size: 11px; color: var(--text2); line-height: 1.5; }
-
-
-
-  /* ── TROUBLESHOOTING ACCORDION ─────────────── */
-  .trouble-item {
-    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    margin-bottom: 10px; overflow: hidden;
-  }
-  .trouble-q {
-    padding: 16px 20px; cursor: pointer; display: flex; justify-content: space-between;
-    align-items: center; font-size: 14px; font-weight: 700; user-select: none;
-  }
-  .trouble-q:hover { background: var(--card2); }
-  .trouble-q::after { content: '+'; font-size: 22px; color: var(--green); font-weight: 300; }
-  .trouble-item.open .trouble-q::after { content: '−'; }
-  .trouble-a {
-    max-height: 0; overflow: hidden; transition: max-height 0.3s; padding: 0 20px;
-    font-size: 13px; color: var(--text2); line-height: 1.7;
-  }
-  .trouble-item.open .trouble-a { max-height: 400px; padding: 0 20px 20px; }
-
-  /* ── COMPLETION SCREEN ───────────────────────── */
-  .finish-icon {
-    width: 90px; height: 90px; background: var(--green); border-radius: 50%;
-    display: flex; align-items: center; justify-content: center; font-size: 46px;
-    margin: 0 auto 30px; animation: pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-  @keyframes pop { from { transform: scale(0); } to { transform: scale(1); } }
-
-  /* ── KEYBOARD HINT ───────────────────────────── */
-  .kbd-hint {
-    position: fixed; bottom: 24px; right: 24px; background: var(--card);
-    border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px;
-    font-size: 11px; color: var(--text3); display: flex; gap: 10px; align-items: center;
-  }
-  .kbd { background: var(--bg); border: 1px solid var(--border2); border-radius: 4px; padding: 2px 7px; font-family: monospace; font-size: 10px; color: var(--text2); }
-
-  /* Mini-icon helpers */
-  .ico-arrow { display: inline-block; vertical-align: middle; }
-
-  /* Section nav (sidebar within scene) */
-  .section-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 28px; }
-  .pill {
-    background: var(--card); border: 1px solid var(--border); border-radius: 100px;
-    padding: 6px 14px; font-size: 11px; color: var(--text3); cursor: pointer; transition: all 0.15s;
-  }
-  .pill.active { background: var(--green); color: #000; border-color: var(--green); font-weight: 800; }
-  .pill:hover { color: var(--text); border-color: var(--text3); }
-
-  /* Highlight blink for keyword */
-  .hl { background: var(--green3); color: var(--green); padding: 1px 6px; border-radius: 4px; font-weight: 700; }
-
-  /* Webhook diagram */
-  .flow {
-    display: flex; align-items: center; justify-content: space-between;
-    margin: 24px 0; gap: 12px; flex-wrap: wrap;
-  }
-  .flow-node {
-    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    padding: 16px 20px; min-width: 130px; text-align: center;
-  }
-  .flow-node-name { font-size: 12px; font-weight: 800; margin-bottom: 4px; }
-  .flow-node-desc { font-size: 10px; color: var(--text3); }
-  .flow-arrow { color: var(--green); font-size: 22px; font-weight: bold; }
-
-  /* ── MEDIA QUERIES ───────────────────────────── */
-  @media (max-width: 768px) {
-    .story-title { font-size: 30px; }
-    .stage { padding: 30px 18px 80px; }
-    .topbar { padding: 12px 18px; }
-    .progress { display: none; }
-    .kanban { grid-template-columns: 1fr; }
-    .flow { flex-direction: column; }
-    .flow-arrow { transform: rotate(90deg); }
-    .kbd-hint { display: none; }
-  }
+  .mockup-content { padding: 24px; }
+  .code-block { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; font-family: 'SF Mono', Consolas, monospace; font-size: 12px; line-height: 1.6; color: var(--green); margin: 16px 0; overflow-x: auto; white-space: pre; }
+  .callout { background: var(--green4); border: 1px solid var(--green3); border-radius: 12px; padding: 16px 20px; display: flex; gap: 12px; margin: 20px 0; font-size: 13px; line-height: 1.5; }
+  .callout-icon { font-size: 18px; flex-shrink: 0; }
+  .callout-warn { background: var(--yellow2); border-color: rgba(255,215,0,0.22); }
+  .callout-tip { background: var(--blue2); border-color: rgba(0,180,255,0.22); }
+  .step-list { margin: 20px 0; padding-left: 24px; }
+  .step-list li { font-size: 14px; color: var(--text2); line-height: 1.8; margin-bottom: 8px; }
+  .step-list li strong { color: var(--text); }
+  @media (max-width: 700px) { .story-title { font-size: 28px; } .stage { padding: 30px 20px 80px; } .topbar { padding: 12px 16px; } .progress { margin: 0 12px; } }
 </style>
 </head>
 <body>
 
 <div class="topbar">
-  <div class="logo">
-    <div class="logo-icon">⚡</div>
-    <div>PAYPULSE GUIDE</div>
-  </div>
-  <div class="progress"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
-  <div class="step-counter">Step <strong id="stepNum">1</strong> of <strong id="stepTotal">12</strong></div>
+  <div class="logo"><div class="logo-icon">⚡</div>PAYPULSE</div>
+  <div class="progress"><div class="progress-bar" id="progressBar" style="width:5%"></div></div>
+  <div class="step-counter">Step <strong id="stepNum">1</strong> / <span id="totalSteps">12</span></div>
 </div>
 
-<div class="stage">
+<div class="stage" id="stage">
 
 <!-- ════════════════════════════════════════════
      SCENE 1 — WELCOME
@@ -331,740 +75,457 @@
       Let's get you<br>charging clients<br>in <span style="color:var(--green)">15 minutes</span>.
     </div>
     <div style="font-size:17px;color:var(--text2);line-height:1.6;max-width:600px;margin:0 auto 50px;">
-      This interactive guide walks you through setting up PayPulse from zero. Click any term you don't understand and you'll get an explanation. Take your time — there's no rush.
+      This interactive guide walks you through setting up PayPulse — from account creation to firing your first charge. No fluff, just the steps.
     </div>
     <div class="btn-row" style="justify-content:center;">
       <button class="btn btn-primary" onclick="nextScene()">Start the Guide →</button>
     </div>
-    <div style="margin-top:36px;font-size:12px;color:var(--text3);">⌛ Takes ~15 minutes · 💾 Auto-saves your progress · 🔄 Come back any time</div>
   </div>
 </div>
 
 <!-- ════════════════════════════════════════════
-     SCENE 2 — WHAT IS PAYPULSE
+     SCENE 2 — CREATE YOUR ACCOUNT
      ════════════════════════════════════════════ -->
 <div class="scene" data-scene="2">
-  <div class="story-num">SCENE 1 · WHAT IT DOES</div>
-  <div class="story-title">What is PayPulse?</div>
+  <div class="story-num">SCENE 1 · GET STARTED</div>
+  <div class="story-title">Create your account</div>
   <div class="story-subtitle">
-    PayPulse automatically bills your clients based on triggers — when a lead books a call, when an appointment happens, when a campaign hits a milestone. You stop sending invoices. They get charged automatically.
+    Go to your PayPulse login page. Click <strong>"Don't have an account? Sign up"</strong>. Enter your name, company name, email, and password (min 6 characters). Submit — your account is created and pending admin approval.
   </div>
-
-  <div class="card-grid">
-    <div class="choice" style="cursor:default;">
-      <div class="choice-icon">⚡</div>
-      <div class="choice-name">Take a charge</div>
-      <div class="choice-desc">Fire a one-off charge against any client's saved card with one click — no logging into Whop/Stripe.</div>
-    </div>
-    <div class="choice" style="cursor:default;">
-      <div class="choice-icon">🤖</div>
-      <div class="choice-name">Auto-charge on triggers</div>
-      <div class="choice-desc">When a GHL appointment is booked, PayPulse can charge the client automatically.</div>
-    </div>
-    <div class="choice" style="cursor:default;">
-      <div class="choice-icon">📊</div>
-      <div class="choice-name">Track everything</div>
-      <div class="choice-desc">CPL, CPBC, conversions, revenue per client — all in one dashboard.</div>
+  <div class="mockup-wrap">
+    <div class="mockup-bar"><div class="mockup-dots"><div class="mockup-dot"></div><div class="mockup-dot"></div><div class="mockup-dot"></div></div><div class="mockup-url">paypulse.app — Sign Up</div></div>
+    <div class="mockup-content" style="max-width:420px;margin:0 auto;">
+      <div style="text-align:center;margin-bottom:20px;"><span style="font-size:24px;">⚡</span><br><strong style="font-size:18px;">PAYPULSE</strong></div>
+      <div class="fc-lbl">Your Name</div>
+      <div class="fc-inp" style="color:var(--text2);">e.g. John Smith</div>
+      <div class="fc-lbl">Company Name</div>
+      <div class="fc-inp" style="color:var(--text2);">e.g. My Agency Inc.</div>
+      <div class="fc-lbl">Email</div>
+      <div class="fc-inp" style="color:var(--text2);">you@company.com</div>
+      <div class="fc-lbl">Password</div>
+      <div class="fc-inp" style="color:var(--text2);">••••••••</div>
+      <div class="btn btn-primary" style="justify-content:center;">Create Account</div>
+      <div style="text-align:center;margin-top:14px;font-size:12px;color:var(--text3);">Already have an account? Log in</div>
     </div>
   </div>
-
   <div class="callout callout-tip">
     <div class="callout-icon">💡</div>
-    <div><strong>You'll need:</strong> a payment processor (Whop, Stripe, or Fanbasis), about 15 minutes, and admin access to that processor.</div>
+    <div>Once you submit, an admin will approve your account. You'll get a notification in the inbox when you're approved.</div>
   </div>
 </div>
 
 <!-- ════════════════════════════════════════════
-     SCENE 3 — PICK YOUR PROCESSOR
+     SCENE 3 — WHAT IS PAYPULSE
      ════════════════════════════════════════════ -->
 <div class="scene" data-scene="3">
-  <div class="story-num">SCENE 2 · PICK YOUR PROCESSOR</div>
-  <div class="story-title">Choose your payment processor</div>
+  <div class="story-num">SCENE 2 · WHAT IT DOES</div>
+  <div class="story-title">What is PayPulse?</div>
   <div class="story-subtitle">
-    Click the one you'll be using. The rest of the guide adapts to your choice — we'll only show you the steps that matter for you.
+    PayPulse is a pay-per-appointment billing system for SMMAs. You add clients, set their rate, and charge them when appointments happen. Charges are automatic via GHL webhooks or manual with one click.
   </div>
-
   <div class="card-grid">
-    <div class="choice" data-proc="whop" onclick="pickProc('whop')">
-      <div class="choice-icon">⚡</div>
-      <div class="choice-name">Whop</div>
-      <div class="choice-desc">Best if you sell courses, communities, or memberships through Whop. Your clients already have cards on file.</div>
+    <div class="feature-card">
+      <div class="feature-icon">📋</div>
+      <div class="feature-name">Kanban Board</div>
+      <div class="feature-desc">Drag clients between New, Active, At Risk, and Paused columns. Visual pipeline at a glance.</div>
     </div>
-    <div class="choice" data-proc="stripe" onclick="pickProc('stripe')">
-      <div class="choice-icon">🔷</div>
-      <div class="choice-name">Stripe</div>
-      <div class="choice-desc">Most flexible. Works with any business model. Best for tech-savvy users or B2B services.</div>
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <div class="feature-name">Auto-charge</div>
+      <div class="feature-desc">GHL webhook triggers charge the client's card when an appointment is booked or marked Showed.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📊</div>
+      <div class="feature-name">Metrics Dashboard</div>
+      <div class="feature-desc">30-day revenue chart, top customers, trigger volume, failure rate — all in one view with interactive charts.</div>
     </div>
   </div>
-
-  <div class="callout callout-info">
-    <div class="callout-icon">ℹ️</div>
-    <div><strong>Don't know which?</strong> Most contractor/home-services agencies use <span class="hl">Whop</span> or <span class="hl">Stripe</span>. If you're billing clients monthly for leads, Stripe is the simplest.</div>
+  <div class="callout callout-tip">
+    <div class="callout-icon">💡</div>
+    <div>You'll need: a Stripe account (recommended) or Whop account, and about 15 minutes to get everything connected.</div>
   </div>
 </div>
 
 <!-- ════════════════════════════════════════════
-     SCENE 4 — GET API KEY (WHOP)
+     SCENE 4 — SETTINGS / PROCESSOR
      ════════════════════════════════════════════ -->
-<div class="scene" data-scene="4" data-proc-whop>
-  <div class="story-num">SCENE 3 · WHOP SETUP</div>
-  <div class="story-title">Get your Whop API Key</div>
+<div class="scene" data-scene="4">
+  <div class="story-num">SCENE 3 · CONNECT PAYMENTS</div>
+  <div class="story-title">Connect your payment processor</div>
   <div class="story-subtitle">
-    This key lets PayPulse talk to Whop on your behalf. Generated once, kept secret.
+    Go to <strong>Settings</strong> in the left nav. Choose Stripe or Whop as your processor. Paste in your API keys — your keys stay encrypted in the database.
   </div>
-
-  <div class="instructions">
-    <div class="inst-title">📍 In Your Whop Dashboard</div>
-    <ol class="inst-list">
-      <li>Go to <strong>whop.com</strong> and log in</li>
-      <li>Click your <strong>business name</strong> in the top-left corner — make sure you're inside the right business</li>
-      <li>Click <strong>Settings</strong> (gear icon in the left sidebar, bottom)</li>
-      <li>Click <strong>Developer</strong></li>
-      <li>Click the <strong>API Keys</strong> tab</li>
-      <li>Click <strong>Generate API Key</strong> (or copy your existing one)</li>
-      <li>Copy the key — it looks like <code>whop_api_abc123...</code></li>
-    </ol>
+  <div class="card-grid">
+    <div class="feature-card" style="border-color:var(--purple3);">
+      <div class="feature-icon">◆</div>
+      <div class="feature-name">Stripe (recommended)</div>
+      <div class="feature-desc">Go to Stripe Dashboard → Developers → API Keys. Copy your <strong>Secret Key</strong> (sk_live_...) and <strong>Publishable Key</strong> (pk_live_...). Paste both into PayPulse Settings.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <div class="feature-name">Whop</div>
+      <div class="feature-desc">Go to Whop Dashboard → Settings → API Keys. Copy your API Key and Company ID. Paste into PayPulse Settings.</div>
+    </div>
   </div>
-
   <div class="callout callout-warn">
     <div class="callout-icon">⚠️</div>
-    <div><strong>Keep this key secret.</strong> Anyone with it can charge your clients. If it leaks, regenerate it in the same place — old key stops working instantly.</div>
-  </div>
-
-  <div class="callout callout-info">
-    <div class="callout-icon">📌</div>
-    <div>While you're in there, also grab your <strong>Company ID</strong> — it's in the URL bar (looks like <code>biz_xxx</code>) or under <strong>Settings → General</strong>.</div>
+    <div><strong>Important:</strong> Use <strong>live</strong> keys (sk_live_...), not test keys. Test mode won't actually charge cards.</div>
   </div>
 </div>
 
 <!-- ════════════════════════════════════════════
-     SCENE 4 — GET API KEY (STRIPE)
-     ════════════════════════════════════════════ -->
-<div class="scene" data-scene="4" data-proc-stripe>
-  <div class="story-num">SCENE 3 · STRIPE SETUP</div>
-  <div class="story-title">Get your Stripe Secret Key</div>
-  <div class="story-subtitle">
-    This is the master key that lets PayPulse create charges on your Stripe account.
-  </div>
-
-  <div class="instructions">
-    <div class="inst-title">📍 In Your Stripe Dashboard</div>
-    <ol class="inst-list">
-      <li>Go to <strong>dashboard.stripe.com</strong> and log in</li>
-      <li>Make sure you're in <span class="hl">LIVE mode</span> — the toggle in the top-right should say "Viewing live data" (not Test mode)</li>
-      <li>Click <strong>Developers</strong> in the left sidebar</li>
-      <li>Click <strong>API Keys</strong></li>
-      <li>Find the <strong>Secret key</strong> row under "Standard keys"</li>
-      <li>Click <strong>Reveal live key</strong></li>
-      <li>Copy the key — it starts with <code>sk_live_...</code></li>
-    </ol>
-  </div>
-
-  <div class="callout callout-danger">
-    <div class="callout-icon">🚫</div>
-    <div><strong>About IP restrictions:</strong> Stripe may prompt you to set IP allowlist restrictions. <strong>Leave this blank</strong> and click Save without adding anything. PayPulse runs on dynamic infrastructure and IP restrictions will break it.</div>
-  </div>
-
-  <div class="callout callout-warn">
-    <div class="callout-icon">⚠️</div>
-    <div>If your key starts with <code>sk_test_</code>, you're in <strong>Test mode</strong>. Switch to Live mode (top right) before copying.</div>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════
-     SCENE 5 — ENTER KEYS INTO PAYPULSE
+     SCENE 5 — WEBHOOK SETUP
      ════════════════════════════════════════════ -->
 <div class="scene" data-scene="5">
-  <div class="story-num">SCENE 4 · CONNECT</div>
-  <div class="story-title">Plug your keys into PayPulse</div>
+  <div class="story-num">SCENE 4 · AUTO-BILLING</div>
+  <div class="story-title">Connect your GHL webhook</div>
   <div class="story-subtitle">
-    Open PayPulse in a new tab and log in. Then navigate to <strong>Settings</strong> (top navigation). Here's what to fill in depending on your processor:
+    When an appointment happens in GHL, PayPulse can auto-charge the client. This is the core of automated billing.
   </div>
-
-  <div class="instructions">
-    <div class="inst-title">📍 In PayPulse → Settings</div>
-    <ol class="inst-list">
-      <li>Click <strong>Settings</strong> in the top nav bar</li>
-      <li>In the <strong>Select Processor</strong> section, click your chosen processor (Whop or Stripe)</li>
-      <li>Paste the key(s) you copied from the previous step into the matching fields</li>
-      <li>Click <strong>Save Changes</strong></li>
-      <li>Your settings are stored securely. You can always update them later.</li>
-    </ol>
+  <div style="margin:24px 0;">
+    <div class="step-list">
+      <li>Go to <strong>Settings → Webhook URLs</strong> — copy your <strong>GHL Trigger URL</strong></li>
+      <li>In GHL: Settings → Webhooks → Add Webhook — paste the URL</li>
+      <li>Select trigger: <strong>Appointment Created</strong> (or Appointment Showed for appointment tracking mode)</li>
+      <li>Save — test by booking a test appointment in GHL</li>
+    </div>
   </div>
-
-  <div class="callout callout-tip">
-    <div class="callout-icon">💡</div>
-    <div>If you're switching processors later, just come back to Settings — toggle between Whop and Stripe. All your customers stay in place.</div>
+  <div class="code-block">POST /webhook/ghl/{secret}/ → auto-charges matched client</div>
+  <div class="callout">
+    <div class="callout-icon">⚡</div>
+    <div><strong>Per-client routing:</strong> Each client can have a unique webhook URL. In the client edit modal, add their GHL Location ID. The URL becomes <code style="color:var(--green);">/webhook/ghl/{secret}/{locationId}</code> — only charges that specific client.</div>
   </div>
 </div>
 
 <!-- ════════════════════════════════════════════
-     SCENE 6 — WEBHOOK SETUP (THIS IS THE BIG ONE)
+     SCENE 6 — ADD CLIENTS
      ════════════════════════════════════════════ -->
 <div class="scene" data-scene="6">
-  <div class="story-num">SCENE 5 · WEBHOOKS (CRITICAL)</div>
-  <div class="story-title">Set up your webhook</div>
+  <div class="story-num">SCENE 5 · ADD CLIENTS</div>
+  <div class="story-title">Add your clients</div>
   <div class="story-subtitle">
-    This is the most important step. Without the webhook, PayPulse doesn't know when your clients pay or add new cards. It's how PayPulse "listens" to your payment processor.
+    Click <strong>+ New</strong> on the Customers page. Add name, company, email, rate per appointment, and GHL Location ID (for webhook routing). Save — they appear in the "New" column on the kanban board.
   </div>
-
-  <div class="flow">
-    <div class="flow-node">
-      <div class="flow-node-name">Client pays</div>
-      <div class="flow-node-desc">via your checkout</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-node" id="whFlowProc">
-      <div class="flow-node-name" id="whFlowProcName">Whop</div>
-      <div class="flow-node-desc">processes the charge</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-node" style="border-color:var(--green);background:var(--green4);">
-      <div class="flow-node-name" style="color:var(--green);">Webhook fires</div>
-      <div class="flow-node-desc">sends event to FC</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-node">
-      <div class="flow-node-name">PayPulse</div>
-      <div class="flow-node-desc">saves the card</div>
+  <div class="mockup-wrap">
+    <div class="mockup-bar"><div class="mockup-dots"><div class="mockup-dot"></div><div class="mockup-dot"></div><div class="mockup-dot"></div></div><div class="mockup-url">Customers — New Client</div></div>
+    <div class="mockup-content" style="max-width:500px;margin:0 auto;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div><div class="fc-lbl">Name</div><div class="fc-inp" style="color:var(--text2);">Pro Painters</div></div>
+        <div><div class="fc-lbl">Rate</div><div class="fc-inp" style="color:var(--green);">$147</div></div>
+      </div>
+      <div class="fc-lbl">Company</div>
+      <div class="fc-inp" style="color:var(--text2);">Pro Painters Toronto</div>
+      <div class="fc-lbl">Email</div>
+      <div class="fc-inp" style="color:var(--text2);;">pro@painting.com</div>
+      <div class="fc-lbl">GHL Location ID</div>
+      <div class="fc-inp" style="color:var(--text2);">vQ3xK7mNpR (optional — for webhook routing)</div>
     </div>
   </div>
-
-  <div class="instructions">
-    <div class="inst-title">📍 Step 1 — Get Your Webhook URL from PayPulse</div>
-    <ol class="inst-list">
-      <li>In PayPulse, click <strong>Settings</strong> (top-right)</li>
-      <li>Scroll to the <strong>Webhooks</strong> section</li>
-      <li>Find the URL for your processor — it looks like <code>https://PayPulse.app/webhook/<span id="whProcSlug">whop</span>/abc123...</code></li>
-      <li>Click <strong>Copy</strong></li>
-    </ol>
-  </div>
-
-  <div class="instructions" id="whInstWhop" style="display:none;">
-    <div class="inst-title">📍 Step 2 — Add the Webhook in Whop</div>
-    <ol class="inst-list">
-      <li>Back in <strong>Whop → Settings → Developer</strong></li>
-      <li>Click the <strong>Webhooks</strong> tab</li>
-      <li>Click <strong>Create Webhook</strong> (or Add Endpoint)</li>
-      <li>Paste your PayPulse URL in the URL field</li>
-      <li>Select these events: <code>payment.succeeded</code> and <code>membership.went_valid</code></li>
-      <li>Click <strong>Save</strong></li>
-    </ol>
-  </div>
-
-  <div class="instructions" id="whInstStripe" style="display:none;">
-    <div class="inst-title">📍 Step 2 — Add the Webhook in Stripe</div>
-    <ol class="inst-list">
-      <li>Back in <strong>Stripe → Developers → Webhooks</strong></li>
-      <li>Click <strong>+ Add Endpoint</strong></li>
-      <li>Paste your PayPulse URL in the Endpoint URL field</li>
-      <li>Click <strong>+ Select events</strong></li>
-      <li>Add these events: <code>payment_intent.succeeded</code>, <code>payment_intent.payment_failed</code>, <code>charge.dispute.created</code></li>
-      <li>Click <strong>Add events</strong>, then <strong>Add endpoint</strong></li>
-    </ol>
-  </div>
-
   <div class="callout callout-tip">
-    <div class="callout-icon">✅</div>
-    <div><strong>Test it:</strong> after saving the webhook, click "Send test event" in your processor. Within 30 seconds you should see a test customer appear in PayPulse → Customers tab. That confirms it's wired correctly.</div>
+    <div class="callout-icon">💡</div>
+    <div><strong>Import from Stripe:</strong> Click <strong>⬇ Stripe</strong> to see a list of your Stripe customers with card status. Check the ones you want to import and click Import Selected — no manual entry needed.</div>
   </div>
 </div>
 
 <!-- ════════════════════════════════════════════
-     SCENE 7 — SYNC EXISTING CUSTOMERS
+     SCENE 7 — KANBAN BOARD
      ════════════════════════════════════════════ -->
 <div class="scene" data-scene="7">
-  <div class="story-num">SCENE 6 · IMPORT EXISTING CLIENTS</div>
-  <div class="story-title">Import your existing customers</div>
+  <div class="story-num">SCENE 6 · PIPELINE VIEW</div>
+  <div class="story-title">Understand the kanban board</div>
   <div class="story-subtitle">
-    If you already have paying clients on Stripe, you can import them directly. The Stripe sync button pulls everyone in and lets you select which ones to add.
+    Your clients are organized into four columns. Drag cards between columns to update their status. The colored badge shows card-on-file status.
   </div>
-
   <div class="mockup-wrap">
-    <div class="mockup-bar">
-      <div class="mockup-dots"><span></span><span></span><span></span></div>
-      <div class="mockup-url">PayPulse.app · /customers</div>
-    </div>
+    <div class="mockup-bar"><div class="mockup-dots"><div class="mockup-dot"></div><div class="mockup-dot"></div><div class="mockup-dot"></div></div><div class="mockup-url">Customers — Pipeline</div></div>
     <div class="mockup-content">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-        <div style="font-size:18px;font-weight:900;">Customers</div>
-        <div style="position:relative;">
-          <button class="btn" style="background:transparent;color:var(--blue);border:1px solid var(--blue2);font-size:10px;padding:9px 16px;">
-            ⬇ STRIPE
-          </button>
-          <div class="hotspot" style="top:-6px;right:-6px;width:130%;height:140%;"></div>
-        </div>
-      </div>
-      <div class="kanban">
-        <div class="kanban-col">
-          <div class="kanban-head"><span>📋 NEW</span><span class="count">2</span></div>
-          <div class="kanban-card">
-            <div class="kanban-card-name">Alex Baird</div>
-            <div class="kanban-card-email">alex@example.com</div>
-            <span class="kanban-card-pm">✓ Card on file</span>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+        <div style="background:var(--card);border-radius:10px;padding:12px;">
+          <div style="font-size:10px;font-weight:800;color:var(--text3);margin-bottom:8px;">🆕 NEW</div>
+          <div style="background:var(--bg2);border-radius:8px;padding:10px;border:1px solid var(--border);">
+            <div style="font-weight:800;font-size:13px;">Fence Experts</div>
+            <div style="font-size:10px;color:var(--text2);margin:2px 0;">Fence Experts GTA</div>
+            <div style="font-size:10px;font-weight:700;color:var(--blue);">$197/appt</div>
+            <div style="display:flex;gap:4px;margin-top:6px;">
+              <span style="font-size:9px;background:rgba(255,59,59,0.1);color:var(--red);padding:2px 6px;border-radius:4px;">No card</span>
+            </div>
           </div>
-          <div class="kanban-card">
-            <div class="kanban-card-name">Sarah Chen</div>
-            <div class="kanban-card-email">sarah@example.com</div>
-            <span class="kanban-card-pm">✓ Card on file</span>
-          </div>
+          <div style="color:var(--text3);font-size:10px;text-align:center;margin-top:8px;">Drop clients here</div>
         </div>
-        <div class="kanban-col">
-          <div class="kanban-head"><span>✅ ACTIVE</span><span class="count">5</span></div>
-          <div class="kanban-card">
-            <div class="kanban-card-name">Mike Rodriguez</div>
-            <div class="kanban-card-email">mike@example.com</div>
-            <span class="kanban-card-pm">✓ Card on file</span>
+        <div style="background:var(--card);border-radius:10px;padding:12px;">
+          <div style="font-size:10px;font-weight:800;color:var(--text3);margin-bottom:8px;">▶ ACTIVE</div>
+          <div style="background:var(--bg2);border-radius:8px;padding:10px;border:1px solid var(--border);">
+            <div style="font-weight:800;font-size:13px;">Pro Painters</div>
+            <div style="font-size:10px;color:var(--text2);margin:2px 0;">Pro Painters Toronto</div>
+            <div style="font-size:10px;font-weight:700;color:var(--blue);">$147/appt</div>
+            <div style="display:flex;gap:4px;margin-top:6px;">
+              <span style="font-size:9px;background:var(--green2);color:var(--green);padding:2px 6px;border-radius:4px;">✓ Card</span>
+            </div>
           </div>
         </div>
-        <div class="kanban-col">
-          <div class="kanban-head"><span>⚠️ AT RISK</span><span class="count">1</span></div>
+        <div style="background:var(--card);border-radius:10px;padding:12px;">
+          <div style="font-size:10px;font-weight:800;color:var(--text3);margin-bottom:8px;">⚠ AT RISK</div>
+          <div style="background:var(--bg2);border-radius:8px;padding:10px;border:1px solid var(--border);">
+            <div style="font-weight:800;font-size:13px;">Precision Decks</div>
+            <div style="font-size:10px;color:var(--text2);margin:2px 0;">Precision Deck & Fence</div>
+            <div style="font-size:10px;font-weight:700;color:var(--blue);">$197/appt</div>
+            <div style="display:flex;gap:4px;margin-top:6px;">
+              <span style="font-size:9px;background:var(--green2);color:var(--green);padding:2px 6px;border-radius:4px;">✓ Card</span>
+            </div>
+          </div>
         </div>
-        <div class="kanban-col">
-          <div class="kanban-head"><span>⏸ PAUSED</span><span class="count">0</span></div>
+        <div style="background:var(--card);border-radius:10px;padding:12px;">
+          <div style="font-size:10px;font-weight:800;color:var(--text3);margin-bottom:8px;">⏸ PAUSED</div>
+          <div style="color:var(--text3);font-size:10px;text-align:center;padding:20px;">Drop clients here</div>
         </div>
       </div>
     </div>
   </div>
-
-  <div class="instructions">
-    <div class="inst-title">📍 Do This</div>
-    <ol class="inst-list">
-      <li>Go to the <strong>Customers</strong> tab</li>
-      <li>Click <strong>⬇ Stripe</strong> button (above the search bar)</li>
-      <li>A modal opens showing all your <strong>Stripe customers</strong> with their card status</li>
-      <li>Check the ones you want to import, or use <strong>Select all</strong></li>
-      <li>Click <strong>Import X Selected</strong></li>
-      <li>You'll see a success toast like <code>✓ 12 imported · 3 skipped</code></li>
-      <li>Skipped customers already exist in PayPulse by email</li>
-    </ol>
-  </div>
-
-  <div class="callout callout-info">
-    <div class="callout-icon">💡</div>
-    <div><strong>Cards on file</strong> are imported from Stripe automatically. Customers with a card can be charged immediately. Customers without a card need to complete a payment first.</div>
+  <div style="margin:20px 0;">
+    <div class="step-list">
+      <li><strong>Drag a card</strong> between columns to change the client's status — it updates immediately on the server</li>
+      <li><strong>Click Charge</strong> to manually fire a charge against the client's card</li>
+      <li><strong>Click Edit</strong> to change rate, status, or GHL Location ID</li>
+      <li><strong>Click Analytics</strong> to see full payment history, credit balance, and webhook info</li>
+      <li><strong>Delete</strong> — click the Delete button (turns red), then click Confirm to remove</li>
+    </div>
   </div>
 </div>
 
 <!-- ════════════════════════════════════════════
-     SCENE 8 — CUSTOMER DASHBOARD KANBAN
+     SCENE 8 — FIRE A CHARGE
      ════════════════════════════════════════════ -->
 <div class="scene" data-scene="8">
-  <div class="story-num">SCENE 7 · THE CUSTOMER DASHBOARD</div>
-  <div class="story-title">Understand the customer board</div>
-  <div class="story-subtitle">
-    Customers are organised into pipeline stages (Kanban-style). Drag them between columns. Each card shows their status at a glance.
-  </div>
-
-  <div class="mockup-wrap">
-    <div class="mockup-bar">
-      <div class="mockup-dots"><span></span><span></span><span></span></div>
-      <div class="mockup-url">PayPulse.app · /customers</div>
-    </div>
-    <div class="mockup-content">
-      <div class="kanban">
-        <div class="kanban-col" style="border-color:var(--blue);">
-          <div class="kanban-head" style="color:var(--blue);"><span>📋 NEW</span><span class="count">3</span></div>
-          <div class="kanban-card">
-            <div class="kanban-card-name">Jeff Sanford</div>
-            <div class="kanban-card-email">jeff@example.com</div>
-            <span class="kanban-card-pm">✓ Card on file</span>
-          </div>
-        </div>
-        <div class="kanban-col" style="border-color:var(--green);">
-          <div class="kanban-head" style="color:var(--green);"><span>✅ ACTIVE</span><span class="count">12</span></div>
-          <div class="kanban-card">
-            <div class="kanban-card-name">Concrete Leads AU</div>
-            <div class="kanban-card-email">contact@scaledestimates.com</div>
-            <span class="kanban-card-pm">✓ Card on file</span>
-            <div style="font-size:9px;color:var(--purple);margin-top:5px;">🧠 Adaptive Ready · CPL $25</div>
-          </div>
-        </div>
-        <div class="kanban-col" style="border-color:var(--yellow);">
-          <div class="kanban-head" style="color:var(--yellow);"><span>⚠️ AT RISK</span><span class="count">2</span></div>
-          <div class="kanban-card">
-            <div class="kanban-card-name">Stale Client</div>
-            <div class="kanban-card-email">stale@example.com</div>
-            <span class="kanban-card-pm none">✗ No card</span>
-          </div>
-        </div>
-        <div class="kanban-col" style="border-color:var(--red);">
-          <div class="kanban-head" style="color:var(--red);"><span>⏸ PAUSED</span><span class="count">1</span></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="feature-grid">
-    <div class="feature-tile">
-      <div class="feature-emoji">🟢</div>
-      <div class="feature-title">Card on file</div>
-      <div class="feature-desc">Green badge = chargeable. The customer has a saved card.</div>
-    </div>
-    <div class="feature-tile">
-      <div class="feature-emoji">🔴</div>
-      <div class="feature-title">No card</div>
-      <div class="feature-desc">Red badge = can't be charged yet. They need to make a payment first.</div>
-    </div>
-    <div class="feature-tile">
-      <div class="feature-emoji">↔️</div>
-      <div class="feature-title">Drag to move</div>
-      <div class="feature-desc">Drag a card between columns to change pipeline stage.</div>
-    </div>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════
-     SCENE 9 — CUSTOMER EDIT SETTINGS
-     ════════════════════════════════════════════ -->
-<div class="scene" data-scene="9">
-  <div class="story-num">SCENE 8 · CUSTOMER SETTINGS</div>
-  <div class="story-title">Configure a customer</div>
-  <div class="story-subtitle">
-    Click any customer card → <strong>Edit</strong>. This is where you set the trigger amount, pipeline stage, and link them to a GHL sub-account.
-  </div>
-
-  <div class="mockup-wrap" style="max-width:600px;margin:28px auto;">
-    <div class="mockup-bar">
-      <div class="mockup-dots"><span></span><span></span><span></span></div>
-      <div class="mockup-url">PayPulse.app · Edit Customer</div>
-    </div>
-    <div class="mockup-content">
-      <div style="font-size:11px;color:var(--green);letter-spacing:0.15em;font-weight:800;margin-bottom:4px;">EDITING</div>
-      <div style="font-size:22px;font-weight:900;margin-bottom:24px;">Concrete Leads AU</div>
-
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;">
-          <div><span style="color:var(--text3);">Rate per Trigger:</span> <strong style="color:var(--green);">$75.00</strong></div>
-          <div><span style="color:var(--text3);">Status:</span> <strong>Active</strong></div>
-          <div><span style="color:var(--text3);">GHL Location ID:</span> <span style="font-family:monospace;color:var(--blue);font-size:11px;">vQ3xK7mNpR</span></div>
-          <div><span style="color:var(--text3);">Card on File:</span> <strong style="color:var(--green);">✓ Yes</strong></div>
-        </div>
-      </div>
-
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;">
-        <div style="font-size:10px;font-weight:800;letter-spacing:0.12em;color:var(--text2);text-transform:uppercase;margin-bottom:8px;">Per-Client Webhook URL</div>
-        <div style="font-size:11px;font-family:monospace;color:var(--blue);word-break:break-all;">https://paypulse.app/webhook/ghl/abc123/vQ3xK7mNpR</div>
-        <div style="font-size:10px;color:var(--text3);margin-top:6px;">Paste this into the client's GHL sub-account outbound webhook</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="feature-grid">
-    <div class="feature-tile">
-      <div class="feature-emoji">💰</div>
-      <div class="feature-title">Rate per Trigger</div>
-      <div class="feature-desc">How much to bill per trigger (e.g. $75/shown appointment).</div>
-    </div>
-    <div class="feature-tile">
-      <div class="feature-emoji">📋</div>
-      <div class="feature-title">Pipeline Stage</div>
-      <div class="feature-desc">New → Active → At Risk → Paused. Drag cards between columns.</div>
-    </div>
-    <div class="feature-tile">
-      <div class="feature-emoji">🔗</div>
-      <div class="feature-title">GHL Location ID</div>
-      <div class="feature-desc">Links this customer to a GHL sub-account for per-client webhook routing.</div>
-    </div>
-    <div class="feature-tile">
-      <div class="feature-emoji">💳</div>
-      <div class="feature-title">Card Setup</div>
-      <div class="feature-desc">Click "Save Card" in the Analytics modal to generate a $1 Stripe Checkout link.</div>
-    </div>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════
-     SCENE 10 — FIRE A CHARGE
-     ════════════════════════════════════════════ -->
-<div class="scene" data-scene="10">
-  <div class="story-num">SCENE 9 · CHARGE A CUSTOMER</div>
+  <div class="story-num">SCENE 7 · FIRST CHARGE</div>
   <div class="story-title">Fire your first charge</div>
   <div class="story-subtitle">
-    The big green button. Use it for one-off manual charges, like a setup fee or an out-of-cycle bill.
+    Click the green <strong>Charge</strong> button on any client card. Enter an amount (defaults to their rate) and an optional note. Hit Charge — PayPulse creates the charge in Stripe/Whop and records it in the customer history.
   </div>
-
-  <div class="mockup-wrap" style="max-width:500px;margin:28px auto;">
-    <div class="mockup-bar">
-      <div class="mockup-dots"><span></span><span></span><span></span></div>
-      <div class="mockup-url">Charge Customer</div>
-    </div>
-    <div class="mockup-content">
-      <div style="font-size:11px;color:var(--green);letter-spacing:0.18em;font-weight:800;margin-bottom:6px;">CHARGE CUSTOMER</div>
-      <div style="font-size:22px;font-weight:900;margin-bottom:20px;">Jeffrey Sanford</div>
-
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px;">
-        <div style="font-size:10px;color:var(--text3);letter-spacing:0.12em;font-weight:700;margin-bottom:4px;">Per-Appointment Rate</div>
-        <div style="font-size:24px;font-weight:900;color:var(--green);">$75.00</div>
-      </div>
-
-      <input class="fc-inp" placeholder="Note (e.g. Monthly retainer)" style="margin-bottom:16px;"/>
-
-      <button class="btn btn-primary" style="width:100%;justify-content:center;font-size:14px;padding:18px;">
-        ⚡ CHARGE $75.00
-      </button>
+  <div class="mockup-wrap">
+    <div class="mockup-bar"><div class="mockup-dots"><div class="mockup-dot"></div><div class="mockup-dot"></div><div class="mockup-dot"></div></div><div class="mockup-url">Charge Modal</div></div>
+    <div class="mockup-content" style="max-width:400px;margin:0 auto;">
+      <div style="text-align:center;font-size:13px;font-weight:800;margin-bottom:16px;">Charge Pro Painters</div>
+      <div class="fc-lbl">Amount</div>
+      <div class="fc-inp" style="color:var(--green);font-weight:800;font-size:18px;">$147.00</div>
+      <div class="fc-lbl">Note (optional)</div>
+      <div class="fc-inp" style="color:var(--text2);">Appointment booked — Pro Painters Toronto</div>
+      <div class="btn btn-primary" style="justify-content:center;margin-top:8px;">⚡ Charge $147</div>
     </div>
   </div>
-
-  <div class="instructions">
-    <div class="inst-title">📍 How It Works</div>
-    <ol class="inst-list">
-      <li>Click any customer card → <strong>Analytics</strong> (purple button)</li>
-      <li>In the analytics modal, click the <strong>Charge $X.XX</strong> button in the "Fire Manual Charge" section</li>
-      <li>Add an optional note ("Setup fee", "Make-good for missed appt", etc.)</li>
-      <li>The charge fires against their saved card at their configured rate. Card is never re-entered.</li>
-    </ol>
-  </div>
-
-  <div class="callout callout-tip">
-    <div class="callout-icon">⚡</div>
-    <div><strong>What about automatic charges?</strong> You can also set up <strong>GHL webhook triggers</strong> that fire automatically — when a GHL appointment is booked, PayPulse bills the client at their configured rate. Enable <strong>Appointment Tracking Mode</strong> in Settings to show/no-show/cancel appointments.</div>
+  <div class="callout">
+    <div class="callout-icon">✅</div>
+    <div>After charging, the client appears in the <strong>Charges</strong> page with the full history. Click <strong>Analytics</strong> on any client to see all their charges, credit balance, and webhook events.</div>
   </div>
 </div>
 
 <!-- ════════════════════════════════════════════
-     SCENE 11 — TROUBLESHOOTING
+     SCENE 9 — METRICS
+     ════════════════════════════════════════════ -->
+<div class="scene" data-scene="9">
+  <div class="story-num">SCENE 8 · REPORTS</div>
+  <div class="story-title">Track your metrics</div>
+  <div class="story-subtitle">
+    The Metrics page gives you a full 30-day view of your business. Revenue chart, daily trigger volume, top customers, and failure rates — all updated in real time.
+  </div>
+  <div class="card-grid">
+    <div class="feature-card">
+      <div class="feature-name">💰 Revenue & Failures</div>
+      <div class="feature-desc">Line chart showing daily revenue (green) and failed charges (red dashed). Gradient fill for easy reading.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-name">👥 Top Customers</div>
+      <div class="feature-desc">Bar chart showing which clients generate the most revenue and triggers. Sorted highest first.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-name">📋 Daily Trigger Volume</div>
+      <div class="feature-desc">Bar chart showing how many charges fired each day — succeeded and failed.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-name">📊 Customer Breakdown Table</div>
+      <div class="feature-desc">See revenue, triggers, and average per trigger for each client. Quick reference at a glance.</div>
+    </div>
+  </div>
+  <div class="callout callout-tip">
+    <div class="callout-icon">💡</div>
+    <div><strong>Pro tip:</strong> Use the Metrics page to spot at-risk clients early. If a client's failure rate is high, check their card status in Analytics.</div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     SCENE 10 — FUNNEL BUILDER
+     ════════════════════════════════════════════ -->
+<div class="scene" data-scene="10">
+  <div class="story-num">SCENE 9 · LEAD GEN</div>
+  <div class="story-title">Build qualification funnels</div>
+  <div class="story-subtitle">
+    Create AI-powered qualification funnels for specific niches. Each funnel asks questions, collects leads, and can forward them to GHL.
+  </div>
+  <div style="margin:24px 0;">
+    <div class="step-list">
+      <li>Go to <strong>Funnels</strong> → <strong>+ New Funnel</strong></li>
+      <li>Enter a <strong>Name</strong> and <strong>Niche/Description</strong> (e.g., "Roofing in Atlanta")</li>
+      <li>Click <strong>AI Generate</strong> — 4 qualification questions are auto-generated (requires ANTHROPIC_API_KEY)</li>
+      <li>Edit questions, set a headline, success message, and brand color</li>
+      <li>Optionally add a <strong>GHL Calendar ID</strong> to let leads book directly from the funnel</li>
+      <li>Toggle <strong>Active</strong> — your funnel is live at <code style="color:var(--green);">paypulse.app/f/{slug}</code></li>
+    </div>
+  </div>
+  <div class="callout">
+    <div class="callout-icon">🎯</div>
+    <div>Leads submitted through the funnel are stored in PayPulse. You can view them from the Funnels page → click the funnel → Leads tab.</div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     SCENE 11 — FAILED CHARGES
      ════════════════════════════════════════════ -->
 <div class="scene" data-scene="11">
-  <div class="story-num">SCENE 12 · TROUBLESHOOTING</div>
-  <div class="story-title">Common issues & fixes</div>
+  <div class="story-num">SCENE 10 · CHARGE FAILURES</div>
+  <div class="story-title">Handle failed charges</div>
   <div class="story-subtitle">
-    Click any question to expand the answer. These are the most-reported issues from mentees in the past few months.
+    When a charge fails, PayPulse automatically moves the client to "At Risk" and sends you a notification. You can also set up an SMS alert via GHL webhook.
   </div>
-
-  <div class="trouble-item" onclick="this.classList.toggle('open')">
-    <div class="trouble-q">"No payment method on file" when trying to charge</div>
-    <div class="trouble-a">
-      <strong>For Whop customers:</strong> click the 🔄 <strong>Pull from Whop</strong> button next to the Payment Method ID in the charge modal — fetches the latest card directly from Whop.<br><br>
-      <strong>For Stripe/Fanbasis:</strong> the customer needs to complete a payment in the processor first. Once they pay, the webhook saves the card automatically.<br><br>
-      <strong>You can also</strong> click <strong>Sync Customers</strong> to backfill cards for all clients at once.
+  <div style="margin:24px 0;">
+    <div class="step-list">
+      <li>Go to <strong>Settings → Failed Charge Alerts</strong></li>
+      <li>Create a webhook in GHL (Settings → Webhooks → Add Webhook)</li>
+      <li>Paste the GHL webhook URL into PayPulse Settings</li>
+      <li>Now when a charge fails, PayPulse sends the client name, company, amount, and failure reason to GHL</li>
+      <li>Create a workflow in GHL that sends an SMS to your team: <strong>"{client} - ${amount} charge failed"</strong></li>
     </div>
   </div>
-
-  <div class="trouble-item" onclick="this.classList.toggle('open')">
-    <div class="trouble-q">Customer paid but isn't showing in PayPulse</div>
-    <div class="trouble-a">
-      Your webhook isn't configured correctly. Go to your processor's webhook dashboard → Event deliveries — look for failed (red) events. If you see 500 errors, click <strong>Resend</strong> on the failed event.<br><br>
-      You can also manually pull all missing customers with <strong>Sync Customers</strong>.
-    </div>
-  </div>
-
-  <div class="trouble-item" onclick="this.classList.toggle('open')">
-    <div class="trouble-q">Stripe webhook returning 500 errors</div>
-    <div class="trouble-a">
-      Usually transient — Railway may have restarted. Wait 60 seconds, then click <strong>Resend</strong> on the failed event in Stripe Dashboard → Developers → Webhooks → Event deliveries.<br><br>
-      If errors persist:<br>
-      • Verify your Stripe Secret Key starts with <code>sk_live_</code> (not <code>sk_test_</code>)<br>
-      • Verify the webhook URL matches exactly what's in PayPulse → Settings
-    </div>
-  </div>
-
-  <div class="trouble-item" onclick="this.classList.toggle('open')">
-    <div class="trouble-q">Whop API returning 401 Unauthorized</div>
-    <div class="trouble-a">
-      Your Whop API key got rotated or is incorrect. Generate a new one in Whop → Settings → Developer → API Keys, then paste it into PayPulse → Settings.<br><br>
-      <strong>Important:</strong> the key must be created at the <strong>sub-account (business) level</strong>, NOT the agency level.
-    </div>
-  </div>
-
-
-  <div class="trouble-item" onclick="this.classList.toggle('open')">
-    <div class="trouble-q">Login session keeps expiring / "Invalid token"</div>
-    <div class="trouble-a">
-      Sign out and sign back in. The latest PayPulse auto-refreshes session tokens, but you need a fresh login to grab the refresh token first.<br><br>
-      If it keeps happening, clear localStorage for the PayPulse domain in your browser dev tools, then log in fresh.
-    </div>
-  </div>
-
-  </div>
+  <div class="code-block">POST /your-ghl-webhook → { "event": "charge.failed", "customer_name": "...", "customer_company": "...", "amount": 147, "failure_reason": "card_declined" }</div>
 </div>
 
 <!-- ════════════════════════════════════════════
-     SCENE 12 — FINISH
+     SCENE 12 — COMMON ISSUES
      ════════════════════════════════════════════ -->
 <div class="scene" data-scene="12">
-  <div style="text-align:center;padding:60px 20px;">
-    <div class="finish-icon">🎉</div>
-    <div style="font-size:14px;font-weight:800;color:var(--green);letter-spacing:0.25em;margin-bottom:14px;">YOU'RE READY</div>
-    <div style="font-size:48px;font-weight:900;line-height:1.1;margin-bottom:18px;">
-      You did it.
-    </div>
-    <div style="font-size:17px;color:var(--text2);line-height:1.6;max-width:560px;margin:0 auto 36px;">
-      You now know everything you need to use PayPulse end-to-end. Start with your first customer setup, fire a $1 test charge, and you're off to the races.
-    </div>
+  <div class="story-num">SCENE 11 · TROUBLESHOOTING</div>
+  <div class="story-title">Common issues & fixes</div>
+  <div class="story-subtitle">Quick fixes for the most common questions.</div>
 
-    <div class="card-grid" style="max-width:700px;margin:0 auto 36px;">
-      <div class="choice" style="cursor:default;">
-        <div class="choice-icon">📚</div>
-        <div class="choice-name">Re-read sections</div>
-        <div class="choice-desc">Use the menu to jump back to any topic you want to revisit.</div>
+  <div style="margin:24px 0;">
+    <div style="border:1px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden;">
+      <div onclick="this.nextElementSibling.classList.toggle('open')" style="padding:16px 20px;font-weight:800;font-size:14px;cursor:pointer;display:flex;justify-content:space-between;">
+        <span>❌ "Charge failed" — card declined</span>
+        <span style="color:var(--text3);">+</span>
       </div>
-      <div class="choice" style="cursor:default;">
-        <div class="choice-icon">💬</div>
-        <div class="choice-name">Ask in the group</div>
-        <div class="choice-desc">Stuck on something specific? Drop a screenshot in chat — mentors will help.</div>
+      <div style="max-height:0;overflow:hidden;transition:max-height 0.3s;padding:0 20px;">
+        <div style="padding-bottom:16px;font-size:13px;color:var(--text2);line-height:1.6;">
+          Update the client's card. Go to Analytics → Card Info → Save New Card (opens Stripe Checkout). Or manually update in Stripe Dashboard. After saving, retry the charge from the client card.
+        </div>
       </div>
     </div>
-
-    <div class="btn-row" style="justify-content:center;">
-      <button class="btn btn-ghost" onclick="goToScene(1)">← Restart Guide</button>
-      <button class="btn btn-primary" onclick="window.open(window.location.origin, '_blank')">Open PayPulse →</button>
+    <div style="border:1px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden;">
+      <div onclick="this.nextElementSibling.classList.toggle('open')" style="padding:16px 20px;font-weight:800;font-size:14px;cursor:pointer;display:flex;justify-content:space-between;">
+        <span>🔑 "Invalid Stripe key"</span>
+        <span style="color:var(--text3);">+</span>
+      </div>
+      <div style="max-height:0;overflow:hidden;transition:max-height 0.3s;padding:0 20px;">
+        <div style="padding-bottom:16px;font-size:13px;color:var(--text2);line-height:1.6;">
+          Make sure you're using a <strong>live</strong> Stripe key (starts with <code>sk_live_</code>). Test keys (<code>sk_test_</code>) won't process real charges. Go to Settings → paste your live Stripe Secret Key → Save.
+        </div>
+      </div>
     </div>
+    <div style="border:1px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden;">
+      <div onclick="this.nextElementSibling.classList.toggle('open')" style="padding:16px 20px;font-weight:800;font-size:14px;cursor:pointer;display:flex;justify-content:space-between;">
+        <span>🌐 GHL webhook not triggering charges</span>
+        <span style="color:var(--text3);">+</span>
+      </div>
+      <div style="max-height:0;overflow:hidden;transition:max-height 0.3s;padding:0 20px;">
+        <div style="padding-bottom:16px;font-size:13px;color:var(--text2);line-height:1.6;">
+          Check that: (1) The GHL Trigger URL is copied correctly in Settings, (2) The client has their GHL Location ID set in Edit, (3) The client has a card on file, (4) The webhook is active in GHL. Test by booking a real appointment.
+        </div>
+      </div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden;">
+      <div onclick="this.nextElementSibling.classList.toggle('open')" style="padding:16px 20px;font-weight:800;font-size:14px;cursor:pointer;display:flex;justify-content:space-between;">
+        <span>🔒 "Account pending approval"</span>
+        <span style="color:var(--text3);">+</span>
+      </div>
+      <div style="max-height:0;overflow:hidden;transition:max-height 0.3s;padding:0 20px;">
+        <div style="padding-bottom:16px;font-size:13px;color:var(--text2);line-height:1.6;">
+          New accounts require admin approval before you can log in. Contact your admin or check back later. Once approved, you'll be able to log in with the credentials you signed up with.
+        </div>
+      </div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden;">
+      <div onclick="this.nextElementSibling.classList.toggle('open')" style="padding:16px 20px;font-weight:800;font-size:14px;cursor:pointer;display:flex;justify-content:space-between;">
+        <span>📊 Metrics shows $0 revenue</span>
+        <span style="color:var(--text3);">+</span>
+      </div>
+      <div style="max-height:0;overflow:hidden;transition:max-height 0.3s;padding:0 20px;">
+        <div style="padding-bottom:16px;font-size:13px;color:var(--text2);line-height:1.6;">
+          The Metrics page shows data from the last 30 days. If you just created charges, give it a moment or check that charges have <code>created_at</code> dates within the last 30 days. Admin can use 🌱 Seed Demo to generate test data.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center;margin-top:40px;padding:40px;border:1px dashed var(--border);border-radius:16px;">
+    <div style="font-size:24px;margin-bottom:12px;">🎉</div>
+    <div style="font-size:20px;font-weight:900;margin-bottom:8px;">You're all set!</div>
+    <div style="color:var(--text2);font-size:14px;margin-bottom:24px;">
+      PayPulse is now configured and ready to bill your clients automatically. If you run into any issues, check this guide again or contact your admin.
+    </div>
+    <button class="btn btn-primary" onclick="resetGuide()">Start Over</button>
   </div>
 </div>
 
-<!-- NAV BUTTONS (shared across all but first/last scene) -->
-<div class="nav-row" id="navRow">
-  <button class="btn btn-ghost" id="btnPrev" onclick="prevScene()">← Previous</button>
-  <div id="sectionMenu" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;max-width:60%;"></div>
-  <button class="btn btn-primary" id="btnNext" onclick="nextScene()">Next →</button>
-</div>
-
-</div><!-- /stage -->
-
-<div class="kbd-hint">
-  <span>Navigate:</span>
-  <span class="kbd">←</span>
-  <span class="kbd">→</span>
 </div>
 
 <script>
-const SECTIONS = [
-  { n: 1, name: 'Welcome' },
-  { n: 2, name: 'What it does' },
-  { n: 3, name: 'Pick processor' },
-  { n: 4, name: 'Get API key' },
-  { n: 5, name: 'Connect' },
-  { n: 6, name: 'Webhook' },
-  { n: 7, name: 'Import clients' },
-  { n: 8, name: 'Dashboard' },
-  { n: 9, name: 'Customer settings' },
-  { n: 10, name: 'Fire a charge' },
-  { n: 11, name: 'Troubleshooting' },
-  { n: 12, name: 'Done!' },
-];
+const total = 12;
+document.getElementById('totalSteps').textContent = total;
+let current = 1;
 
-let currentScene = 1;
-let chosenProcessor = localStorage.getItem('fc_guide_proc') || 'whop';
-let savedScene = parseInt(localStorage.getItem('fc_guide_scene') || '1');
-
-const PROC_NAMES = { whop: 'Whop', stripe: 'Stripe' };
-
-function init() {
-  applyProcessor(chosenProcessor);
-  buildSectionMenu();
-  if (savedScene > 1 && savedScene <= 12) {
-    if (confirm('Resume from where you left off (step ' + savedScene + ')?')) {
-      goToScene(savedScene);
-      return;
+function nextScene() {
+  const prev = document.querySelector('.scene.active');
+  if (prev) {
+    prev.classList.remove('active');
+    const n = parseInt(prev.dataset.scene);
+    if (n < total) {
+      current = n + 1;
+      const next = document.querySelector(`[data-scene="${current}"]`);
+      if (next) next.classList.add('active');
+      document.getElementById('stepNum').textContent = current;
+      document.getElementById('progressBar').style.width = ((current / total) * 100) + '%';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }
-  goToScene(1);
 }
 
-function buildSectionMenu() {
-  const m = document.getElementById('sectionMenu');
-  m.innerHTML = SECTIONS.map(s =>
-    `<div class="pill" onclick="goToScene(${s.n})" data-pill="${s.n}">${s.n}</div>`
-  ).join('');
-}
-
-function updateMenu() {
-  document.querySelectorAll('.pill').forEach(p => {
-    p.classList.toggle('active', parseInt(p.dataset.pill) === currentScene);
-  });
-}
-
-function goToScene(n) {
-  if (n < 1 || n > 12) return;
-  currentScene = n;
-  document.querySelectorAll('.scene').forEach(s => s.classList.remove('active'));
-
-  // Show the right variant based on chosen processor for scene 4
-  let target;
-  if (n === 4) {
-    target = document.querySelector(`.scene[data-scene="4"][data-proc-${chosenProcessor}]`);
-  } else {
-    target = document.querySelector(`.scene[data-scene="${n}"]:not([data-proc-whop]):not([data-proc-stripe])`);
+function prevScene() {
+  const prev = document.querySelector('.scene.active');
+  if (prev) {
+    prev.classList.remove('active');
+    const n = parseInt(prev.dataset.scene);
+    if (n > 1) {
+      current = n - 1;
+      const next = document.querySelector(`[data-scene="${current}"]`);
+      if (next) next.classList.add('active');
+      document.getElementById('stepNum').textContent = current;
+      document.getElementById('progressBar').style.width = ((current / total) * 100) + '%';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   }
-  if (target) target.classList.add('active');
+}
 
-  // Update progress bar
-  document.getElementById('progressBar').style.width = ((n-1)/11 * 100) + '%';
-  document.getElementById('stepNum').textContent = n;
-
-  // Hide nav row on scenes 1 and 14
-  const navRow = document.getElementById('navRow');
-  navRow.style.display = (n === 1 || n === 12) ? 'none' : '';
-
-  // Update prev button state
-  document.getElementById('btnPrev').classList.toggle('btn-disabled', n === 1);
-
-  // Update next button label
-  document.getElementById('btnNext').textContent = n === 11 ? 'Finish →' : 'Next →';
-
-  // Save progress
-  localStorage.setItem('fc_guide_scene', n);
-
-  // Scroll to top
+function resetGuide() {
+  const active = document.querySelector('.scene.active');
+  if (active) active.classList.remove('active');
+  document.querySelector('[data-scene="1"]').classList.add('active');
+  current = 1;
+  document.getElementById('stepNum').textContent = 1;
+  document.getElementById('progressBar').style.width = '5%';
   window.scrollTo({ top: 0, behavior: 'smooth' });
-
-  // Update section menu
-  updateMenu();
-
-  // Special scene-specific setup
-  if (n === 6) updateWebhookInstructions();
 }
 
-function nextScene() { goToScene(currentScene + 1); }
-function prevScene() { goToScene(currentScene - 1); }
-
-function pickProc(p) {
-  chosenProcessor = p;
-  localStorage.setItem('fc_guide_proc', p);
-  document.querySelectorAll('.choice[data-proc]').forEach(el => {
-    el.classList.toggle('selected', el.dataset.proc === p);
-  });
-  applyProcessor(p);
-  setTimeout(nextScene, 500);
-}
-
-function applyProcessor(p) {
-  // Highlight selected processor card on Scene 3
-  document.querySelectorAll('.choice[data-proc]').forEach(el => {
-    el.classList.toggle('selected', el.dataset.proc === p);
-  });
-
-  // Update reference text throughout
-  const cpn = document.getElementById('chosenProcName');
-  if (cpn) cpn.textContent = PROC_NAMES[p];
-
-  updateWebhookInstructions();
-}
-
-function updateWebhookInstructions() {
-  const slug = document.getElementById('whProcSlug');
-  if (slug) slug.textContent = chosenProcessor;
-  const procName = document.getElementById('whFlowProcName');
-  if (procName) procName.textContent = PROC_NAMES[chosenProcessor];
-  const insts = {
-    whop: 'whInstWhop',
-    stripe: 'whInstStripe',
-  };
-  Object.entries(insts).forEach(([k, id]) => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = (k === chosenProcessor) ? '' : 'none';
-  });
-}
-
-// Keyboard nav
-document.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight') nextScene();
   if (e.key === 'ArrowLeft') prevScene();
 });
-
-init();
 </script>
 
 </body>
