@@ -3146,6 +3146,9 @@ app.get('/api/admin/agencies/:id/subscription', requireAuth, requireAdmin, async
 
 // ─── SERVE ────────────────────────────────────────────────────────
 app.get('/', (req, res) =>
+  res.sendFile(path.join(__dirname, 'public', 'landing.html'))
+);
+app.get('/app', (req, res) =>
   res.sendFile(path.join(__dirname, 'public', 'index.html'))
 );
 app.get('/guide', (req, res) =>
@@ -3165,8 +3168,10 @@ app.use((err, req, res, next) => {
 app.use((req, res) => {
   if (req.path.startsWith('/api/')) {
     res.status(404).json({ error: 'Not found' });
-  } else {
+  } else if (req.path.startsWith('/app')) {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  } else {
+    res.sendFile(path.join(__dirname, 'public', 'landing.html'));
   }
 });
 
