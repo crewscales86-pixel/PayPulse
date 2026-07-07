@@ -993,7 +993,7 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
         await api('/api/customers/' + editModal.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: normalizedRate, status: editModal.status, name: editModal.name, company_name: editModal.company_name, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
         showToast('Customer updated!', 'success');
       }
-      setEditModal(null); onRefresh();
+      setEditModal(null); await onRefresh();
     } catch (err) {
       showToast(err.message || 'Save failed', 'error');
       setEditModal({ ...editModal, saving: false });
@@ -2250,7 +2250,7 @@ function App() {
       setUser(me);
 
       if (me.role === 'admin') {
-        const [aRes, sRes, cRes, nRes, seRes, chRes, mRes, uRes, alRes, whRes, auRes, forecastRes, marginRes] = await Promise.all([
+        const results = await Promise.allSettled([
           api('/api/admin/agencies'),
           api('/api/admin/stats'),
           api('/api/customers'), api('/api/notifications'), api('/api/settings'),
@@ -2258,37 +2258,39 @@ function App() {
           api('/api/alerts').catch(() => []), api('/api/webhook-events').catch(() => []), api('/api/audit-logs').catch(() => []),
           api('/api/forecast').catch(() => ({})), api('/api/margin-dashboard').catch(() => ({})),
         ]);
-        setAgencies(aRes);
-        setAdminStats(sRes);
-        setCustomers(cRes);
-        setNotifications(nRes);
-        setSettings(seRes);
-        setCharges(chRes);
-        setMetrics(mRes);
-        setUnreadCount(uRes.count);
-        setAlerts(alRes);
-        setWebhookEvents(whRes);
-        setAuditLogs(auRes);
-        setForecast(forecastRes);
-        setMarginDashboard(marginRes);
+        const [aRes, sRes, cRes, nRes, seRes, chRes, mRes, uRes, alRes, whRes, auRes, forecastRes, marginRes] = results.map(r => r.status === 'fulfilled' ? r.value : null);
+        setAgencies(aRes || []);
+        setAdminStats(sRes || null);
+        setCustomers(cRes || []);
+        setNotifications(nRes || []);
+        setSettings(seRes || null);
+        setCharges(chRes || []);
+        setMetrics(mRes || null);
+        setUnreadCount(uRes?.count || 0);
+        setAlerts(alRes || []);
+        setWebhookEvents(whRes || []);
+        setAuditLogs(auRes || []);
+        setForecast(forecastRes || {});
+        setMarginDashboard(marginRes || {});
       } else {
-        const [cRes, nRes, sRes, chRes, mRes, uRes, alRes, whRes, auRes, forecastRes, marginRes] = await Promise.all([
+        const results = await Promise.allSettled([
           api('/api/customers'), api('/api/notifications'), api('/api/settings'),
           api('/api/charges'), api('/api/metrics'), api('/api/notifications/unread-count'),
           api('/api/alerts'), api('/api/webhook-events'), api('/api/audit-logs'),
           api('/api/forecast'), api('/api/margin-dashboard'),
         ]);
-        setCustomers(cRes);
-        setNotifications(nRes);
-        setSettings(sRes);
-        setCharges(chRes);
-        setMetrics(mRes);
-        setUnreadCount(uRes.count);
-        setAlerts(alRes);
-        setWebhookEvents(whRes);
-        setAuditLogs(auRes);
-        setForecast(forecastRes);
-        setMarginDashboard(marginRes);
+        const [cRes, nRes, sRes, chRes, mRes, uRes, alRes, whRes, auRes, forecastRes, marginRes] = results.map(r => r.status === 'fulfilled' ? r.value : null);
+        setCustomers(cRes || []);
+        setNotifications(nRes || []);
+        setSettings(sRes || null);
+        setCharges(chRes || []);
+        setMetrics(mRes || null);
+        setUnreadCount(uRes?.count || 0);
+        setAlerts(alRes || []);
+        setWebhookEvents(whRes || []);
+        setAuditLogs(auRes || []);
+        setForecast(forecastRes || {});
+        setMarginDashboard(marginRes || {});
       }
     } catch (err) { console.error('Refresh failed', err); }
   }, [token]);
