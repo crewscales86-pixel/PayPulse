@@ -3,7 +3,8 @@ FROM node:22-alpine
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --only=production
+RUN apk add --no-cache python3 make g++ \
+  && npm ci --omit=dev
 
 COPY . .
 
