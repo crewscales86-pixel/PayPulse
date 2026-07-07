@@ -1211,6 +1211,16 @@ function getBackgroundJobByKey(jobKey) {
 }
 
 function getDueBackgroundJobs(limit = 20) {
+  if (USE_PG) {
+    return all(
+      `SELECT * FROM background_jobs
+       WHERE status IN ('pending', 'retrying')
+         AND (run_at IS NULL OR run_at <= ?)
+       ORDER BY run_at ASC NULLS FIRST, created_at ASC
+       LIMIT ?`,
+      [new Date().toISOString(), limit]
+    );
+  }
   return all(
     `SELECT * FROM background_jobs
      WHERE status IN ('pending', 'retrying')
