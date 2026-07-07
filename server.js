@@ -3151,6 +3151,9 @@ app.get('/', (req, res) =>
 app.get('/guide', (req, res) =>
   res.sendFile(path.join(__dirname, 'public', 'guide.html'))
 );
+app.get('/landing', (req, res) =>
+  res.sendFile(path.join(__dirname, 'public', 'landing.html'))
+);
 
 // ─── GLOBAL ERROR HANDLER ────────────────────────────────────────
 app.use((err, req, res, next) => {
