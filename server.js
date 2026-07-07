@@ -891,6 +891,10 @@ async function fireFailWebhook(user, customer, amount, reason) {
 
 async function scheduleChargeRetry(charge, reason = '') {
   const retryCount = (parseInt(charge.retry_count, 10) || 0) + 1;
+  if (retryCount > 5) {
+    await db.updateCharge(charge.id, { retry_status: 'exhausted', retry_count: retryCount });
+    return;
+  }
   const nextRetryAt = new Date(Date.now() + Math.min(retryCount, 3) * 24 * 60 * 60 * 1000).toISOString();
   return db.updateCharge(charge.id, {
     retry_count: retryCount,
@@ -1086,12 +1090,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
             card_on_file: 1
           });
         }
-        await db.updateCustomer(customer.id, {
-          total_charged:
-            (parseFloat(customer.total_charged) || 0) + chargeAmount,
-          total_triggers:
-            (parseInt(customer.total_triggers) || 0) + 1
-        });
+        await db.run('UPDATE customers SET total_charged = COALESCE(total_charged,0) + ?, total_triggers = COALESCE(total_triggers,0) + 1 WHERE id = ?', [chargeAmount, customer.id]);
         await db.addNotification({
           user_id: user.id,
           type: 'success',
@@ -1161,12 +1160,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
           status: 'succeeded',
           stripe_charge_id: payment.id
         });
-        await db.updateCustomer(customer.id, {
-          total_charged:
-            (parseFloat(customer.total_charged) || 0) + chargeAmount,
-          total_triggers:
-            (parseInt(customer.total_triggers) || 0) + 1
-        });
+        await db.run('UPDATE customers SET total_charged = COALESCE(total_charged,0) + ?, total_triggers = COALESCE(total_triggers,0) + 1 WHERE id = ?', [chargeAmount, customer.id]);
         await db.addNotification({
           user_id: user.id,
           type: 'success',
@@ -1217,34 +1211,18 @@ async function processCharge(user, customer, note = '', utmData = {}) {
     return db.getChargeById(charge.id);
   }
 
-  // Fallback — simulated charge (no Whop payment method configured)
+  // Fallback — no working payment processor configured
   await db.updateCharge(charge.id, {
-    status: 'succeeded',
-    stripe_charge_id: `sim_${uuidv4().slice(0,8)}`
-  });
-  await db.updateCustomer(customer.id, {
-    total_charged:
-      (parseFloat(customer.total_charged) || 0) + chargeAmount,
-    total_triggers:
-      (parseInt(customer.total_triggers) || 0) + 1
+    status: 'failed',
+    failure_reason: 'No active payment processor — check Settings'
   });
   await db.addNotification({
     user_id: user.id,
-    type: 'success',
-    title: `Charge successful — ${customer.name}`,
-    body: `$${chargeAmount.toFixed(2)} charged via ${user.processor}. ${note}`
+    type: 'fail',
+    title: `Charge failed — ${customer.name}`,
+    body: 'No payment processor configured — check Settings'
   });
-  await db.updateCharge(charge.id, {
-    retry_status: 'none',
-    next_retry_at: null
-  });
-  await audit('charge.succeeded', {
-    actor: user,
-    customer_id: customer.id,
-    target_type: 'charge',
-    target_id: charge.id,
-    details: { customer_id: customer.id, amount: chargeAmount, processor: user.processor, simulated: true }
-  });
+  await fireFailWebhook(user, customer, chargeAmount, 'No payment processor configured');
   return db.getChargeById(charge.id);
 }
 
@@ -1691,6 +1669,10 @@ app.delete('/api/customers/:id', requireAuth, async (req, res) => {
   const c = await db.getCustomerById(req.params.id);
   if (!c || c.user_id !== req.user.id)
     return res.status(404).json({ error: 'Not found' });
+  await db.run('DELETE FROM charges WHERE customer_id = ?', [req.params.id]);
+  await db.run('DELETE FROM appointments WHERE customer_id = ?', [req.params.id]);
+  await db.run('DELETE FROM ad_metrics WHERE customer_id = ?', [req.params.id]);
+  await db.run('DELETE FROM webhook_events WHERE customer_id = ?', [req.params.id]);
   await db.run('DELETE FROM customers WHERE id = ?', [req.params.id]);
   await audit('customer.deleted', {
     actor: req.user,

@@ -959,9 +959,6 @@ function CustomersPage({ customers, onRefresh, settings, showToast, segments, ac
         animation: 200,
         ghostClass: 'sortable-ghost',
         onEnd: function(evt) {
-          if (evt.from !== evt.to) {
-            evt.from.insertBefore(evt.item, evt.from.children[evt.oldIndex] || null);
-          }
           var colEl = evt.to.closest('.kanban-col');
           var colIdx = Array.prototype.indexOf.call(colEl.parentNode.children, colEl);
           var newStatus = colKeys[colIdx];
