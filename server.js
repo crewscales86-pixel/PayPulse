@@ -27,6 +27,7 @@ const META_API_VERSION = process.env.META_API_VERSION || 'v23.0';
 const META_REDIRECT_URI = process.env.META_REDIRECT_URI || `${BASE_URL}/api/meta/callback`;
 
 const app = express();
+app.set('trust proxy', 1);
 
 // ─── SECURITY MIDDLEWARE ─────────────────────────────────────────
 app.use(helmet({
@@ -66,6 +67,15 @@ app.use(bodyParser.json({
 }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '100kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/api/health', async (req, res) => {
+  res.json({
+    ok: true,
+    service: 'paypulse',
+    db: process.env.DATABASE_URL ? 'postgres' : 'sqlite',
+    time: new Date().toISOString()
+  });
+});
 
 // ─── INIT DB ─────────────────────────────────────────────────────
 db.initSchema()
@@ -3236,7 +3246,7 @@ app.use((req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@paypulse.co';
   const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
   const jwtSecretSet = process.env.JWT_SECRET ? true : false;

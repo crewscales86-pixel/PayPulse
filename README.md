@@ -29,7 +29,7 @@ node server.js
 # Using Docker:
 docker-compose up -d
 
-# Or deploy to Railway/Render with these env vars:
+# Or deploy to Railway with these env vars:
 # NODE_ENV=production
 # PORT=3000
 # JWT_SECRET=<random-64-char>
@@ -40,6 +40,22 @@ docker-compose up -d
 # META_REDIRECT_URI=https://yourdomain.com/api/meta/callback
 # STRIPE_SECRET_KEY=sk_live_xxx (optional)
 ```
+
+### Railway setup
+1. Create a Railway project from this repo.
+2. Add a PostgreSQL service in Railway and link it to the app service.
+3. Set the app service variables:
+   - `JWT_SECRET`
+   - `BASE_URL`
+   - `STRIPE_WEBHOOK_ROUTE_SECRET`
+   - `STRIPE_WEBHOOK_SECRET`
+   - `META_APP_ID`
+   - `META_APP_SECRET`
+   - `META_REDIRECT_URI`
+4. Let Railway inject `DATABASE_URL` from the PostgreSQL service.
+5. Set the service health check path to `/api/health`.
+6. Make sure the public domain points at the app service and uses the Railway-managed `PORT`.
+7. Deploy once, then use the Railway logs to confirm the app reports `db: postgres`.
 
 ## Admin Flow
 1. Login as admin (`admin@paypulse.co` / `admin123`)
@@ -111,6 +127,29 @@ docker-compose up -d
 - Manual credits and refund flow
 - Saved customer segments and CSV exports
 - Dashboard alerts for failures, retries, missing cards, webhook issues, and due follow-ups
+
+## How To Scale Beyond 10 Users
+The app is already structured for multiple agency accounts, but to make it production-grade for growth, use this phased approach:
+
+1. Move production off SQLite and onto Railway Postgres only.
+2. Keep one web app service and one Postgres service to start, with the `/api/health` check enabled.
+3. Add a background worker for retries, webhook processing, email notifications, and scheduled follow-ups so the web request path stays fast.
+4. Add Redis or a queue only once jobs become noticeably slow or bursty.
+5. Split read-heavy analytics into cached summaries or a reporting table when dashboard traffic grows.
+6. Add monitoring for webhook failures, Stripe failures, and slow DB queries before expanding the beta.
+7. When you pass a few dozen active accounts, consider splitting into separate services:
+   - API/webhook service
+   - background worker
+   - reporting/analytics job service
+   - optional read replica for heavy dashboards
+
+For this product, the biggest “make it real” upgrades are:
+- Postgres in production
+- background job processing for retries and webhook work
+- health checks + alerting
+- strong idempotency on every external webhook
+- per-customer webhook routing by GHL sub-account/location
+- per-account observability in Railway logs
 
 ## Meta Setup Model
 - PayPulse uses one platform-level Meta app configured by the PayPulse owner on Railway.
