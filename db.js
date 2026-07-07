@@ -209,8 +209,28 @@ async function initSchema() {
         metadata TEXT DEFAULT '',
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS background_jobs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT DEFAULT '',
+        type TEXT NOT NULL,
+        job_key TEXT DEFAULT '',
+        payload TEXT DEFAULT '',
+        status TEXT DEFAULT 'pending',
+        attempts INTEGER DEFAULT 0,
+        max_attempts INTEGER DEFAULT 5,
+        run_at TIMESTAMPTZ DEFAULT NOW(),
+        locked_at TIMESTAMPTZ NULL,
+        locked_by TEXT DEFAULT '',
+        last_error TEXT DEFAULT '',
+        completed_at TIMESTAMPTZ NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
       CREATE UNIQUE INDEX IF NOT EXISTS webhook_events_event_key_idx
         ON webhook_events (user_id, source, event_key);
+      CREATE INDEX IF NOT EXISTS background_jobs_status_run_at_idx
+        ON background_jobs (status, run_at);
+      CREATE INDEX IF NOT EXISTS background_jobs_job_key_idx
+        ON background_jobs (job_key);
       CREATE INDEX IF NOT EXISTS customers_user_email_idx
         ON customers (user_id, email);
       CREATE INDEX IF NOT EXISTS customers_user_location_idx
@@ -350,6 +370,20 @@ async function initSchema() {
         status TEXT DEFAULT 'prepared', metadata TEXT DEFAULT '',
         created_at TEXT DEFAULT (datetime('now'))
       );
+      CREATE TABLE IF NOT EXISTS background_jobs (
+        id TEXT PRIMARY KEY, user_id TEXT DEFAULT '',
+        type TEXT NOT NULL, job_key TEXT DEFAULT '',
+        payload TEXT DEFAULT '', status TEXT DEFAULT 'pending',
+        attempts INTEGER DEFAULT 0, max_attempts INTEGER DEFAULT 5,
+        run_at TEXT DEFAULT (datetime('now')),
+        locked_at TEXT DEFAULT '', locked_by TEXT DEFAULT '',
+        last_error TEXT DEFAULT '', completed_at TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS background_jobs_status_run_at_idx
+        ON background_jobs (status, run_at);
+      CREATE INDEX IF NOT EXISTS background_jobs_job_key_idx
+        ON background_jobs (job_key);
       CREATE INDEX IF NOT EXISTS notes_user_customer_idx
         ON customer_notes (user_id, customer_id);
     `);
@@ -535,6 +569,49 @@ async function initSchema() {
       if (!cols.find(c => c.name === 'approved')) {
         sqliteDb.exec(`ALTER TABLE users ADD COLUMN approved INTEGER DEFAULT 0`);
       }
+    }
+  } catch (e) { /* ignore */ }
+
+  // Migration: background jobs table for durable retries
+  try {
+    if (USE_PG) {
+      await pgPool.query(`
+        CREATE TABLE IF NOT EXISTS background_jobs (
+          id TEXT PRIMARY KEY,
+          user_id TEXT DEFAULT '',
+          type TEXT NOT NULL,
+          job_key TEXT DEFAULT '',
+          payload TEXT DEFAULT '',
+          status TEXT DEFAULT 'pending',
+          attempts INTEGER DEFAULT 0,
+          max_attempts INTEGER DEFAULT 5,
+          run_at TIMESTAMPTZ DEFAULT NOW(),
+          locked_at TIMESTAMPTZ NULL,
+          locked_by TEXT DEFAULT '',
+          last_error TEXT DEFAULT '',
+          completed_at TIMESTAMPTZ NULL,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+      `);
+      await pgPool.query(`CREATE INDEX IF NOT EXISTS background_jobs_status_run_at_idx ON background_jobs (status, run_at)`);
+      await pgPool.query(`CREATE INDEX IF NOT EXISTS background_jobs_job_key_idx ON background_jobs (job_key)`);
+    } else {
+      sqliteDb.exec(`
+        CREATE TABLE IF NOT EXISTS background_jobs (
+          id TEXT PRIMARY KEY, user_id TEXT DEFAULT '',
+          type TEXT NOT NULL, job_key TEXT DEFAULT '',
+          payload TEXT DEFAULT '', status TEXT DEFAULT 'pending',
+          attempts INTEGER DEFAULT 0, max_attempts INTEGER DEFAULT 5,
+          run_at TEXT DEFAULT (datetime('now')),
+          locked_at TEXT DEFAULT '', locked_by TEXT DEFAULT '',
+          last_error TEXT DEFAULT '', completed_at TEXT DEFAULT '',
+          created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS background_jobs_status_run_at_idx
+          ON background_jobs (status, run_at);
+        CREATE INDEX IF NOT EXISTS background_jobs_job_key_idx
+          ON background_jobs (job_key);
+      `);
     }
   } catch (e) { /* ignore */ }
 }
@@ -1085,6 +1162,93 @@ function getCommunicationLogsByUser(userId, limit = 200) {
   );
 }
 
+// ─── BACKGROUND JOBS ────────────────────────────────────────────
+function createBackgroundJob(data) {
+  const id = uuid();
+  const params = [
+    id,
+    data.user_id || '',
+    data.type,
+    data.job_key || '',
+    data.payload || '',
+    data.status || 'pending',
+    data.attempts || 0,
+    data.max_attempts || 5,
+    data.run_at || new Date().toISOString(),
+    data.locked_at || null,
+    data.locked_by || '',
+    data.last_error || '',
+    data.completed_at || null
+  ];
+  if (USE_PG) {
+    return pgPool.query(
+      `INSERT INTO background_jobs (id, user_id, type, job_key, payload, status, attempts, max_attempts, run_at, locked_at, locked_by, last_error, completed_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      params
+    ).then(() => getBackgroundJobById(id));
+  }
+  sqliteDb.prepare(
+    `INSERT INTO background_jobs (id, user_id, type, job_key, payload, status, attempts, max_attempts, run_at, locked_at, locked_by, last_error, completed_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+  ).run(...params);
+  return getBackgroundJobById(id);
+}
+
+function getBackgroundJobById(id) {
+  return get('SELECT * FROM background_jobs WHERE id = ?', [id]);
+}
+
+function getBackgroundJobByKey(jobKey) {
+  return get('SELECT * FROM background_jobs WHERE job_key = ? ORDER BY created_at DESC LIMIT 1', [jobKey]);
+}
+
+function getDueBackgroundJobs(limit = 20) {
+  return all(
+    `SELECT * FROM background_jobs
+     WHERE status IN ('pending', 'retrying')
+       AND (run_at IS NULL OR run_at = '' OR run_at <= ?)
+     ORDER BY run_at ASC, created_at ASC
+     LIMIT ?`,
+    [new Date().toISOString(), limit]
+  );
+}
+
+async function claimBackgroundJob(id, workerId) {
+  const now = new Date().toISOString();
+  if (USE_PG) {
+    const result = await pgPool.query(
+      `UPDATE background_jobs
+       SET status = 'processing', locked_at = $1, locked_by = $2
+       WHERE id = $3 AND status IN ('pending', 'retrying')
+       RETURNING *`,
+      [now, workerId, id]
+    );
+    return result.rows[0] || null;
+  }
+  const result = sqliteDb.prepare(
+    `UPDATE background_jobs
+     SET status = ?, locked_at = ?, locked_by = ?
+     WHERE id = ? AND status IN ('pending', 'retrying')`
+  ).run('processing', now, workerId, id);
+  if (!result.changes) return null;
+  return getBackgroundJobById(id);
+}
+
+function updateBackgroundJob(id, updates) {
+  const keys = Object.keys(updates);
+  if (keys.length === 0) return getBackgroundJobById(id);
+  if (USE_PG) {
+    const setClauses = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
+    return pgPool.query(
+      `UPDATE background_jobs SET ${setClauses} WHERE id = $${keys.length + 1}`,
+      [...keys.map(k => updates[k]), id]
+    ).then(() => getBackgroundJobById(id));
+  }
+  const setClause = keys.map(k => `${k} = ?`).join(', ');
+  sqliteDb.prepare(`UPDATE background_jobs SET ${setClause} WHERE id = ?`).run(...keys.map(k => updates[k]), id);
+  return getBackgroundJobById(id);
+}
+
 // ─── STATS ──────────────────────────────────────────────────────
 function getStats(userId) {
   if (USE_PG) {
@@ -1170,6 +1334,7 @@ module.exports = {
   createSavedSegment, getSavedSegmentById, getSavedSegmentsByUser, deleteSavedSegment,
   createMetaCampaignMapping, getMetaCampaignMappingById, getMetaCampaignMappingsByCustomer, replaceMetaCampaignMappings,
   createCommunicationLog, getCommunicationLogById, getCommunicationLogsByCustomer, getCommunicationLogsByUser,
+  createBackgroundJob, getBackgroundJobById, getBackgroundJobByKey, getDueBackgroundJobs, claimBackgroundJob, updateBackgroundJob,
   getStats, getAdminStats,
   ensureAdmin,
 };

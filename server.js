@@ -25,6 +25,16 @@ const META_APP_ID = process.env.META_APP_ID || '';
 const META_APP_SECRET = process.env.META_APP_SECRET || '';
 const META_API_VERSION = process.env.META_API_VERSION || 'v23.0';
 const META_REDIRECT_URI = process.env.META_REDIRECT_URI || `${BASE_URL}/api/meta/callback`;
+const ENABLE_BACKGROUND_JOBS =
+  String(process.env.ENABLE_BACKGROUND_JOBS || 'true').toLowerCase() !== 'false';
+const BACKGROUND_JOB_POLL_MS = Math.max(
+  parseInt(process.env.BACKGROUND_JOB_POLL_MS || '30000', 10) || 30000,
+  5000
+);
+const BACKGROUND_JOB_BATCH_SIZE = Math.max(
+  parseInt(process.env.BACKGROUND_JOB_BATCH_SIZE || '10', 10) || 10,
+  1
+);
 
 const app = express();
 app.set('trust proxy', 1);
@@ -73,18 +83,25 @@ app.get('/api/health', async (req, res) => {
     ok: true,
     service: 'paypulse',
     db: process.env.DATABASE_URL ? 'postgres' : 'sqlite',
+    backgroundJobs: {
+      enabled: ENABLE_BACKGROUND_JOBS,
+      pollMs: BACKGROUND_JOB_POLL_MS,
+      batchSize: BACKGROUND_JOB_BATCH_SIZE
+    },
     time: new Date().toISOString()
   });
 });
 
 // ─── INIT DB ─────────────────────────────────────────────────────
-db.initSchema()
-  .then(() => db.ensureAdmin())
-  .then(() => console.log('  ✓ DB schema + admin ready'))
-  .catch(err => {
-    console.error('  ✗ DB init error:', err.message);
-    process.exit(1);
-  });
+let bootstrapPromise = null;
+function bootstrap() {
+  if (!bootstrapPromise) {
+    bootstrapPromise = db.initSchema()
+      .then(() => db.ensureAdmin())
+      .then(() => console.log('  ✓ DB schema + admin ready'));
+  }
+  return bootstrapPromise;
+}
 
 let mailTransporter = null;
 function getMailer() {
@@ -1002,19 +1019,65 @@ async function fireFailWebhook(user, customer, amount, reason) {
   }
 }
 
+function getChargeRetryJobKey(chargeId) {
+  return `charge_retry:${chargeId}`;
+}
+
+async function ensureChargeRetryJob(charge) {
+  const jobKey = getChargeRetryJobKey(charge.id);
+  const payload = JSON.stringify({ chargeId: charge.id });
+  const existing = await db.getBackgroundJobByKey(jobKey);
+  if (existing && !['completed', 'cancelled'].includes(existing.status)) {
+    return db.updateBackgroundJob(existing.id, {
+      user_id: charge.user_id,
+      payload,
+      status: 'pending',
+      run_at: charge.next_retry_at || new Date().toISOString(),
+      locked_at: null,
+      locked_by: '',
+      last_error: '',
+      completed_at: null
+    });
+  }
+  return db.createBackgroundJob({
+    user_id: charge.user_id,
+    type: 'charge_retry',
+    job_key: jobKey,
+    payload,
+    status: 'pending',
+    run_at: charge.next_retry_at || new Date().toISOString(),
+    max_attempts: 5
+  });
+}
+
+async function clearChargeRetryJob(chargeId, status = 'completed') {
+  const existing = await db.getBackgroundJobByKey(getChargeRetryJobKey(chargeId));
+  if (!existing) return null;
+  return db.updateBackgroundJob(existing.id, {
+    status,
+    locked_at: null,
+    locked_by: '',
+    completed_at: status === 'completed' ? new Date().toISOString() : null,
+    last_error: ''
+  });
+}
+
 async function scheduleChargeRetry(charge, reason = '') {
   const retryCount = (parseInt(charge.retry_count, 10) || 0) + 1;
   if (retryCount > 5) {
+    await clearChargeRetryJob(charge.id, 'cancelled');
     await db.updateCharge(charge.id, { retry_status: 'exhausted', retry_count: retryCount });
     return;
   }
   const nextRetryAt = new Date(Date.now() + Math.min(retryCount, 3) * 24 * 60 * 60 * 1000).toISOString();
-  return db.updateCharge(charge.id, {
+  const updatedCharge = await db.updateCharge(charge.id, {
     retry_count: retryCount,
     retry_status: 'scheduled',
     next_retry_at: nextRetryAt,
     failure_reason: reason || charge.failure_reason || ''
   });
+  await ensureChargeRetryJob(updatedCharge);
+  return updatedCharge;
 }
 
 async function finalizeFailedCharge({ user, customer, charge, amount, reason, notificationBody, shouldWebhook = true }) {
@@ -1336,18 +1399,137 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
   }
 
   // Fallback — no working payment processor configured
-  await db.updateCharge(charge.id, {
-    status: 'failed',
-    failure_reason: 'No active payment processor — check Settings'
+  await finalizeFailedCharge({
+    user,
+    customer,
+    charge,
+    amount: chargeAmount,
+    reason: 'No active payment processor — check Settings',
+    notificationBody: 'No payment processor configured — check Settings'
   });
-  await db.addNotification({
-    user_id: user.id,
-    type: 'fail',
-    title: `Charge failed — ${customer.name}`,
-    body: 'No payment processor configured — check Settings'
-  });
-  await fireFailWebhook(user, customer, chargeAmount, 'No payment processor configured');
   return db.getChargeById(charge.id);
+}
+
+async function retryFailedCharge(user, oldCharge, actor = user) {
+  if (!oldCharge || oldCharge.status !== 'failed') {
+    throw new Error('Only failed charges can be retried');
+  }
+  const customer = await db.getCustomerById(oldCharge.customer_id);
+  if (!customer) {
+    throw new Error('Customer not found for failed charge');
+  }
+  const originalAmount = parseFloat(oldCharge.amount) || 0;
+  const chargeCustomer = { ...customer, rate_per_trigger: originalAmount };
+  const newCharge = await processCharge(
+    user,
+    chargeCustomer,
+    `Retry of charge ${oldCharge.id.slice(-8)}`,
+    {},
+    { appointmentId: oldCharge.appointment_id || '' }
+  );
+  await db.updateCharge(oldCharge.id, { status: 'retried', retry_status: 'completed', next_retry_at: null });
+  await clearChargeRetryJob(oldCharge.id, 'completed');
+  await db.updateCharge(newCharge.id, {
+    retry_count: (parseInt(oldCharge.retry_count, 10) || 0) + 1,
+    retry_status: newCharge.status === 'failed' ? 'scheduled' : 'completed',
+    next_retry_at: newCharge.status === 'failed' ? newCharge.next_retry_at : null
+  });
+  await audit('charge.retry_requested', {
+    actor,
+    customer_id: customer.id,
+    target_type: 'charge',
+    target_id: newCharge.id,
+    details: { previous_charge_id: oldCharge.id, customer_id: customer.id }
+  });
+  return newCharge;
+}
+
+const backgroundWorkerId = `paypulse-${process.pid}-${uuidv4().slice(0, 8)}`;
+let backgroundJobTimer = null;
+let backgroundJobRun = null;
+
+async function processBackgroundJob(job) {
+  const claimedJob = await db.claimBackgroundJob(job.id, backgroundWorkerId);
+  if (!claimedJob) return null;
+
+  try {
+    if (claimedJob.type === 'charge_retry') {
+      const payload = safeJsonParse(claimedJob.payload, {}) || {};
+      const charge = await db.getChargeById(payload.chargeId || '');
+      if (!charge || charge.retry_status !== 'scheduled' || charge.status !== 'failed') {
+        return db.updateBackgroundJob(claimedJob.id, {
+          status: 'completed',
+          locked_at: null,
+          locked_by: '',
+          completed_at: new Date().toISOString(),
+          last_error: ''
+        });
+      }
+      const user = await db.getUserById(charge.user_id);
+      if (!user) {
+        throw new Error(`User not found for charge ${charge.id}`);
+      }
+      await retryFailedCharge(user, charge, user);
+      return db.updateBackgroundJob(claimedJob.id, {
+        status: 'completed',
+        locked_at: null,
+        locked_by: '',
+        completed_at: new Date().toISOString(),
+        last_error: ''
+      });
+    }
+
+    return db.updateBackgroundJob(claimedJob.id, {
+      status: 'cancelled',
+      locked_at: null,
+      locked_by: '',
+      completed_at: new Date().toISOString(),
+      last_error: `Unsupported job type: ${claimedJob.type}`
+    });
+  } catch (err) {
+    const attempts = (parseInt(claimedJob.attempts, 10) || 0) + 1;
+    const maxAttempts = parseInt(claimedJob.max_attempts, 10) || 5;
+    const exhausted = attempts >= maxAttempts;
+    const nextRunAt = new Date(Date.now() + Math.min(attempts, 5) * 15 * 60 * 1000).toISOString();
+    return db.updateBackgroundJob(claimedJob.id, {
+      status: exhausted ? 'failed' : 'retrying',
+      attempts,
+      run_at: exhausted ? claimedJob.run_at : nextRunAt,
+      locked_at: null,
+      locked_by: '',
+      last_error: err.message || 'Unknown background job error',
+      completed_at: exhausted ? new Date().toISOString() : null
+    });
+  }
+}
+
+async function processDueBackgroundJobs() {
+  const dueJobs = await db.getDueBackgroundJobs(BACKGROUND_JOB_BATCH_SIZE);
+  for (const job of dueJobs) {
+    await processBackgroundJob(job);
+  }
+}
+
+function startBackgroundJobs(options = {}) {
+  const keepAlive = !!options.keepAlive;
+  if (!ENABLE_BACKGROUND_JOBS || backgroundJobTimer) return;
+  const runCycle = async () => {
+    if (backgroundJobRun) return backgroundJobRun;
+    backgroundJobRun = processDueBackgroundJobs()
+      .catch(err => {
+        console.error('Background job processor error:', err.message);
+      })
+      .finally(() => {
+        backgroundJobRun = null;
+      });
+    return backgroundJobRun;
+  };
+
+  backgroundJobTimer = setInterval(runCycle, BACKGROUND_JOB_POLL_MS);
+  if (!keepAlive && typeof backgroundJobTimer.unref === 'function') {
+    backgroundJobTimer.unref();
+  }
+  runCycle();
 }
 
 // ─── WHOP WEBHOOK ─────────────────────────────────────────────
@@ -1906,42 +2088,11 @@ app.post('/api/charges/:id/retry', requireAuth, async (req, res) => {
     const oldCharge = await db.getChargeById(req.params.id);
     if (!oldCharge || oldCharge.user_id !== req.user.id)
       return res.status(404).json({ error: 'Not found' });
-    if (oldCharge.status !== 'failed')
-      return res
-        .status(400)
-        .json({ error: 'Only failed charges can be retried' });
-
-    const customer = await db.getCustomerById(oldCharge.customer_id);
-    if (!customer) return res.status(404).json({ error: 'Not found' });
     const user = await db.getUserById(req.user.id);
-
-    // Temporarily override rate_per_trigger so processCharge uses the original charge amount
-    const originalAmount = parseFloat(oldCharge.amount) || 0;
-    const chargeCustomer = { ...customer, rate_per_trigger: originalAmount };
-    const newCharge = await processCharge(
-      user,
-      chargeCustomer,
-      `Retry of charge ${oldCharge.id.slice(-8)}`
-    );
-
-    // Mark old charge as retried
-    await db.updateCharge(oldCharge.id, { status: 'retried' });
-    await db.updateCharge(newCharge.id, {
-      retry_count: (parseInt(oldCharge.retry_count, 10) || 0) + 1,
-      retry_status: newCharge.status === 'failed' ? 'scheduled' : 'completed',
-      next_retry_at: newCharge.status === 'failed' ? newCharge.next_retry_at : null
-    });
-    await audit('charge.retry_requested', {
-      actor: req.user,
-      customer_id: customer.id,
-      target_type: 'charge',
-      target_id: newCharge.id,
-      details: { previous_charge_id: oldCharge.id, customer_id: customer.id }
-    });
-
+    const newCharge = await retryFailedCharge(user, oldCharge, req.user);
     res.json(newCharge);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.message === 'Only failed charges can be retried' ? 400 : 500).json({ error: err.message });
   }
 });
 
@@ -1956,6 +2107,7 @@ app.post('/api/charges/:id/schedule-retry', requireAuth, async (req, res) => {
       next_retry_at: nextRetryAt,
       retry_count: (parseInt(charge.retry_count, 10) || 0) + 1
     });
+    await ensureChargeRetryJob(updated);
     await audit('charge.retry_scheduled', {
       actor: req.user,
       customer_id: charge.customer_id,
@@ -3246,13 +3398,35 @@ app.use((req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@paypulse.co';
-  const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
-  const jwtSecretSet = process.env.JWT_SECRET ? true : false;
-  console.log(`\n╔═══════════════════════════════════════════════════════╗`);
-  console.log(`║  ⚡ PAYPULSE running at http://localhost:${PORT}           ║`);
-  console.log(`╠════════════════════════════════════════════════════════╣`);
-  console.log(`║  Admin:       ${adminEmail} / ${adminPass}${jwtSecretSet ? '' : ' ⚠️  DEFAULT JWT SECRET'}   ║`);
-  console.log(`╚═══════════════════════════════════════════════════════╝\n`);
-});
+async function startServer() {
+  await bootstrap().catch(err => {
+    console.error('  ✗ DB init error:', err.message);
+    process.exit(1);
+  });
+  startBackgroundJobs();
+  return app.listen(PORT, '0.0.0.0', () => {
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@paypulse.co';
+    const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
+    const jwtSecretSet = process.env.JWT_SECRET ? true : false;
+    console.log(`\n╔═══════════════════════════════════════════════════════╗`);
+    console.log(`║  ⚡ PAYPULSE running at http://localhost:${PORT}           ║`);
+    console.log(`╠════════════════════════════════════════════════════════╣`);
+    console.log(`║  Admin:       ${adminEmail} / ${adminPass}${jwtSecretSet ? '' : ' ⚠️  DEFAULT JWT SECRET'}   ║`);
+    console.log(`║  Background:  ${ENABLE_BACKGROUND_JOBS ? `on (${BACKGROUND_JOB_POLL_MS}ms)` : 'off'}                       ║`);
+    console.log(`╚═══════════════════════════════════════════════════════╝\n`);
+  });
+}
+
+module.exports = {
+  app,
+  bootstrap,
+  startBackgroundJobs,
+  processDueBackgroundJobs,
+  retryFailedCharge,
+  processCharge,
+  startServer
+};
+
+if (require.main === module) {
+  startServer();
+}

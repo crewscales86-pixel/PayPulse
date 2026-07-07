@@ -5,8 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "worker": "node worker.js",
     "dev": "node server.js",
-    "check": "node -c server.js && node -c db.js"
+    "check": "node -c server.js && node -c db.js && node -c worker.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
