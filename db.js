@@ -495,6 +495,12 @@ function all(sql, params = []) {
 
 function uuid() { return uuidv4(); }
 
+function normalizeRatePerTrigger(value, fallback = 147) {
+  if (value === null || value === undefined || value === '') return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 // ─── USERS ──────────────────────────────────────────────────────
 function createUser(data) {
   const id = uuid();
@@ -543,27 +549,35 @@ function listUsers(role) {
 // ─── CUSTOMERS ──────────────────────────────────────────────────
 function createCustomer(data) {
   const id = uuid();
+  const email = String(data.email || '').trim().toLowerCase();
+  const ratePerTrigger = normalizeRatePerTrigger(data.rate_per_trigger);
+  const cardOnFile =
+    data.card_on_file !== undefined
+      ? (data.card_on_file ? 1 : 0)
+      : (data.stripe_payment_method_id || data.whop_payment_method_id ? 1 : 0);
   if (USE_PG) {
     return pgPool.query(
       `INSERT INTO customers (id, user_id, name, company_name, email, phone, status, card_on_file, stripe_customer_id, stripe_payment_method_id, whop_member_id, whop_payment_method_id, rate_per_trigger, ghl_location_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-      [id, data.user_id, data.name, data.company_name || '', data.email, data.phone || '', data.status || 'new',
-       data.card_on_file ? 1 : (data.stripe_payment_method_id || data.whop_payment_method_id ? 1 : 0), data.stripe_customer_id || '', data.stripe_payment_method_id || '',
-       data.whop_member_id || '', data.whop_payment_method_id || '', data.rate_per_trigger !== undefined ? data.rate_per_trigger : 147, data.ghl_location_id || '']
+      [id, data.user_id, data.name, data.company_name || '', email, data.phone || '', data.status || 'new',
+       cardOnFile, data.stripe_customer_id || '', data.stripe_payment_method_id || '',
+       data.whop_member_id || '', data.whop_payment_method_id || '', ratePerTrigger, data.ghl_location_id || '']
     ).then(() => getCustomerById(id));
   }
   sqliteDb.prepare(
     `INSERT INTO customers (id, user_id, name, company_name, email, phone, status, card_on_file, stripe_customer_id, stripe_payment_method_id, whop_member_id, whop_payment_method_id, rate_per_trigger, ghl_location_id)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-  ).run(id, data.user_id, data.name, data.company_name || '', data.email, data.phone || '', data.status || 'new',
-    data.card_on_file ? 1 : (data.stripe_payment_method_id || data.whop_payment_method_id ? 1 : 0), data.stripe_customer_id || '', data.stripe_payment_method_id || '',
-    data.whop_member_id || '', data.whop_payment_method_id || '', data.rate_per_trigger !== undefined ? data.rate_per_trigger : 147, data.ghl_location_id || '');
+  ).run(id, data.user_id, data.name, data.company_name || '', email, data.phone || '', data.status || 'new',
+    cardOnFile, data.stripe_customer_id || '', data.stripe_payment_method_id || '',
+    data.whop_member_id || '', data.whop_payment_method_id || '', ratePerTrigger, data.ghl_location_id || '');
   return getCustomerById(id);
 }
 
 function getCustomerById(id) { return get('SELECT * FROM customers WHERE id = ?', [id]); }
 function getCustomersByUser(userId) { return all('SELECT * FROM customers WHERE user_id = ? ORDER BY created_at DESC', [userId]); }
-function getCustomerByEmailAndUser(email, userId) { return get('SELECT * FROM customers WHERE email = ? AND user_id = ?', [email, userId]); }
+function getCustomerByEmailAndUser(email, userId) {
+  return get('SELECT * FROM customers WHERE LOWER(email) = LOWER(?) AND user_id = ?', [email, userId]);
+}
 function getCustomerByLocationId(locationId, userId) { return get('SELECT * FROM customers WHERE ghl_location_id = ? AND user_id = ?', [locationId, userId]); }
 
 function updateCustomer(id, updates) {

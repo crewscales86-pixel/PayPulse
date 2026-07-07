@@ -916,7 +916,7 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
 }
 
 // ─── CUSTOMERS PAGE ───────────────────────────────────────────────
-function CustomersPage({ customers, onRefresh, settings, showToast, segments, activeSegmentId, setActiveSegmentId, onCreateSegment, onDeleteSegment }) {
+function CustomersPage({ customers, onRefresh, settings, showToast }) {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [chargeModal, setChargeModal] = useState(null);
@@ -924,18 +924,12 @@ function CustomersPage({ customers, onRefresh, settings, showToast, segments, ac
   const [detailModal, setDetailModal] = useState(null);
   const [note, setNote] = useState('');
   const [syncModal, setSyncModal] = useState(false);
-  const activeSegment = (segments || []).find(seg => seg.id === activeSegmentId) || null;
 
   const processors = { all: 'All', whop: 'Whop', stripe: 'Stripe' };
 
   const filtered = customers.filter(c => {
-    const segmentFilter = activeSegment?.filters || {};
-    const effectiveFilter = segmentFilter.processor || filter;
-    const effectiveSearch = segmentFilter.search || search;
-    if (effectiveFilter !== 'all' && effectiveFilter !== c.processor) return false;
-    if (segmentFilter.status && c.status !== segmentFilter.status) return false;
-    if (segmentFilter.noCard && c.card_on_file) return false;
-    if (effectiveSearch && !c.name.toLowerCase().includes(effectiveSearch.toLowerCase()) && !c.email.toLowerCase().includes(effectiveSearch.toLowerCase())) return false;
+    if (filter !== 'all' && filter !== c.processor) return false;
+    if (search && !c.name.toLowerCase().includes(search.toLowerCase()) && !c.email.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
@@ -990,11 +984,13 @@ function CustomersPage({ customers, onRefresh, settings, showToast, segments, ac
   const doEdit = async () => {
     setEditModal({ ...editModal, saving: true });
     try {
+      const ratePerTrigger = Number(editModal.rate_per_trigger);
+      const normalizedRate = Number.isFinite(ratePerTrigger) && ratePerTrigger > 0 ? ratePerTrigger : 147;
       if (editModal.id === 'new') {
-        await api('/api/customers', { method: 'POST', body: JSON.stringify({ name: editModal.name, email: editModal.email, rate_per_trigger: editModal.rate_per_trigger, status: editModal.status, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
+        await api('/api/customers', { method: 'POST', body: JSON.stringify({ name: editModal.name, email: editModal.email, rate_per_trigger: normalizedRate, status: editModal.status, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
         showToast('Customer added!', 'success');
       } else {
-        await api('/api/customers/' + editModal.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: editModal.rate_per_trigger, status: editModal.status, name: editModal.name, company_name: editModal.company_name, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
+        await api('/api/customers/' + editModal.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: normalizedRate, status: editModal.status, name: editModal.name, company_name: editModal.company_name, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
         showToast('Customer updated!', 'success');
       }
       setEditModal(null); onRefresh();
@@ -1032,35 +1028,10 @@ function CustomersPage({ customers, onRefresh, settings, showToast, segments, ac
         e('span', { className: 'tag tag-green', style: { borderRadius:10 } }, customers.length)
       ),
       e('div', { className: 'nav-spacer' }),
-      e('button', { className: 'btn-primary', style: { padding:'8px 18px', fontSize:13 }, onClick: () => setEditModal({ id: 'new', name: '', email: '', rate_per_trigger: '', status: 'new', ghl_location_id: '', card_on_file: false }) }, '+ Add Customer'),
-      e('button', { className: 'btn-sm', style: { padding:'8px 16px', background:'rgba(0,255,136,0.1)', color:'var(--accent)', borderColor:'rgba(0,255,136,0.3)' }, onClick: async () => {
-        const name = prompt('Save current filters as segment', activeSegment?.name || '');
-        if (!name) return;
-        try {
-          await onCreateSegment(name, { processor: filter, search, status: '', noCard: false });
-          showToast('Segment saved', 'success');
-        } catch (err) { showToast(err.message, 'error'); }
-      } }, 'Save Segment'),
+      e('button', { className: 'btn-primary', style: { padding:'8px 18px', fontSize:13 }, onClick: () => setEditModal({ id: 'new', name: '', email: '', rate_per_trigger: 147, status: 'new', ghl_location_id: '', card_on_file: false }) }, '+ Add Customer'),
       e('button', { className: 'btn-sm', style: { padding:'8px 16px' }, onClick: onRefresh }, '↻ Sync'),
       e('button', { className: 'btn-sm', style: { padding:'8px 16px', background:'rgba(0,180,255,0.1)', color:'var(--blue)', borderColor:'rgba(0,180,255,0.3)' }, onClick: () => setSyncModal(true) }, '⬇ Stripe'),
       e('input', { className: 'search-box', placeholder: 'Search...', value: search, onChange: ev => setSearch(ev.target.value) })
-    ),
-    (segments || []).length > 0 && e('div', { className: 'filters', style: { marginTop: -8 } },
-      e('span', { style: { fontSize: 11, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: 1 } }, 'Saved Segments'),
-      e('div', {
-        className: 'filter-pill ' + (!activeSegmentId ? 'active' : ''),
-        onClick: () => setActiveSegmentId(null)
-      }, 'All Customers'),
-      (segments || []).map(seg =>
-        e('div', {
-          key: seg.id,
-          className: 'filter-pill ' + (activeSegmentId === seg.id ? 'active' : ''),
-          onClick: () => setActiveSegmentId(seg.id)
-        },
-          seg.name,
-          e('span', { className: 'count', onClick: ev => { ev.stopPropagation(); onDeleteSegment(seg.id); } }, '×')
-        )
-      )
     ),
     e('div', { className: 'filters', style: { marginBottom:24 } },
       Object.entries(processors).map(([k, v]) =>
@@ -2265,8 +2236,6 @@ function App() {
   const [forecast, setForecast] = useState(null);
   const [marginDashboard, setMarginDashboard] = useState(null);
   const [syncingAllMeta, setSyncingAllMeta] = useState(false);
-  const [segments, setSegments] = useState([]);
-  const [activeSegmentId, setActiveSegmentId] = useState(null);
   const [toast, setToast] = useState(null);
 
   const showToast = useCallback((message, type = 'info') => {
@@ -2281,12 +2250,12 @@ function App() {
       setUser(me);
 
       if (me.role === 'admin') {
-        const [aRes, sRes, cRes, nRes, seRes, chRes, mRes, uRes, alRes, whRes, auRes, segRes, forecastRes, marginRes] = await Promise.all([
+        const [aRes, sRes, cRes, nRes, seRes, chRes, mRes, uRes, alRes, whRes, auRes, forecastRes, marginRes] = await Promise.all([
           api('/api/admin/agencies'),
           api('/api/admin/stats'),
           api('/api/customers'), api('/api/notifications'), api('/api/settings'),
           api('/api/charges'), api('/api/metrics'), api('/api/notifications/unread-count'),
-          api('/api/alerts').catch(() => []), api('/api/webhook-events').catch(() => []), api('/api/audit-logs').catch(() => []), api('/api/segments').catch(() => []),
+          api('/api/alerts').catch(() => []), api('/api/webhook-events').catch(() => []), api('/api/audit-logs').catch(() => []),
           api('/api/forecast').catch(() => ({})), api('/api/margin-dashboard').catch(() => ({})),
         ]);
         setAgencies(aRes);
@@ -2300,14 +2269,13 @@ function App() {
         setAlerts(alRes);
         setWebhookEvents(whRes);
         setAuditLogs(auRes);
-        setSegments(segRes);
         setForecast(forecastRes);
         setMarginDashboard(marginRes);
       } else {
-        const [cRes, nRes, sRes, chRes, mRes, uRes, alRes, whRes, auRes, segRes, forecastRes, marginRes] = await Promise.all([
+        const [cRes, nRes, sRes, chRes, mRes, uRes, alRes, whRes, auRes, forecastRes, marginRes] = await Promise.all([
           api('/api/customers'), api('/api/notifications'), api('/api/settings'),
           api('/api/charges'), api('/api/metrics'), api('/api/notifications/unread-count'),
-          api('/api/alerts'), api('/api/webhook-events'), api('/api/audit-logs'), api('/api/segments'),
+          api('/api/alerts'), api('/api/webhook-events'), api('/api/audit-logs'),
           api('/api/forecast'), api('/api/margin-dashboard'),
         ]);
         setCustomers(cRes);
@@ -2319,7 +2287,6 @@ function App() {
         setAlerts(alRes);
         setWebhookEvents(whRes);
         setAuditLogs(auRes);
-        setSegments(segRes);
         setForecast(forecastRes);
         setMarginDashboard(marginRes);
       }
@@ -2382,17 +2349,7 @@ function App() {
       e('div', { className: 'nav-link', style: { opacity: 0.5, cursor: 'pointer' }, onClick: logout }, 'Sign Out')
     ),
     !isAdmin && page === 'customers' && e(CustomersPage, {
-      customers, onRefresh: refresh, settings, showToast,
-      segments, activeSegmentId, setActiveSegmentId,
-      onCreateSegment: async (name, filters) => {
-        const created = await api('/api/segments', { method: 'POST', body: JSON.stringify({ name, filters }) });
-        setSegments(prev => [created, ...prev]);
-      },
-      onDeleteSegment: async (id) => {
-        await api('/api/segments/' + id, { method: 'DELETE' });
-        setSegments(prev => prev.filter(seg => seg.id !== id));
-        if (activeSegmentId === id) setActiveSegmentId(null);
-      }
+      customers, onRefresh: refresh, settings, showToast
     }),
     !isAdmin && page === 'settings' && e(SettingsPage, { settings, onSave: refresh, showToast }),
     !isAdmin && page === 'inbox' && e(InboxPage, { notifications, onRefresh: refresh, showToast }),
@@ -2415,17 +2372,7 @@ function App() {
     !isAdmin && page === 'ops' && e(OpsPage, { alerts, webhookEvents, auditLogs, forecast, showToast }),
     isAdmin && page === 'admin' && e(AdminPage, { agencies, adminStats, onRefresh: refresh, showToast }),
     isAdmin && page === 'customers' && e(CustomersPage, {
-      customers, onRefresh: refresh, settings, showToast,
-      segments, activeSegmentId, setActiveSegmentId,
-      onCreateSegment: async (name, filters) => {
-        const created = await api('/api/segments', { method: 'POST', body: JSON.stringify({ name, filters }) });
-        setSegments(prev => [created, ...prev]);
-      },
-      onDeleteSegment: async (id) => {
-        await api('/api/segments/' + id, { method: 'DELETE' });
-        setSegments(prev => prev.filter(seg => seg.id !== id));
-        if (activeSegmentId === id) setActiveSegmentId(null);
-      }
+      customers, onRefresh: refresh, settings, showToast
     }),
     isAdmin && page === 'margin' && e(MarginPage, {
       marginDashboard,

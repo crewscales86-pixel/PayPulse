@@ -386,6 +386,12 @@ function pick(obj, allowed) {
   );
 }
 
+function normalizeRatePerTrigger(value, fallback = 147) {
+  if (value === null || value === undefined || value === '') return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 // ─── AUTH ────────────────────────────────────────────────────────
 app.post('/api/auth/change-password', requireAuth, async (req, res) => {
   try {
@@ -1565,6 +1571,9 @@ app.post('/api/customers', requireAuth, async (req, res) => {
       'rate_per_trigger',
       'ghl_location_id'
     ]);
+    if ('rate_per_trigger' in allowed) {
+      allowed.rate_per_trigger = normalizeRatePerTrigger(allowed.rate_per_trigger);
+    }
     const c = await db.createCustomer({
       ...allowed,
       user_id: req.user.id
@@ -1604,16 +1613,19 @@ app.post('/api/customers/import-stripe', requireAuth, async (req, res) => {
       try {
         const sCust = await stripe.customers.retrieve(id);
         if (!sCust) { skipped.push(id); continue; }
-        const existingByEmail = sCust.email ? await db.getCustomerByEmailAndUser(sCust.email, req.user.id) : null;
-        if (existingByEmail) { skipped.push(sCust.email); continue; }
+        const existingById = await db.getCustomerById(sCust.id);
+        if (existingById && existingById.user_id === req.user.id) { skipped.push(sCust.id); continue; }
+        const normalizedEmail = sCust.email ? String(sCust.email).trim().toLowerCase() : '';
+        const existingByEmail = normalizedEmail ? await db.getCustomerByEmailAndUser(normalizedEmail, req.user.id) : null;
+        if (existingByEmail) { skipped.push(normalizedEmail); continue; }
         const c = await db.createCustomer({
           user_id: req.user.id,
           name: sCust.name || sCust.email?.split('@')[0] || id.slice(-8),
-          email: sCust.email || '',
+          email: normalizedEmail,
           phone: sCust.phone || '',
           stripe_customer_id: sCust.id,
           stripe_payment_method_id: sCust.invoice_settings?.default_payment_method || '',
-          card_on_file: sCust.invoice_settings?.default_payment_method ? 1 : 0,
+          card_on_file: sCust.invoice_settings?.default_payment_method || sCust.default_source ? 1 : 0,
           status: 'new'
         });
         imported.push(c);
@@ -1645,6 +1657,15 @@ app.patch('/api/customers/:id', requireAuth, async (req, res) => {
       'credit_balance',
       'ghl_location_id'
     ]);
+    if (updates.email !== undefined) {
+      updates.email = String(updates.email).trim().toLowerCase();
+    }
+    if ('rate_per_trigger' in updates) {
+      updates.rate_per_trigger = normalizeRatePerTrigger(
+        updates.rate_per_trigger,
+        c.rate_per_trigger || 147
+      );
+    }
     if (
       updates.stripe_payment_method_id ||
       updates.whop_payment_method_id
