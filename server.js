@@ -959,6 +959,9 @@ async function processCharge(user, customer, note = '', utmData = {}) {
 
   // Credit covers the full charge
   if (credit > 0 && credit >= rate) {
+    const creditedNote = note
+      ? `${note} (credited appointment)`
+      : 'Credited appointment';
     const charge = await db.createCharge(
       addUtm({
         user_id: user.id,
@@ -968,7 +971,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
         amount: rate,
         processor: user.processor,
         status: 'credited',
-        note
+        note: creditedNote
       })
     );
     await db.updateCustomer(customer.id, {
@@ -978,7 +981,7 @@ async function processCharge(user, customer, note = '', utmData = {}) {
       user_id: user.id,
       type: 'success',
       title: `Credit applied — ${customer.name}`,
-      body: `$${rate.toFixed(2)} covered by credit balance. Remaining credit: $${(
+      body: `Credited appointment for ${customer.name}. $${rate.toFixed(2)} covered by credit balance. Remaining credit: $${(
         credit - rate
       ).toFixed(2)}`
     });

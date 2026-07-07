@@ -608,6 +608,8 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
   const [noteDueAt, setNoteDueAt] = useState('');
   const [creditUnits, setCreditUnits] = useState('1');
   const [creditNote, setCreditNote] = useState('');
+  const [showNotesList, setShowNotesList] = useState(false);
+  const [manualChargeConfirm, setManualChargeConfirm] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -641,11 +643,11 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
   };
 
   const fireCharge = async () => {
-    if (!confirm(`Charge $${newRate} for ${customer.name}?`)) return;
     try {
       const res = await api('/api/customers/' + customer.id + '/charge', { method: 'POST', body: JSON.stringify({ note: chargeNote }) });
       showToast(res.status === 'succeeded' ? 'Charge succeeded' : `Charge ${res.status}`, res.status === 'succeeded' ? 'success' : 'warn');
       setChargeNote('');
+      setManualChargeConfirm(false);
       await onRefresh();
       await load();
     } catch (err) {
@@ -733,6 +735,7 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
       setNoteBody('');
       setNoteRecurring(false);
       setNoteDueAt('');
+      setShowNotesList(true);
       await load();
     } catch (err) {
       showToast(err.message, 'error');
@@ -842,32 +845,41 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
 
       e('div', { className: 'detail-section' },
         e('h4', null, 'Internal Notes & Follow-ups'),
-        e('div', { style: { display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 12 } },
-          e('div', null,
-            e('textarea', { value: noteBody, onChange: ev => setNoteBody(ev.target.value), placeholder: 'Add internal note or follow-up...', style: { minHeight: 80 } }),
-            e('div', { style: { display: 'flex', gap: 8, marginTop: 8 } },
-              e('select', { value: noteCategory, onChange: ev => setNoteCategory(ev.target.value) },
+        e('div', { style: { display: 'grid', gridTemplateColumns: '1.15fr 0.85fr', gap: 12, alignItems: 'start' } },
+          e('div', { style: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 } },
+            e('div', { style: { fontSize: 11, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 8 } }, 'Write Note'),
+            e('textarea', { value: noteBody, onChange: ev => setNoteBody(ev.target.value), placeholder: 'Add internal note, follow-up, or billing note...', style: { minHeight: 104, marginBottom: 10 } }),
+            e('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
+              e('select', { value: noteCategory, onChange: ev => setNoteCategory(ev.target.value), style: { minWidth: 140, width: 'auto' } },
                 e('option', { value: 'internal' }, 'Internal'),
                 e('option', { value: 'follow_up' }, 'Follow-up'),
                 e('option', { value: 'billing' }, 'Billing')
               ),
               e('label', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 } }, e('input', { type: 'checkbox', checked: noteRecurring, onChange: ev => setNoteRecurring(ev.target.checked), style: { width: 'auto' } }), 'Recurring'),
-              noteRecurring && e('input', { type: 'datetime-local', value: noteDueAt, onChange: ev => setNoteDueAt(ev.target.value) }),
-              e('button', { className: 'btn-sm green', onClick: addNote }, 'Add Note')
+              noteRecurring && e('input', { type: 'datetime-local', value: noteDueAt, onChange: ev => setNoteDueAt(ev.target.value), style: { width: 'auto' } }),
+              e('button', { className: 'btn-sm green', onClick: addNote }, 'Save Note')
             )
           ),
-          e('div', { style: { maxHeight: 180, overflow: 'auto', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: 10 } },
-            (d.notes || []).map(note =>
-              e('div', { key: note.id, style: { padding: '8px 0', borderBottom: '1px solid var(--border)' } },
-                e('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 8 } },
-                  e('strong', { style: { fontSize: 12 } }, note.category.replace('_', ' ')),
-                  e('button', { className: 'btn-sm', style: { padding: '2px 8px', fontSize: 10 }, onClick: () => toggleNoteDone(note) }, note.is_done ? 'Reopen' : 'Done')
-                ),
-                e('div', { style: { fontSize: 12, color: 'var(--text2)', marginTop: 4, lineHeight: 1.5 } }, note.body),
-                note.next_due_at && e('div', { style: { fontSize: 11, color: 'var(--blue)', marginTop: 4 } }, 'Due ' + fmtDate(note.next_due_at))
-              )
+          e('div', { style: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 } },
+            e('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 } },
+              e('div', { style: { fontSize: 11, textTransform: 'uppercase', color: 'var(--text2)' } }, 'Saved Notes'),
+              e('button', { className: 'btn-sm', style: { padding: '4px 10px', fontSize: 10 }, onClick: () => setShowNotesList(v => !v) }, showNotesList ? 'Collapse Notes' : 'Expand Notes')
             ),
-            (!d.notes || d.notes.length === 0) && e('div', { style: { color: '#666', fontSize: 12 } }, 'No notes yet')
+            showNotesList
+              ? e('div', { style: { maxHeight: 220, overflow: 'auto' } },
+                  (d.notes || []).map(note =>
+                    e('div', { key: note.id, style: { padding: '8px 0', borderBottom: '1px solid var(--border)' } },
+                      e('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 8 } },
+                        e('strong', { style: { fontSize: 12 } }, note.category.replace('_', ' ')),
+                        e('button', { className: 'btn-sm', style: { padding: '2px 8px', fontSize: 10 }, onClick: () => toggleNoteDone(note) }, note.is_done ? 'Reopen' : 'Done')
+                      ),
+                      e('div', { style: { fontSize: 12, color: 'var(--text2)', marginTop: 4, lineHeight: 1.5 } }, note.body),
+                      note.next_due_at && e('div', { style: { fontSize: 11, color: 'var(--blue)', marginTop: 4 } }, 'Due ' + fmtDate(note.next_due_at))
+                    )
+                  ),
+                  (!d.notes || d.notes.length === 0) && e('div', { style: { color: '#666', fontSize: 12 } }, 'No notes yet')
+                )
+              : e('div', { style: { color: 'var(--text2)', fontSize: 12, lineHeight: 1.5 } }, 'Click Expand Notes to review saved notes and mark them done or reopen them.')
           )
         )
       ),
@@ -909,10 +921,19 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
 
       e('div', { className: 'detail-section' },
         e('h4', null, 'Manual Charge'),
-        e('div', { style: { display: 'flex', gap: 10, alignItems: 'center' } },
-          e('input', { placeholder: 'Note (optional)', value: chargeNote, onChange: ev => setChargeNote(ev.target.value), style: { flex: 1 } }),
-          e('button', { className: 'btn-primary', onClick: fireCharge, style: { width: 'auto' } }, 'Charge $' + c.rate_per_trigger)
-        )
+        !manualChargeConfirm
+          ? e('div', { style: { display: 'flex', gap: 10, alignItems: 'center' } },
+              e('input', { placeholder: 'Note (optional)', value: chargeNote, onChange: ev => setChargeNote(ev.target.value), style: { flex: 1 } }),
+              e('button', { className: 'btn-primary', onClick: () => setManualChargeConfirm(true), style: { width: 'auto' } }, 'Prepare Charge $' + c.rate_per_trigger)
+            )
+          : e('div', { style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' } },
+              e('div', { style: { flex: 1, minWidth: 220, color: 'var(--warn)', fontSize: 12, lineHeight: 1.5 } },
+                'You are about to charge ', e('strong', null, c.name), ' for $', e('strong', null, c.rate_per_trigger), '.',
+                ' This is the final confirmation step.'
+              ),
+              e('button', { className: 'btn-sm', onClick: () => setManualChargeConfirm(false) }, 'Cancel'),
+              e('button', { className: 'btn-primary', onClick: fireCharge, style: { width: 'auto' } }, 'Confirm Charge')
+            )
       ),
 
       e('div', { className: 'modal-actions' }, e('button', { className: 'btn-ghost', onClick: onClose }, 'Close'))
