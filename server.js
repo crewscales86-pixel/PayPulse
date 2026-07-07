@@ -3569,7 +3569,9 @@ async function startWorkerProcess() {
   });
   startBackgroundJobs({ keepAlive: true });
   startBackupScheduler();
-  console.log(`PayPulse worker running with poll interval ${BACKGROUND_JOB_POLL_MS}ms`);
+  return app.listen(PORT, '0.0.0.0', () => {
+    console.log(`PayPulse worker running on port ${PORT} with poll interval ${BACKGROUND_JOB_POLL_MS}ms`);
+  });
 }
 
 module.exports = {
