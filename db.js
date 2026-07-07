@@ -1162,6 +1162,14 @@ function getCommunicationLogsByUser(userId, limit = 200) {
   );
 }
 
+function ping() {
+  const result = get('SELECT 1 as ok');
+  if (result && typeof result.then === 'function') {
+    return result.then(row => !!row?.ok);
+  }
+  return Promise.resolve(!!result?.ok);
+}
+
 // ─── BACKGROUND JOBS ────────────────────────────────────────────
 function createBackgroundJob(data) {
   const id = uuid();
@@ -1335,6 +1343,7 @@ module.exports = {
   createMetaCampaignMapping, getMetaCampaignMappingById, getMetaCampaignMappingsByCustomer, replaceMetaCampaignMappings,
   createCommunicationLog, getCommunicationLogById, getCommunicationLogsByCustomer, getCommunicationLogsByUser,
   createBackgroundJob, getBackgroundJobById, getBackgroundJobByKey, getDueBackgroundJobs, claimBackgroundJob, updateBackgroundJob,
+  ping,
   getStats, getAdminStats,
   ensureAdmin,
 };

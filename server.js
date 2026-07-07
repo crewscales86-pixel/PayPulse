@@ -12,6 +12,8 @@ const db = require('./db');
 const { v4: uuidv4 } = require('uuid');
 const Stripe = require('stripe');
 const nodemailer = require('nodemailer');
+const Sentry = require('@sentry/node');
+const { Resend } = require('resend');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'paypulse-dev-secret-change-in-prod';
 const PORT = process.env.PORT || 3000;
@@ -35,9 +37,24 @@ const BACKGROUND_JOB_BATCH_SIZE = Math.max(
   parseInt(process.env.BACKGROUND_JOB_BATCH_SIZE || '10', 10) || 10,
   1
 );
+const REQUIRE_POSTGRES_IN_PROD =
+  String(process.env.REQUIRE_POSTGRES_IN_PROD || 'true').toLowerCase() !== 'false';
+const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || process.env.SMTP_FROM || '';
+const EMAIL_FROM = process.env.EMAIL_FROM || process.env.SMTP_FROM || SUPPORT_EMAIL || '';
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const SENTRY_DSN = process.env.SENTRY_DSN || '';
+const SENTRY_ENVIRONMENT = process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development';
 
 const app = express();
 app.set('trust proxy', 1);
+
+if (SENTRY_DSN) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    environment: SENTRY_ENVIRONMENT,
+    tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE || 0)
+  });
+}
 
 // ─── SECURITY MIDDLEWARE ─────────────────────────────────────────
 app.use(helmet({
@@ -88,14 +105,48 @@ app.get('/api/health', async (req, res) => {
       pollMs: BACKGROUND_JOB_POLL_MS,
       batchSize: BACKGROUND_JOB_BATCH_SIZE
     },
+    monitoring: {
+      sentry: !!SENTRY_DSN,
+      resend: !!RESEND_API_KEY,
+      supportEmail: SUPPORT_EMAIL || null
+    },
     time: new Date().toISOString()
   });
 });
 
+app.get('/api/ready', async (req, res) => {
+  try {
+    const dbOk = await db.ping();
+    if (!dbOk) {
+      return res.status(503).json({ ok: false, db: 'down', time: new Date().toISOString() });
+    }
+    res.json({
+      ok: true,
+      db: process.env.DATABASE_URL ? 'postgres' : 'sqlite',
+      time: new Date().toISOString()
+    });
+  } catch (err) {
+    captureError(err, { route: '/api/ready' });
+    res.status(503).json({ ok: false, error: err.message, time: new Date().toISOString() });
+  }
+});
+
 // ─── INIT DB ─────────────────────────────────────────────────────
 let bootstrapPromise = null;
+
+function validateProductionConfig() {
+  if (process.env.NODE_ENV !== 'production') return;
+  if (REQUIRE_POSTGRES_IN_PROD && !process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL is required in production. Managed Postgres must be enabled.');
+  }
+  if (JWT_SECRET === 'paypulse-dev-secret-change-in-prod') {
+    throw new Error('JWT_SECRET must be set to a secure value in production.');
+  }
+}
+
 function bootstrap() {
   if (!bootstrapPromise) {
+    validateProductionConfig();
     bootstrapPromise = db.initSchema()
       .then(() => db.ensureAdmin())
       .then(() => console.log('  ✓ DB schema + admin ready'));
@@ -104,6 +155,7 @@ function bootstrap() {
 }
 
 let mailTransporter = null;
+let resendClient = null;
 function getMailer() {
   if (!process.env.SMTP_HOST || !process.env.SMTP_FROM) return null;
   if (!mailTransporter) {
@@ -121,6 +173,35 @@ function getMailer() {
   }
   return mailTransporter;
 }
+
+function getResendClient() {
+  if (!RESEND_API_KEY || !EMAIL_FROM) return null;
+  if (!resendClient) {
+    resendClient = new Resend(RESEND_API_KEY);
+  }
+  return resendClient;
+}
+
+function captureError(err, context = {}) {
+  console.error(context.message || 'App error:', err);
+  if (!SENTRY_DSN) return;
+  Sentry.withScope(scope => {
+    scope.setExtras(context);
+    Sentry.captureException(err);
+  });
+}
+
+process.on('unhandledRejection', err => {
+  captureError(err instanceof Error ? err : new Error(String(err)), {
+    message: 'Unhandled promise rejection'
+  });
+});
+
+process.on('uncaughtException', err => {
+  captureError(err, {
+    message: 'Uncaught exception'
+  });
+});
 
 function safeJsonParse(value, fallback = null) {
   if (!value) return fallback;
@@ -150,25 +231,44 @@ async function audit(action, context = {}) {
       details: JSON.stringify(context.details || {})
     });
   } catch (err) {
-    console.error('Audit log error:', err.message);
+    captureError(err, { message: 'Audit log error', action });
   }
+}
+
+async function sendEmail({ to, subject, text, replyTo }) {
+  if (!to || !subject || !text) return false;
+
+  const resend = getResendClient();
+  if (resend) {
+    await resend.emails.send({
+      from: EMAIL_FROM,
+      to: Array.isArray(to) ? to : [to],
+      subject,
+      text,
+      reply_to: replyTo || SUPPORT_EMAIL || undefined
+    });
+    return true;
+  }
+
+  const transporter = getMailer();
+  if (!transporter || !EMAIL_FROM) return false;
+  await transporter.sendMail({
+    from: EMAIL_FROM,
+    to,
+    subject,
+    text,
+    replyTo: replyTo || SUPPORT_EMAIL || undefined
+  });
+  return true;
 }
 
 async function sendEmailAlert(user, subject, text) {
   try {
     if (!user?.email_notifications_enabled) return false;
     const to = user.alert_email || user.email;
-    const transporter = getMailer();
-    if (!to || !transporter) return false;
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM,
-      to,
-      subject,
-      text
-    });
-    return true;
+    return await sendEmail({ to, subject, text });
   } catch (err) {
-    console.error('Email alert error:', err.message);
+    captureError(err, { message: 'Email alert error', userId: user?.id || '' });
     return false;
   }
 }
@@ -203,15 +303,12 @@ function renderTemplate(template, vars) {
 }
 
 async function sendDirectEmail(to, subject, text) {
-  const transporter = getMailer();
-  if (!to || !transporter) return false;
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM,
-    to,
-    subject,
-    text
-  });
-  return true;
+  try {
+    return await sendEmail({ to, subject, text });
+  } catch (err) {
+    captureError(err, { message: 'Direct email error', to });
+    return false;
+  }
 }
 
 async function buildCardSetupLink(user, customer) {
@@ -515,9 +612,27 @@ app.post('/api/auth/signup', authLimiter, async (req, res) => {
         title: `New signup pending: ${user.name}`,
         body: `${user.email} — ${user.company_name || 'No company'} needs approval`
       });
+      await sendDirectEmail(
+        a.email,
+        `New PayPulse signup pending approval`,
+        `${user.name} (${user.email}) from ${user.company_name || 'No company'} just signed up and is waiting for approval.`
+      );
+    }
+    await sendDirectEmail(
+      user.email,
+      'Your PayPulse signup was received',
+      `Hi ${user.name}, your PayPulse account for ${user.company_name || 'your agency'} has been created and is now pending approval. We'll email you once it's approved.${SUPPORT_EMAIL ? ` If you need help, reply to this email or contact ${SUPPORT_EMAIL}.` : ''}`
+    );
+    if (SUPPORT_EMAIL && !admins.find(admin => admin.email === SUPPORT_EMAIL)) {
+      await sendDirectEmail(
+        SUPPORT_EMAIL,
+        'New PayPulse signup received',
+        `${user.name} (${user.email}) signed up${user.company_name ? ` for ${user.company_name}` : ''} and is pending approval.`
+      );
     }
     res.json({ ok: true, message: 'Account created! Awaiting admin approval.' });
   } catch (err) {
+    captureError(err, { message: 'Signup failed' });
     res.status(500).json({ error: err.message });
   }
 });
@@ -3383,7 +3498,11 @@ app.get('/landing', (req, res) =>
 
 // ─── GLOBAL ERROR HANDLER ────────────────────────────────────────
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
+  captureError(err, {
+    message: 'Unhandled express error',
+    route: req.originalUrl,
+    method: req.method
+  });
   res.status(500).json({ error: 'Internal server error' });
 });
 
@@ -3400,7 +3519,7 @@ app.use((req, res) => {
 
 async function startServer() {
   await bootstrap().catch(err => {
-    console.error('  ✗ DB init error:', err.message);
+    captureError(err, { message: 'DB init error during server start' });
     process.exit(1);
   });
   startBackgroundJobs();

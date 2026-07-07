@@ -43,19 +43,32 @@ docker-compose up -d
 
 ### Railway setup
 1. Create a Railway project from this repo.
-2. Add a PostgreSQL service in Railway and link it to the app service.
-3. Set the app service variables:
+2. Add a PostgreSQL service in Railway and link it to both the web and worker services.
+3. Create two Railway services from this repo:
+   - `web` using `railway.json` with start command `node server.js`
+   - `worker` using `railway.worker.json` with start command `npm run worker`
+4. Set these shared variables on both services:
    - `JWT_SECRET`
+   - `NODE_ENV=production`
    - `BASE_URL`
+   - `REQUIRE_POSTGRES_IN_PROD=true`
+   - `EMAIL_FROM`
+   - `SUPPORT_EMAIL`
+   - `RESEND_API_KEY` or SMTP settings
+   - `SENTRY_DSN`
    - `STRIPE_WEBHOOK_ROUTE_SECRET`
    - `STRIPE_WEBHOOK_SECRET`
    - `META_APP_ID`
    - `META_APP_SECRET`
    - `META_REDIRECT_URI`
-4. Let Railway inject `DATABASE_URL` from the PostgreSQL service.
-5. Set the service health check path to `/api/health`.
-6. Make sure the public domain points at the app service and uses the Railway-managed `PORT`.
-7. Deploy once, then use the Railway logs to confirm the app reports `db: postgres`.
+   - `BACKUP_ENABLED=true`
+   - `BACKUP_INTERVAL_HOURS=24`
+   - `BACKUP_RETENTION_DAYS=14`
+5. Let Railway inject `DATABASE_URL` from the PostgreSQL service.
+6. Set the web service health check path to `/api/ready`.
+7. Attach a persistent volume to the worker service if you want local backup snapshots to survive deploys, or replace local backups with object storage later.
+8. Make sure the public domain points at the web service and uses the Railway-managed `PORT`.
+9. Deploy once, then use the Railway logs to confirm the app reports `db: postgres` and the worker reports that backups and background jobs started.
 
 ## Admin Flow
 1. Login as admin (`admin@paypulse.co` / `admin123`)
@@ -103,7 +116,21 @@ docker-compose up -d
 |----------|----------|-------------|
 | `JWT_SECRET` | Yes | JWT signing secret |
 | `DATABASE_URL` | Prod | PostgreSQL connection string |
+| `REQUIRE_POSTGRES_IN_PROD` | Recommended | Fails boot if production starts without Postgres |
 | `BASE_URL` | Yes | Public URL for webhook links |
+| `EMAIL_FROM` | Recommended | Primary sender address for Resend/SMTP |
+| `SUPPORT_EMAIL` | Recommended | Support inbox used in signup/approval emails |
+| `RESEND_API_KEY` | Recommended | Resend API key for transactional emails |
+| `SENTRY_DSN` | Recommended | Sentry DSN for production error tracking |
+| `SENTRY_ENVIRONMENT` | No | Sentry environment label |
+| `SENTRY_TRACES_SAMPLE_RATE` | No | Request tracing sample rate |
+| `ENABLE_BACKGROUND_JOBS` | Recommended | Enables the retry worker loop |
+| `BACKGROUND_JOB_POLL_MS` | No | Poll interval for background jobs |
+| `BACKGROUND_JOB_BATCH_SIZE` | No | Max due jobs processed each cycle |
+| `BACKUP_ENABLED` | Recommended | Enables automatic backup snapshots |
+| `BACKUP_DIR` | No | Backup output directory |
+| `BACKUP_INTERVAL_HOURS` | No | Time between automatic backups |
+| `BACKUP_RETENTION_DAYS` | No | Local backup retention |
 | `META_APP_ID` | Recommended for Meta | Platform-level Meta app ID |
 | `META_APP_SECRET` | Recommended for Meta | Platform-level Meta app secret |
 | `META_REDIRECT_URI` | Recommended for Meta | OAuth callback URL, usually `https://yourdomain.com/api/meta/callback` |
@@ -121,19 +148,23 @@ docker-compose up -d
 ## New Ops Features
 - Audit logs for agency, customer, settings, credit, refund, retry, and note activity
 - Webhook event history with duplicate detection / idempotency
-- Scheduled retry metadata on failed charges
+- Durable background jobs for failed-charge retries
 - Customer timelines with notes, audit items, webhook events, appointments, and charges
 - Internal + recurring customer notes
 - Manual credits and refund flow
 - Saved customer segments and CSV exports
 - Dashboard alerts for failures, retries, missing cards, webhook issues, and due follow-ups
+- `/api/ready` database readiness check for uptime monitors
+- Optional Sentry error tracking
+- Optional Resend transactional email support for signup and approval flow
+- Automatic compressed backup snapshots through the worker service
 
 ## How To Scale Beyond 10 Users
 The app is already structured for multiple agency accounts, but to make it production-grade for growth, use this phased approach:
 
 1. Move production off SQLite and onto Railway Postgres only.
-2. Keep one web app service and one Postgres service to start, with the `/api/health` check enabled.
-3. Add a background worker for retries, webhook processing, email notifications, and scheduled follow-ups so the web request path stays fast.
+2. Run one web service, one worker service, and one Postgres service, with the `/api/ready` health check enabled.
+3. Keep retries, email work, and backups on the worker so the web request path stays fast.
 4. Add Redis or a queue only once jobs become noticeably slow or bursty.
 5. Split read-heavy analytics into cached summaries or a reporting table when dashboard traffic grows.
 6. Add monitoring for webhook failures, Stripe failures, and slow DB queries before expanding the beta.

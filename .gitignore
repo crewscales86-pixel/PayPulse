@@ -3,3 +3,4 @@ paypulse.db
 paypulse.db.bak
 .env
 .DS_Store
+backups/

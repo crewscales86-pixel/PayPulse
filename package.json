@@ -6,10 +6,12 @@
   "scripts": {
     "start": "node server.js",
     "worker": "node worker.js",
+    "backup": "node backup.js",
     "dev": "node server.js",
-    "check": "node -c server.js && node -c db.js && node -c worker.js"
+    "check": "node -c server.js && node -c db.js && node -c worker.js && node -c backup.js"
   },
   "dependencies": {
+    "@sentry/node": "^10.11.0",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.11.1",
     "body-parser": "^1.20.2",
@@ -22,6 +24,7 @@
     "nodemailer": "^9.0.3",
     "pg": "^8.22.0",
     "postgres": "^3.4.9",
+    "resend": "^4.6.0",
     "stripe": "^22.3.0",
     "uuid": "^9.0.0"
   }
