@@ -1222,7 +1222,7 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
             }, '💳 Get Card')
           ),
           e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 8 } },
-            'Click "Get Card" to generate a $1 Stripe Checkout link. Send it to your client — their card is saved automatically.'
+            'Click "Get Card" to generate a secure Stripe link. It saves the client card without charging them.'
           )
         ),
         editModal.id !== 'new' && settings?.failedChargeWebhookUrl && e('div', { style: { marginTop: 12 } },

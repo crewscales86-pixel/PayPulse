@@ -333,6 +333,7 @@ async function buildCardSetupLink(user, customer) {
 
   const session = await stripeClient.checkout.sessions.create({
     mode: 'setup',
+    currency: 'usd',
     customer: stripeCustomerId,
     setup_intent_data: {
       metadata: {
