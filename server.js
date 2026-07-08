@@ -143,6 +143,9 @@ function validateProductionConfig() {
   if (JWT_SECRET === 'paypulse-dev-secret-change-in-prod') {
     throw new Error('JWT_SECRET must be set to a secure value in production.');
   }
+  if (!process.env.ADMIN_PASSWORD) {
+    throw new Error('ADMIN_PASSWORD must be set in production.');
+  }
 }
 
 function bootstrap() {
@@ -329,18 +332,14 @@ async function buildCardSetupLink(user, customer) {
   }
 
   const session = await stripeClient.checkout.sessions.create({
-    mode: 'payment',
-    line_items: [
-      {
-        price_data: {
-          currency: 'usd',
-          product_data: { name: 'Card Authorization' },
-          unit_amount: 100
-        },
-        quantity: 1
-      }
-    ],
+    mode: 'setup',
     customer: stripeCustomerId,
+    setup_intent_data: {
+      metadata: {
+        paypulse_customer_id: customer.id,
+        paypulse_user_id: user.id
+      }
+    },
     success_url: BASE_URL + '/?card_saved=1',
     cancel_url: BASE_URL + '/?card_cancelled=1',
     metadata: {
@@ -1372,7 +1371,9 @@ async function finalizeFailedCharge({ user, customer, charge, amount, reason, no
 // ─── CHARGE PROCESSING ────────────────────────────────────────────
 async function processCharge(user, customer, note = '', utmData = {}, opts = {}) {
   const rate = parseFloat(customer.rate_per_trigger) || 0;
-  const credit = parseFloat(customer.credit_balance) || 0;
+  const creditResult = await db.consumeCustomerCredit(customer.id, user.id, rate);
+  const creditUsed = parseFloat(creditResult.used) || 0;
+  const remainingCredit = parseFloat(creditResult.remaining) || 0;
 
   // Helper to merge UTM data into charge object
   const addUtm = obj => ({
@@ -1384,7 +1385,7 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
   });
 
   // Credit covers the full charge
-  if (credit > 0 && credit >= rate) {
+  if (creditUsed > 0 && creditUsed >= rate) {
     const creditedNote = note
       ? `${note} (credited appointment)`
       : 'Credited appointment';
@@ -1401,15 +1402,12 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
         note: creditedNote
       })
     );
-    await db.updateCustomer(customer.id, {
-      credit_balance: credit - rate
-    });
     await db.addNotification({
       user_id: user.id,
       type: 'success',
       title: `Credit applied — ${customer.name}`,
       body: `Credited appointment for ${customer.name}. $${rate.toFixed(2)} covered by credit balance. Remaining credit: $${(
-        credit - rate
+        remainingCredit
       ).toFixed(2)}`
     });
     await audit('charge.credit_applied', {
@@ -1417,7 +1415,7 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
       customer_id: customer.id,
       target_type: 'charge',
       target_id: charge.id,
-      details: { customer_id: customer.id, amount: rate, remaining_credit: credit - rate }
+      details: { customer_id: customer.id, amount: rate, remaining_credit: remainingCredit }
     });
     if (opts.appointmentId) {
       await db.updateAppointment(opts.appointmentId, { charge_id: charge.id });
@@ -1426,12 +1424,7 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
   }
 
   // Partial credit: charge the difference, reset credit to 0
-  let chargeAmount = rate;
-  let creditUsed = 0;
-  if (credit > 0 && credit < rate) {
-    chargeAmount = rate - credit;
-    creditUsed = credit;
-  }
+  const chargeAmount = Math.max(rate - creditUsed, 0);
 
   const charge = await db.createCharge(
     addUtm({
@@ -1449,11 +1442,6 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
           : note
     })
   );
-
-  // Reset credit balance if partial credit was used
-  if (creditUsed > 0) {
-    await db.updateCustomer(customer.id, { credit_balance: 0 });
-  }
   if (opts.appointmentId) {
     await db.updateAppointment(opts.appointmentId, { charge_id: charge.id });
   }
@@ -1943,6 +1931,12 @@ app.post('/webhook/stripe/:secret', async (req, res) => {
                   );
                   paymentMethodId = intent.payment_method || '';
                 }
+                if (!paymentMethodId && session.setup_intent) {
+                  const setupIntent = await stripeClient.setupIntents.retrieve(
+                    session.setup_intent
+                  );
+                  paymentMethodId = setupIntent.payment_method || '';
+                }
               } catch (e) {
                 // best effort retrieval
               }
@@ -2024,84 +2018,112 @@ app.post('/webhook/stripe/:secret', async (req, res) => {
       }
     }
 
+    if (event.type === 'setup_intent.succeeded') {
+      const obj = event.data.object;
+      const paypulseCustomerId = obj.metadata?.paypulse_customer_id;
+      const customer = paypulseCustomerId
+        ? await db.getCustomerById(paypulseCustomerId)
+        : await db.getCustomerByStripeCustomerId(stripeObjectId(obj.customer));
+      if (customer) {
+        const webhookStart = await recordWebhookEventStart({
+          userId: customer.user_id,
+          customerId: customer.id,
+          source: 'stripe',
+          eventType: event.type,
+          eventKey,
+          secretFragment: String(req.params.secret).slice(0, 8),
+          payload: event
+        });
+        if (webhookStart.duplicate) {
+          return res.json({ received: true, duplicate: true, eventId: webhookStart.event.id });
+        }
+        eventRecord = webhookStart.event;
+        await db.updateCustomer(customer.id, {
+          card_on_file: 1,
+          stripe_customer_id: stripeObjectId(obj.customer) || customer.stripe_customer_id || '',
+          stripe_payment_method_id: obj.payment_method || ''
+        });
+        await db.addNotification({
+          user_id: customer.user_id,
+          type: 'success',
+          title: `Card saved — ${customer.name}`,
+          body: 'Payment method saved via Stripe SetupIntent.'
+        });
+      }
+    }
+
     if (event.type === 'payment_intent.succeeded') {
       const obj = event.data.object;
-      const email = obj.receipt_email;
-      const allUsers = await db.listUsers('agency');
-      for (const u of allUsers) {
-        let customer = await db.getCustomerByEmailAndUser(email, u.id);
-        if (customer) {
-          const webhookStart = await recordWebhookEventStart({
-            userId: customer.user_id,
-            customerId: customer.id,
-            source: 'stripe',
-            eventType: event.type,
-            eventKey,
-            secretFragment: String(req.params.secret).slice(0, 8),
-            payload: event
-          });
-          if (webhookStart.duplicate) {
-            return res.json({ received: true, duplicate: true, eventId: webhookStart.event.id });
-          }
-          eventRecord = webhookStart.event;
-          await db.updateCustomer(customer.id, {
-            card_on_file: 1,
-            stripe_payment_method_id: obj.payment_method || ''
-          });
-      await db.addNotification({
-        user_id: u.id,
-        type: 'success',
-            title: `Stripe payment — ${customer.name}`,
-            body: 'Payment intent succeeded.'
-          });
-          break;
+      const paypulseCustomerId =
+        obj.metadata?.paypulse_customer_id ||
+        obj.metadata?.customer_id;
+      const customer = paypulseCustomerId
+        ? await db.getCustomerById(paypulseCustomerId)
+        : await db.getCustomerByStripeCustomerId(stripeObjectId(obj.customer));
+      if (customer) {
+        const webhookStart = await recordWebhookEventStart({
+          userId: customer.user_id,
+          customerId: customer.id,
+          source: 'stripe',
+          eventType: event.type,
+          eventKey,
+          secretFragment: String(req.params.secret).slice(0, 8),
+          payload: event
+        });
+        if (webhookStart.duplicate) {
+          return res.json({ received: true, duplicate: true, eventId: webhookStart.event.id });
         }
+        eventRecord = webhookStart.event;
+        await db.updateCustomer(customer.id, {
+          card_on_file: 1,
+          stripe_customer_id: stripeObjectId(obj.customer) || customer.stripe_customer_id || '',
+          stripe_payment_method_id: obj.payment_method || customer.stripe_payment_method_id || ''
+        });
+        await db.addNotification({
+          user_id: customer.user_id,
+          type: 'success',
+          title: `Stripe payment — ${customer.name}`,
+          body: 'Payment intent succeeded.'
+        });
       }
     }
 
     if (event.type === 'charge.dispute.created') {
       const obj = event.data.object;
-      const allUsers = await db.listUsers('agency');
-      for (const u of allUsers) {
-        const charges = await db.getChargesByUser(u.id);
-        const match = charges.find(c => c.stripe_charge_id === obj.charge);
-        if (match) {
-          const webhookStart = await recordWebhookEventStart({
-            userId: u.id,
-            customerId: match.customer_id,
-            source: 'stripe',
-            eventType: event.type,
-            eventKey,
-            secretFragment: String(req.params.secret).slice(0, 8),
-            payload: event
-          });
-          if (webhookStart.duplicate) {
-            return res.json({ received: true, duplicate: true, eventId: webhookStart.event.id });
-          }
-          eventRecord = webhookStart.event;
-          await db.createCharge({
-            id: uuidv4(),
-            user_id: u.id,
-            customer_id: match.customer_id,
-            customer_name: match.customer_name,
-            customer_email: match.customer_email,
-            amount: match.amount,
-            processor: 'stripe',
-            status: 'chargeback',
-            stripe_charge_id: obj.id,
-            note: 'Chargeback initiated',
-            failure_reason: obj.reason
-          });
-          await db.addNotification({
-            user_id: u.id,
-            type: 'fail',
-            title: `CHARGEBACK — ${match.customer_name}`,
-            body: `$${match.amount.toFixed(2)} chargeback initiated. Reason: ${
-              obj.reason
-            }`
-          });
-          break;
+      const match = await db.getChargeByStripeChargeId(obj.charge);
+      if (match) {
+        const webhookStart = await recordWebhookEventStart({
+          userId: match.user_id,
+          customerId: match.customer_id,
+          source: 'stripe',
+          eventType: event.type,
+          eventKey,
+          secretFragment: String(req.params.secret).slice(0, 8),
+          payload: event
+        });
+        if (webhookStart.duplicate) {
+          return res.json({ received: true, duplicate: true, eventId: webhookStart.event.id });
         }
+        eventRecord = webhookStart.event;
+        await db.createCharge({
+          id: uuidv4(),
+          user_id: match.user_id,
+          customer_id: match.customer_id,
+          customer_name: match.customer_name,
+          customer_email: match.customer_email,
+          amount: match.amount,
+          processor: 'stripe',
+          status: 'chargeback',
+          stripe_charge_id: obj.id,
+          note: 'Chargeback initiated',
+          failure_reason: obj.reason
+        });
+        await db.addNotification({
+          user_id: match.user_id,
+          type: 'fail',
+          title: `CHARGEBACK — ${match.customer_name}`,
+          body: `$${match.amount.toFixed(2)} chargeback initiated. Reason: ${obj.reason}`
+        });
       }
     }
     if (eventRecord) {
@@ -2116,7 +2138,7 @@ app.post('/webhook/stripe/:secret', async (req, res) => {
 
 // ─── CRM API (AGENCY) ────────────────────────────────────────────
 app.get('/api/customers', requireAuth, async (req, res) => {
-  res.json(await db.getCustomersByUser(req.user.id));
+  res.json(await db.getCustomersByUser(req.user.id, req.query.limit));
 });
 
 // ─── STRIPE CUSTOMER SYNC ───────────────────────────────────────
@@ -2285,11 +2307,7 @@ app.delete('/api/customers/:id', requireAuth, async (req, res) => {
   const c = await db.getCustomerById(req.params.id);
   if (!c || c.user_id !== req.user.id)
     return res.status(404).json({ error: 'Not found' });
-  await db.run('DELETE FROM charges WHERE customer_id = ?', [req.params.id]);
-  await db.run('DELETE FROM appointments WHERE customer_id = ?', [req.params.id]);
-  await db.run('DELETE FROM ad_metrics WHERE customer_id = ?', [req.params.id]);
-  await db.run('DELETE FROM webhook_events WHERE customer_id = ?', [req.params.id]);
-  await db.run('DELETE FROM customers WHERE id = ?', [req.params.id]);
+  await db.deleteCustomerCascade(req.params.id, req.user.id);
   await audit('customer.deleted', {
     actor: req.user,
     customer_id: c.id,
@@ -2362,7 +2380,7 @@ app.post('/api/customers/:id/setup-card', requireAuth, async (req, res) => {
 
 // ─── CHARGES API ──────────────────────────────────────────────────
 app.get('/api/charges', requireAuth, async (req, res) => {
-  res.json(await db.getChargesByUser(req.user.id));
+  res.json(await db.getChargesByUser(req.user.id, req.query.limit));
 });
 
 // Per-customer charges (for detail modal)
@@ -2821,7 +2839,7 @@ app.patch('/api/appointments/:id', requireAuth, async (req, res) => {
 
 // ─── NOTIFICATIONS API ────────────────────────────────────────────
 app.get('/api/notifications', requireAuth, async (req, res) => {
-  res.json(await db.getNotificationsByUser(req.user.id));
+  res.json(await db.getNotificationsByUser(req.user.id, req.query.limit));
 });
 
 app.post('/api/notifications/read', requireAuth, async (req, res) => {

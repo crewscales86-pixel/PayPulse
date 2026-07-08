@@ -11,7 +11,13 @@ let sqliteDb = null;
 
 if (USE_PG) {
   const { Pool } = require('pg');
-  pgPool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+  const pgSslMode = String(process.env.PGSSLMODE || process.env.DATABASE_SSL_MODE || 'require').toLowerCase();
+  const rejectUnauthorized =
+    String(process.env.DATABASE_SSL_REJECT_UNAUTHORIZED || 'false').toLowerCase() === 'true';
+  pgPool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: pgSslMode === 'disable' ? false : { rejectUnauthorized }
+  });
 } else {
   const Database = require('better-sqlite3');
   sqliteDb = new Database(path.join(__dirname, 'paypulse.db'));
@@ -239,10 +245,14 @@ async function initSchema() {
         ON background_jobs (job_key);
       CREATE INDEX IF NOT EXISTS customers_user_email_idx
         ON customers (user_id, email);
+      CREATE INDEX IF NOT EXISTS customers_stripe_customer_idx
+        ON customers (stripe_customer_id);
       CREATE INDEX IF NOT EXISTS customers_user_location_idx
         ON customers (user_id, ghl_location_id);
       CREATE INDEX IF NOT EXISTS customers_user_status_idx
         ON customers (user_id, status);
+      CREATE INDEX IF NOT EXISTS charges_stripe_charge_idx
+        ON charges (stripe_charge_id);
       CREATE INDEX IF NOT EXISTS charges_user_customer_idx
         ON charges (user_id, customer_id);
       CREATE INDEX IF NOT EXISTS charges_user_status_idx
@@ -449,8 +459,10 @@ async function initSchema() {
   }
   if (!USE_PG) {
     sqliteDb.exec(`CREATE INDEX IF NOT EXISTS customers_user_email_idx ON customers (user_id, email)`);
+    sqliteDb.exec(`CREATE INDEX IF NOT EXISTS customers_stripe_customer_idx ON customers (stripe_customer_id)`);
     sqliteDb.exec(`CREATE INDEX IF NOT EXISTS customers_user_location_idx ON customers (user_id, ghl_location_id)`);
     sqliteDb.exec(`CREATE INDEX IF NOT EXISTS customers_user_status_idx ON customers (user_id, status)`);
+    sqliteDb.exec(`CREATE INDEX IF NOT EXISTS charges_stripe_charge_idx ON charges (stripe_charge_id)`);
     sqliteDb.exec(`CREATE INDEX IF NOT EXISTS charges_user_customer_idx ON charges (user_id, customer_id)`);
     sqliteDb.exec(`CREATE INDEX IF NOT EXISTS charges_user_status_idx ON charges (user_id, status)`);
     sqliteDb.exec(`CREATE INDEX IF NOT EXISTS appointments_user_customer_idx ON appointments (user_id, customer_id)`);
@@ -458,6 +470,8 @@ async function initSchema() {
     sqliteDb.exec(`CREATE INDEX IF NOT EXISTS notes_user_customer_idx ON customer_notes (user_id, customer_id)`);
   } else {
     await pgPool.query(`CREATE INDEX IF NOT EXISTS notes_user_customer_idx ON customer_notes (user_id, customer_id)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS customers_stripe_customer_idx ON customers (stripe_customer_id)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS charges_stripe_charge_idx ON charges (stripe_charge_id)`);
   }
 
   // Migration: add failed_charge_webhook_url to users
@@ -687,6 +701,12 @@ function all(sql, params = []) {
 
 function uuid() { return uuidv4(); }
 
+function normalizeLimit(value, fallback = 500, max = 1000) {
+  const parsed = parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(parsed, max);
+}
+
 function normalizeRatePerTrigger(value, fallback = 147) {
   if (value === null || value === undefined || value === '') return fallback;
   const parsed = Number(value);
@@ -776,9 +796,18 @@ function createCustomer(data) {
 }
 
 function getCustomerById(id) { return get('SELECT * FROM customers WHERE id = ?', [id]); }
-function getCustomersByUser(userId) { return all('SELECT * FROM customers WHERE user_id = ? ORDER BY created_at DESC', [userId]); }
+function getCustomersByUser(userId, limit = 1000) {
+  return all(
+    'SELECT * FROM customers WHERE user_id = ? ORDER BY created_at DESC LIMIT ?',
+    [userId, normalizeLimit(limit, 1000, 2000)]
+  );
+}
 function getCustomerByEmailAndUser(email, userId) {
   return get('SELECT * FROM customers WHERE LOWER(email) = LOWER(?) AND user_id = ?', [email, userId]);
+}
+function getCustomerByStripeCustomerId(stripeCustomerId) {
+  if (!stripeCustomerId) return null;
+  return get('SELECT * FROM customers WHERE stripe_customer_id = ? LIMIT 1', [stripeCustomerId]);
 }
 function getCustomerByLocationId(locationId, userId) { return get('SELECT * FROM customers WHERE ghl_location_id = ? AND user_id = ?', [locationId, userId]); }
 function getCustomerByContactId(contactId, userId) { return get('SELECT * FROM customers WHERE ghl_contact_id = ? AND user_id = ?', [contactId, userId]); }
@@ -806,6 +835,91 @@ function updateCustomer(id, updates) {
   return getCustomerById(id);
 }
 
+async function deleteCustomerCascade(customerId, userId) {
+  if (USE_PG) {
+    const client = await pgPool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM charges WHERE customer_id = $1 AND user_id = $2', [customerId, userId]);
+      await client.query('DELETE FROM appointments WHERE customer_id = $1 AND user_id = $2', [customerId, userId]);
+      await client.query('DELETE FROM ad_metrics WHERE customer_id = $1 AND user_id = $2', [customerId, userId]);
+      await client.query('DELETE FROM webhook_events WHERE customer_id = $1 AND user_id = $2', [customerId, userId]);
+      await client.query('DELETE FROM customer_notes WHERE customer_id = $1 AND user_id = $2', [customerId, userId]);
+      await client.query('DELETE FROM communication_logs WHERE customer_id = $1 AND user_id = $2', [customerId, userId]);
+      await client.query('DELETE FROM meta_campaign_mappings WHERE customer_id = $1 AND user_id = $2', [customerId, userId]);
+      const result = await client.query('DELETE FROM customers WHERE id = $1 AND user_id = $2', [customerId, userId]);
+      await client.query('COMMIT');
+      return result.rowCount;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  const tx = sqliteDb.transaction((id, uid) => {
+    sqliteDb.prepare('DELETE FROM charges WHERE customer_id = ? AND user_id = ?').run(id, uid);
+    sqliteDb.prepare('DELETE FROM appointments WHERE customer_id = ? AND user_id = ?').run(id, uid);
+    sqliteDb.prepare('DELETE FROM ad_metrics WHERE customer_id = ? AND user_id = ?').run(id, uid);
+    sqliteDb.prepare('DELETE FROM webhook_events WHERE customer_id = ? AND user_id = ?').run(id, uid);
+    sqliteDb.prepare('DELETE FROM customer_notes WHERE customer_id = ? AND user_id = ?').run(id, uid);
+    sqliteDb.prepare('DELETE FROM communication_logs WHERE customer_id = ? AND user_id = ?').run(id, uid);
+    sqliteDb.prepare('DELETE FROM meta_campaign_mappings WHERE customer_id = ? AND user_id = ?').run(id, uid);
+    return sqliteDb.prepare('DELETE FROM customers WHERE id = ? AND user_id = ?').run(id, uid).changes;
+  });
+  return tx(customerId, userId);
+}
+
+async function consumeCustomerCredit(customerId, userId, maxAmount) {
+  const amount = Math.max(parseFloat(maxAmount) || 0, 0);
+  if (amount <= 0) return { used: 0, remaining: 0 };
+
+  if (USE_PG) {
+    const client = await pgPool.connect();
+    try {
+      await client.query('BEGIN');
+      const locked = await client.query(
+        'SELECT credit_balance FROM customers WHERE id = $1 AND user_id = $2 FOR UPDATE',
+        [customerId, userId]
+      );
+      if (!locked.rows[0]) {
+        await client.query('ROLLBACK');
+        return { used: 0, remaining: 0 };
+      }
+      const current = Math.max(parseFloat(locked.rows[0].credit_balance) || 0, 0);
+      const used = Math.min(current, amount);
+      const remaining = current - used;
+      await client.query(
+        'UPDATE customers SET credit_balance = $1 WHERE id = $2 AND user_id = $3',
+        [remaining, customerId, userId]
+      );
+      await client.query('COMMIT');
+      return { used, remaining };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  const tx = sqliteDb.transaction((id, uid, requested) => {
+    const row = sqliteDb
+      .prepare('SELECT credit_balance FROM customers WHERE id = ? AND user_id = ?')
+      .get(id, uid);
+    if (!row) return { used: 0, remaining: 0 };
+    const current = Math.max(parseFloat(row.credit_balance) || 0, 0);
+    const used = Math.min(current, requested);
+    const remaining = current - used;
+    sqliteDb
+      .prepare('UPDATE customers SET credit_balance = ? WHERE id = ? AND user_id = ?')
+      .run(remaining, id, uid);
+    return { used, remaining };
+  });
+  return tx(customerId, userId, amount);
+}
+
 // ─── CHARGES ────────────────────────────────────────────────────
 function createCharge(data) {
   const id = uuid();
@@ -828,7 +942,16 @@ function createCharge(data) {
 }
 
 function getChargeById(id) { return get('SELECT * FROM charges WHERE id = ?', [id]); }
-function getChargesByUser(userId) { return all('SELECT * FROM charges WHERE user_id = ? ORDER BY created_at DESC', [userId]); }
+function getChargeByStripeChargeId(stripeChargeId) {
+  if (!stripeChargeId) return null;
+  return get('SELECT * FROM charges WHERE stripe_charge_id = ? LIMIT 1', [stripeChargeId]);
+}
+function getChargesByUser(userId, limit = 1000) {
+  return all(
+    'SELECT * FROM charges WHERE user_id = ? ORDER BY created_at DESC LIMIT ?',
+    [userId, normalizeLimit(limit, 1000, 2000)]
+  );
+}
 
 function updateCharge(id, updates) {
   const keys = Object.keys(updates);
@@ -889,7 +1012,12 @@ function addNotification(data) {
   return id;
 }
 
-function getNotificationsByUser(userId) { return all('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC', [userId]); }
+function getNotificationsByUser(userId, limit = 100) {
+  return all(
+    'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ?',
+    [userId, normalizeLimit(limit, 100, 500)]
+  );
+}
 function markAllRead(userId) { return run('UPDATE notifications SET read = 1 WHERE user_id = ?', [userId]); }
 function deleteNotification(id, userId) {
   if (USE_PG) return pgPool.query('DELETE FROM notifications WHERE id = $1 AND user_id = $2', [id, userId]);
@@ -1379,7 +1507,7 @@ async function ensureAdmin() {
     const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
     const hash = bcrypt.hashSync(adminPass, 10);
     await createUser({ email: adminEmail, name: 'Admin', password_hash: hash, role: 'admin', company_name: 'PayPulse', plan: 'admin', approved: 1 });
-    console.log('  ✓ Admin created: ' + adminEmail + ' / ' + adminPass);
+    console.log('  ✓ Admin created: ' + adminEmail);
   } else {
     console.log('  ✓ Admin exists: ' + existing.email);
   }
@@ -1391,8 +1519,8 @@ module.exports = {
   initSchema,
   all, run, get,
   createUser, getUserByEmail, getUserById, getUserByGhlSecret, getUserByWhopSecret, getUserByStripeBillingRef, updateUser, listUsers,
-  createCustomer, getCustomerById, getCustomersByUser, getCustomerByEmailAndUser, getCustomerByLocationId, getCustomerByContactId, getCustomerByPhoneAndUser, updateCustomer,
-  createCharge, getChargeById, getChargesByUser, updateCharge,
+  createCustomer, getCustomerById, getCustomersByUser, getCustomerByEmailAndUser, getCustomerByStripeCustomerId, getCustomerByLocationId, getCustomerByContactId, getCustomerByPhoneAndUser, updateCustomer, deleteCustomerCascade, consumeCustomerCredit,
+  createCharge, getChargeById, getChargeByStripeChargeId, getChargesByUser, updateCharge,
   createAppointment, getAppointmentById, getAppointmentsByUser, updateAppointment,
   addNotification, getNotificationsByUser, markAllRead, deleteNotification, getUnreadCount,
   createAdMetric, getAdMetricById, getAdMetricsByCustomer, getAdMetricsByUser, deleteAdMetric,
