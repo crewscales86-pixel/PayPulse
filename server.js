@@ -337,6 +337,7 @@ async function buildCardSetupLink(user, customer) {
   const session = await stripeClient.checkout.sessions.create({
     mode: 'setup',
     currency: 'usd',
+    payment_method_types: ['card'],
     customer: stripeCustomerId,
     setup_intent_data: {
       metadata: {
@@ -353,6 +354,31 @@ async function buildCardSetupLink(user, customer) {
   });
 
   return session.url;
+}
+
+async function getStripeCustomerCardPaymentMethod(stripe, customer) {
+  const customerId = typeof customer === 'string' ? customer : customer?.id;
+  if (!customerId) return '';
+
+  const defaultPaymentMethodId =
+    typeof customer?.invoice_settings?.default_payment_method === 'string'
+      ? customer.invoice_settings.default_payment_method
+      : customer?.invoice_settings?.default_payment_method?.id || '';
+  if (defaultPaymentMethodId) {
+    try {
+      const paymentMethod = await stripe.paymentMethods.retrieve(defaultPaymentMethodId);
+      if (paymentMethod?.type === 'card') return paymentMethod.id;
+    } catch {
+      // Fall back to listing card methods below.
+    }
+  }
+
+  const cards = await stripe.paymentMethods.list({
+    customer: customerId,
+    type: 'card',
+    limit: 1
+  });
+  return cards.data[0]?.id || '';
 }
 
 function metaConfigured() {
@@ -1513,12 +1539,28 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
         amount: Math.round(chargeAmount * 100),
         currency: 'usd',
         customer: customer.stripe_customer_id,
+        payment_method_types: ['card'],
         off_session: true,
         confirm: true,
         description: `PayPulse charge for ${customer.name}`,
         metadata: { customer_id: customer.id, user_id: user.id }
       };
       if (customer.stripe_payment_method_id) {
+        try {
+          const savedPaymentMethod = await stripeClient.paymentMethods.retrieve(customer.stripe_payment_method_id);
+          if (savedPaymentMethod?.type && savedPaymentMethod.type !== 'card') {
+            return finalizeFailedCharge({
+              user,
+              customer,
+              charge,
+              amount: chargeAmount,
+              reason: `Saved Stripe payment method is ${savedPaymentMethod.type}, not card. Use Get Card again to save a card.`,
+              notificationBody: `Saved payment method is ${savedPaymentMethod.type}, not card. Use Get Card again.`
+            });
+          }
+        } catch {
+          // Let Stripe return the exact error if the stored payment method cannot be retrieved.
+        }
         piOptions.payment_method = customer.stripe_payment_method_id;
       }
       const paymentIntent = await stripeClient.paymentIntents.create(piOptions);
@@ -2185,14 +2227,18 @@ app.get('/api/stripe/customers', requireAuth, async (req, res) => {
       const params = { limit: 100 };
       if (startingAfter) params.starting_after = startingAfter;
       const list = await stripe.customers.list(params);
-      customers.push(...list.data.map(c => ({
-        id: c.id,
-        name: c.name || c.email?.split('@')[0] || 'Unknown',
-        email: c.email || '',
-        phone: c.phone || '',
-        card_on_file: c.invoice_settings?.default_payment_method ? true : false,
-        created: c.created
-      })));
+      for (const c of list.data) {
+        const cardPaymentMethodId = await getStripeCustomerCardPaymentMethod(stripe, c);
+        customers.push({
+          id: c.id,
+          name: c.name || c.email?.split('@')[0] || 'Unknown',
+          email: c.email || '',
+          phone: c.phone || '',
+          card_on_file: !!cardPaymentMethodId,
+          payment_method_id: cardPaymentMethodId,
+          created: c.created
+        });
+      }
       hasMore = list.has_more;
       startingAfter = list.data[list.data.length - 1]?.id;
     }
@@ -2265,14 +2311,15 @@ app.post('/api/customers/import-stripe', requireAuth, async (req, res) => {
         const normalizedEmail = sCust.email ? String(sCust.email).trim().toLowerCase() : '';
         const existingByEmail = normalizedEmail ? await db.getCustomerByEmailAndUser(normalizedEmail, req.user.id) : null;
         if (existingByEmail) { skipped.push(normalizedEmail); continue; }
+        const cardPaymentMethodId = await getStripeCustomerCardPaymentMethod(stripe, sCust);
         const c = await db.createCustomer({
           user_id: req.user.id,
           name: sCust.name || sCust.email?.split('@')[0] || id.slice(-8),
           email: normalizedEmail,
           phone: sCust.phone || '',
           stripe_customer_id: sCust.id,
-          stripe_payment_method_id: sCust.invoice_settings?.default_payment_method || '',
-          card_on_file: sCust.invoice_settings?.default_payment_method || sCust.default_source ? 1 : 0,
+          stripe_payment_method_id: cardPaymentMethodId,
+          card_on_file: cardPaymentMethodId ? 1 : 0,
           status: 'new'
         });
         imported.push(c);
