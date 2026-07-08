@@ -500,7 +500,7 @@ async function requireAuth(req, res, next) {
   try {
     const payload = jwt.verify(token, JWT_SECRET);
     const user = await db.getUserById(payload.id);
-    if (!user) return res.status(403).json({ error: 'Invalid token' });
+    if (!user) return res.status(401).json({ error: 'Invalid token' });
     if (user.role === 'agency' && !user.active) {
       return res.status(403).json({ error: pausedAccountMessage(user), paused: true, supportEmail: SUPPORT_EMAIL });
     }
@@ -508,7 +508,7 @@ async function requireAuth(req, res, next) {
     next();
   } catch (err) {
     captureError(err, { message: 'Auth middleware error' });
-    return res.status(403).json({ error: 'Invalid token' });
+    return res.status(401).json({ error: 'Invalid token' });
   }
 }
 function requireAdmin(req, res, next) {
