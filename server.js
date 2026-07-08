@@ -3465,6 +3465,10 @@ app.patch('/api/admin/agencies/:id', requireAuth, requireAdmin, async (req, res)
     updates.paused_reason = req.body.pausedReason;
   if (req.body.processor !== undefined)
     updates.processor = req.body.processor;
+  if (req.body.stripeCustomerId !== undefined)
+    updates.stripe_customer_id = String(req.body.stripeCustomerId || '').trim();
+  if (req.body.stripeSubscriptionId !== undefined)
+    updates.stripe_subscription_id = String(req.body.stripeSubscriptionId || '').trim();
   const updated = await db.updateUser(req.params.id, updates);
   if (updates.active === 0) {
     await sendDirectEmail(

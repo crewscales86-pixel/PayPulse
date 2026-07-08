@@ -261,6 +261,7 @@
   .tag-red { background: rgba(255,106,106,0.1); color: var(--danger); }
   .tag-blue { background: rgba(89,183,255,0.12); color: var(--blue); }
   .tag-purple { background: rgba(167,145,255,0.12); color: var(--purple); }
+  .tag-yellow { background: rgba(255,209,102,0.12); color: var(--warn); }
   .cust-actions { display: flex; gap: 6px; }
   .btn-sm {
     padding: 7px 13px; border-radius: 10px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em;
@@ -1987,6 +1988,9 @@ function CreateAgencyModal({ onClose, onRefresh }) {
 function AdminPage({ agencies, adminStats, onRefresh, showToast }) {
   const [showModal, setShowModal] = useState(null);
   const [pending, setPending] = useState([]);
+  const activeAgencies = (agencies || []).filter(a => a.approved && a.active);
+  const pausedAgencies = (agencies || []).filter(a => a.approved && !a.active);
+  const pendingAgencies = (agencies || []).filter(a => !a.approved);
 
   useEffect(() => {
     api('/api/admin/pending').then(setPending).catch(() => {});
@@ -2007,6 +2011,51 @@ function AdminPage({ agencies, adminStats, onRefresh, showToast }) {
     } catch (err) { showToast(err.message, 'error'); }
   };
 
+  const pauseAgency = async (agency) => {
+    const reason = prompt('Why are we pausing this agency?', 'Manual pause by admin');
+    if (reason === null) return;
+    await updateAgency(agency.id, { active: false, billingStatus: 'manual_pause', pausedReason: reason || 'Manual pause by admin' });
+    showToast('Agency paused. They cannot access PayPulse until reactivated.', 'success');
+  };
+
+  const reactivateAgency = async (agency) => {
+    if (!confirm('Reactivate this agency and restore app access?')) return;
+    await updateAgency(agency.id, { active: true, billingStatus: 'current' });
+    showToast('Agency reactivated.', 'success');
+  };
+
+  const statusTag = (agency) => {
+    if (!agency.approved) return e('span', { className: 'tag tag-yellow' }, 'Pending');
+    if (!agency.active) return e('span', { className: 'tag tag-red' }, agency.billingStatus === 'failed' || agency.billingStatus === 'past_due' ? 'Billing Issue' : 'Paused');
+    return e('span', { className: 'tag tag-green' }, 'Active');
+  };
+
+  const pipelineCard = (agency) =>
+    e('div', { key: agency.id, className: 'admin-card', style: { padding: 14, marginBottom: 10, border: !agency.active && agency.approved ? '1px solid var(--danger)' : '1px solid var(--border)' } },
+      e('div', { style: { display:'flex', justifyContent:'space-between', gap: 10, alignItems:'flex-start' } },
+        e('div', null,
+          e('div', { style: { fontWeight: 700, fontSize: 13 } }, agency.companyName || agency.name || 'Agency'),
+          e('div', { style: { color:'var(--text2)', fontSize: 11, marginTop: 3 } }, agency.email)
+        ),
+        statusTag(agency)
+      ),
+      e('div', { style: { display:'grid', gridTemplateColumns:'1fr 1fr', gap: 8, marginTop: 12, fontSize: 11, color:'var(--text2)' } },
+        e('div', null, 'Plan: ', e('strong', { style: { color:'var(--text)' } }, agency.plan || 'free')),
+        e('div', null, 'MRR: ', e('strong', { style: { color:'var(--accent)' } }, '$' + Number(agency.monthlyRate || 0).toFixed(0))),
+        e('div', null, 'Billing: ', e('strong', { style: { color:'var(--text)' } }, agency.billingStatus || 'current')),
+        e('div', null, 'Last paid: ', e('strong', { style: { color:'var(--text)' } }, agency.lastPaymentSucceededAt ? fmtDate(agency.lastPaymentSucceededAt) : '—'))
+      ),
+      agency.pausedReason && e('div', { style: { marginTop: 10, color:'var(--danger)', fontSize: 11, lineHeight: 1.4 } }, agency.pausedReason),
+      e('div', { style: { display:'flex', flexWrap:'wrap', gap: 6, marginTop: 12 } },
+        e('a', { className: 'btn-sm', href: 'mailto:' + agency.email, style: { textDecoration:'none' } }, 'Contact'),
+        agency.active
+          ? e('button', { className: 'btn-sm', style: { color:'var(--danger)' }, onClick: () => pauseAgency(agency) }, 'Pause')
+          : e('button', { className: 'btn-sm green', onClick: () => reactivateAgency(agency) }, 'Reactivate'),
+        e('button', { className: 'btn-sm', onClick: () => setShowModal(agency) }, 'Edit'),
+        e('button', { className: 'btn-sm', style: { color:'var(--danger)' }, onClick: () => deleteAgency(agency.id) }, 'Delete')
+      )
+    );
+
   return e('div', { className: 'page' },
     e('div', { className: 'page-title', style: { display:'flex', justifyContent:'space-between', alignItems:'center' } },
       e('span', null, 'Admin Panel'),
@@ -2016,7 +2065,7 @@ function AdminPage({ agencies, adminStats, onRefresh, showToast }) {
     ),
     e('div', { className: 'admin-grid' },
       e('div', { className: 'admin-card stat-card' },
-        e('div', { className: 'stat-label' }, 'Total Agencies'),
+        e('div', { className: 'stat-label' }, 'Agency Accounts'),
         e('div', { className: 'stat-value' }, adminStats?.totalAgencies || 0)
       ),
       e('div', { className: 'admin-card stat-card' },
@@ -2024,12 +2073,12 @@ function AdminPage({ agencies, adminStats, onRefresh, showToast }) {
         e('div', { className: 'stat-value blue' }, adminStats?.activeAgencies || 0)
       ),
       e('div', { className: 'admin-card stat-card' },
-        e('div', { className: 'stat-label' }, 'Total Charges'),
-        e('div', { className: 'stat-value' }, '$' + ((adminStats?.totalCharges || 0)).toFixed(0))
+        e('div', { className: 'stat-label' }, 'Monthly Recurring Revenue'),
+        e('div', { className: 'stat-value green' }, '$' + ((adminStats?.monthlyRecurringRevenue || adminStats?.totalRevenue || 0)).toFixed(0))
       ),
       e('div', { className: 'admin-card stat-card' },
-        e('div', { className: 'stat-label' }, 'Total Customers'),
-        e('div', { className: 'stat-value' }, adminStats?.totalCustomers || 0)
+        e('div', { className: 'stat-label' }, 'Billing Issues / Paused'),
+        e('div', { className: 'stat-value red' }, adminStats?.failedBillingAccounts || adminStats?.pausedAgencies || 0)
       )
     ),
     pending.length > 0 && e('div', { className: 'settings-card', style: { marginBottom: 20, border: '1px solid var(--yellow)' } },
@@ -2051,26 +2100,56 @@ function AdminPage({ agencies, adminStats, onRefresh, showToast }) {
         )
       )
     ),
+    e('div', { className: 'settings-card', style: { marginTop:20 } },
+      e('h3', null, 'Agency Owner Pipeline'),
+      e('p', { style: { color:'var(--text2)', fontSize: 12, marginTop: -4, marginBottom: 16 } },
+        'This is your admin billing pipeline. It tracks agency-owner subscriptions, not their internal PPA clients.'
+      ),
+      e('div', { className: 'admin-grid', style: { gridTemplateColumns:'repeat(3, minmax(0, 1fr))', gap: 14 } },
+        e('div', null,
+          e('h4', { style: { margin:'0 0 10px', color:'var(--accent)' } }, 'Active Monthly (' + activeAgencies.length + ')'),
+          activeAgencies.map(pipelineCard),
+          activeAgencies.length === 0 && e('div', { style: { color:'var(--text2)', fontSize: 12 } }, 'No active agencies yet')
+        ),
+        e('div', null,
+          e('h4', { style: { margin:'0 0 10px', color:'var(--danger)' } }, 'Paused / Failed (' + pausedAgencies.length + ')'),
+          pausedAgencies.map(pipelineCard),
+          pausedAgencies.length === 0 && e('div', { style: { color:'var(--text2)', fontSize: 12 } }, 'No paused agencies')
+        ),
+        e('div', null,
+          e('h4', { style: { margin:'0 0 10px', color:'var(--yellow)' } }, 'Pending Approval (' + pendingAgencies.length + ')'),
+          pendingAgencies.map(pipelineCard),
+          pendingAgencies.length === 0 && e('div', { style: { color:'var(--text2)', fontSize: 12 } }, 'No pending agencies')
+        )
+      )
+    ),
     e('div', { className: 'table-wrap', style: { marginTop:20 } },
       e('table', null,
         e('thead', null, e('tr', null,
-          e('th', null, 'Agency'), e('th', null, 'Customers'),
-          e('th', null, 'Total Charged'), e('th', null, 'Status'), e('th', null, 'Actions')
+          e('th', null, 'Agency Owner'), e('th', null, 'Plan / MRR'),
+          e('th', null, 'Billing'), e('th', null, 'Status'), e('th', null, 'Actions')
         )),
         e('tbody', null,
           (agencies || []).map(a =>
             e('tr', { key: a.id },
-              e('td', null, e('strong', null, a.name), e('br', null), e('span', { style: {color:'var(--text2)',fontSize:12} }, a.email)),
-              e('td', null, a.totalCustomers || 0),
-              e('td', null, '$' + ((a.totalCharged || 0)).toFixed(0)),
-              e('td', null, e('span', { className: 'tag ' + (a.active ? 'tag-green' : 'tag-red') }, a.active ? 'Active' : 'Paused')),
+              e('td', null, e('strong', null, a.companyName || a.name), e('br', null), e('span', { style: {color:'var(--text2)',fontSize:12} }, a.email)),
+              e('td', null, (a.plan || 'free') + ' · $' + Number(a.monthlyRate || 0).toFixed(0) + '/mo'),
               e('td', null,
+                e('div', null, a.billingStatus || 'current'),
+                a.lastPaymentFailedAt && e('span', { style: {color:'var(--danger)',fontSize:11} }, 'Failed: ' + fmtDate(a.lastPaymentFailedAt))
+              ),
+              e('td', null, statusTag(a)),
+              e('td', null,
+                e('a', { className: 'btn-sm', href: 'mailto:' + a.email, style: { marginRight:6, textDecoration:'none' } }, 'Contact'),
+                a.active
+                  ? e('button', { className: 'btn-sm', style: { marginRight:6, color:'var(--danger)' }, onClick: () => pauseAgency(a) }, 'Pause')
+                  : e('button', { className: 'btn-sm green', style: { marginRight:6 }, onClick: () => reactivateAgency(a) }, 'Reactivate'),
                 e('button', { className: 'btn-sm', style: { marginRight:6 }, onClick: () => setShowModal(a) }, 'Edit'),
                 e('button', { className: 'btn-sm', style: { color:'var(--danger)' }, onClick: () => deleteAgency(a.id) }, 'Delete')
               )
             )
           ),
-          (!agencies || agencies.length === 0) && e('tr', null, e('td', { colSpan: 9, style: { textAlign:'center', color:'#555', padding:40 } }, 'No agencies yet'))
+          (!agencies || agencies.length === 0) && e('tr', null, e('td', { colSpan: 5, style: { textAlign:'center', color:'#555', padding:40 } }, 'No agencies yet'))
         )
       )
     ),
@@ -2080,11 +2159,57 @@ function AdminPage({ agencies, adminStats, onRefresh, showToast }) {
         e('h3', null, 'Edit ' + showModal.name),
         e('div', { className: 'form-group' },
           e('label', null, 'Status'),
-          e('select', { value: showModal.active ? 'active' : 'paused', onChange: ev => updateAgency(showModal.id, { active: ev.target.value === 'active' }) },
+          e('select', { value: showModal.active ? 'active' : 'paused', onChange: ev => setShowModal({ ...showModal, active: ev.target.value === 'active', billingStatus: ev.target.value === 'active' ? 'current' : 'manual_pause' }) },
             e('option', { value: 'active' }, 'Active'), e('option', { value: 'paused' }, 'Paused')
           )
         ),
+        e('div', { className: 'form-group' },
+          e('label', null, 'Billing Status'),
+          e('select', { value: showModal.billingStatus || 'current', onChange: ev => setShowModal({ ...showModal, billingStatus: ev.target.value }) },
+            e('option', { value: 'current' }, 'Current'),
+            e('option', { value: 'failed' }, 'Failed Payment'),
+            e('option', { value: 'past_due' }, 'Past Due'),
+            e('option', { value: 'manual_pause' }, 'Manual Pause'),
+            e('option', { value: 'canceled' }, 'Canceled')
+          )
+        ),
+        e('div', { className: 'form-group' },
+          e('label', null, 'Pause Reason'),
+          e('input', { value: showModal.pausedReason || '', onChange: ev => setShowModal({ ...showModal, pausedReason: ev.target.value }), placeholder: 'Payment failed, manual pause, etc.' })
+        ),
+        e('div', { className: 'form-group' },
+          e('label', null, 'Plan'),
+          e('select', { value: showModal.plan || 'free', onChange: ev => setShowModal({ ...showModal, plan: ev.target.value }) },
+            e('option', { value: 'free' }, 'Free'),
+            e('option', { value: 'standard' }, 'Standard'),
+            e('option', { value: 'pro' }, 'Pro')
+          )
+        ),
+        e('div', { className: 'form-group' },
+          e('label', null, 'Monthly Rate'),
+          e('input', { type: 'number', value: showModal.monthlyRate || 0, onChange: ev => setShowModal({ ...showModal, monthlyRate: parseFloat(ev.target.value) || 0 }) })
+        ),
+        e('div', { className: 'form-group' },
+          e('label', null, 'Stripe Customer ID'),
+          e('input', { value: showModal.stripeCustomerId || '', onChange: ev => setShowModal({ ...showModal, stripeCustomerId: ev.target.value }), placeholder: 'cus_...' })
+        ),
+        e('div', { className: 'form-group' },
+          e('label', null, 'Stripe Subscription ID'),
+          e('input', { value: showModal.stripeSubscriptionId || '', onChange: ev => setShowModal({ ...showModal, stripeSubscriptionId: ev.target.value }), placeholder: 'sub_...' })
+        ),
         e('div', { className: 'modal-actions' },
+          e('button', { className: 'btn-primary', onClick: async () => {
+            await updateAgency(showModal.id, {
+              active: showModal.active,
+              billingStatus: showModal.billingStatus,
+              plan: showModal.plan,
+              monthlyRate: showModal.monthlyRate,
+              pausedReason: showModal.pausedReason,
+              stripeCustomerId: showModal.stripeCustomerId,
+              stripeSubscriptionId: showModal.stripeSubscriptionId
+            });
+            setShowModal(null);
+          } }, 'Save'),
           e('button', { className: 'btn-ghost', onClick: () => setShowModal(null) }, 'Close')
         )
       )

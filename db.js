@@ -36,6 +36,12 @@ async function initSchema() {
         plan TEXT DEFAULT 'free',
         monthly_rate REAL DEFAULT 0,
         active INTEGER DEFAULT 1,
+        billing_status TEXT DEFAULT 'current',
+        paused_reason TEXT DEFAULT '',
+        paused_at TIMESTAMPTZ NULL,
+        last_payment_failed_at TIMESTAMPTZ NULL,
+        last_payment_succeeded_at TIMESTAMPTZ NULL,
+        last_payment_error TEXT DEFAULT '',
         appointment_tracking_mode INTEGER DEFAULT 0,
         stripe_customer_id TEXT DEFAULT '',
         stripe_subscription_id TEXT DEFAULT '',
@@ -253,6 +259,12 @@ async function initSchema() {
                 company_name TEXT DEFAULT '', email TEXT NOT NULL, password_hash TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'agency', processor TEXT DEFAULT 'stripe',
                 plan TEXT DEFAULT 'free', monthly_rate REAL DEFAULT 0, active INTEGER DEFAULT 1,
+                billing_status TEXT DEFAULT 'current',
+                paused_reason TEXT DEFAULT '',
+                paused_at TEXT DEFAULT '',
+                last_payment_failed_at TEXT DEFAULT '',
+                last_payment_succeeded_at TEXT DEFAULT '',
+                last_payment_error TEXT DEFAULT '',
                 stripe_secret_key TEXT DEFAULT '', stripe_publishable_key TEXT DEFAULT '',
                 stripe_customer_id TEXT DEFAULT '', stripe_subscription_id TEXT DEFAULT '',
                 whop_api_key TEXT DEFAULT '', whop_company_id TEXT DEFAULT '',
@@ -459,6 +471,12 @@ async function initSchema() {
       await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS meta_token_expires_at TEXT DEFAULT ''`);
       await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS meta_ad_account_id TEXT DEFAULT ''`);
       await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS meta_ad_account_name TEXT DEFAULT ''`);
+      await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_status TEXT DEFAULT 'current'`);
+      await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS paused_reason TEXT DEFAULT ''`);
+      await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ NULL`);
+      await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_payment_failed_at TIMESTAMPTZ NULL`);
+      await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_payment_succeeded_at TIMESTAMPTZ NULL`);
+      await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_payment_error TEXT DEFAULT ''`);
     } else {
       const cols = sqliteDb.prepare("PRAGMA table_info(users)").all();
       if (!cols.find(c => c.name === 'failed_charge_webhook_url')) {
@@ -484,6 +502,24 @@ async function initSchema() {
       }
       if (!cols.find(c => c.name === 'meta_ad_account_name')) {
         sqliteDb.exec(`ALTER TABLE users ADD COLUMN meta_ad_account_name TEXT DEFAULT ''`);
+      }
+      if (!cols.find(c => c.name === 'billing_status')) {
+        sqliteDb.exec(`ALTER TABLE users ADD COLUMN billing_status TEXT DEFAULT 'current'`);
+      }
+      if (!cols.find(c => c.name === 'paused_reason')) {
+        sqliteDb.exec(`ALTER TABLE users ADD COLUMN paused_reason TEXT DEFAULT ''`);
+      }
+      if (!cols.find(c => c.name === 'paused_at')) {
+        sqliteDb.exec(`ALTER TABLE users ADD COLUMN paused_at TEXT DEFAULT ''`);
+      }
+      if (!cols.find(c => c.name === 'last_payment_failed_at')) {
+        sqliteDb.exec(`ALTER TABLE users ADD COLUMN last_payment_failed_at TEXT DEFAULT ''`);
+      }
+      if (!cols.find(c => c.name === 'last_payment_succeeded_at')) {
+        sqliteDb.exec(`ALTER TABLE users ADD COLUMN last_payment_succeeded_at TEXT DEFAULT ''`);
+      }
+      if (!cols.find(c => c.name === 'last_payment_error')) {
+        sqliteDb.exec(`ALTER TABLE users ADD COLUMN last_payment_error TEXT DEFAULT ''`);
       }
     }
   } catch (e) {
@@ -684,6 +720,16 @@ function getUserByEmail(email) { return get('SELECT * FROM users WHERE email = ?
 function getUserById(id) { return get('SELECT * FROM users WHERE id = ?', [id]); }
 function getUserByGhlSecret(secret) { return get('SELECT * FROM users WHERE ghl_webhook_secret = ?', [secret]); }
 function getUserByWhopSecret(secret) { return get('SELECT * FROM users WHERE whop_webhook_secret = ?', [secret]); }
+function getUserByStripeBillingRef({ customerId = '', subscriptionId = '' } = {}) {
+  if (!customerId && !subscriptionId) return null;
+  return get(
+    `SELECT * FROM users
+     WHERE role = 'agency'
+       AND ((? <> '' AND stripe_customer_id = ?) OR (? <> '' AND stripe_subscription_id = ?))
+     LIMIT 1`,
+    [customerId || '', customerId || '', subscriptionId || '', subscriptionId || '']
+  );
+}
 
 function updateUser(id, updates) {
   const keys = Object.keys(updates);
@@ -1300,25 +1346,29 @@ function getAdminStats() {
   if (USE_PG) {
     return (async () => {
       const agencies = await pgPool.query("SELECT COUNT(*) as c FROM users WHERE role = 'agency'");
-      const active = await pgPool.query("SELECT COUNT(*) as c FROM users WHERE role = 'agency' AND active = 1");
-      const mrr = await pgPool.query("SELECT COALESCE(SUM(monthly_rate), 0) as s FROM users WHERE role = 'agency' AND active = 1");
-      const charges = await pgPool.query("SELECT COALESCE(SUM(amount), 0) as s FROM charges WHERE status = 'succeeded'");
-      const customers = await pgPool.query('SELECT COUNT(*) as c FROM customers');
+      const active = await pgPool.query("SELECT COUNT(*) as c FROM users WHERE role = 'agency' AND active = 1 AND approved = 1");
+      const paused = await pgPool.query("SELECT COUNT(*) as c FROM users WHERE role = 'agency' AND active = 0");
+      const pending = await pgPool.query("SELECT COUNT(*) as c FROM users WHERE role = 'agency' AND approved = 0");
+      const failedBilling = await pgPool.query("SELECT COUNT(*) as c FROM users WHERE role = 'agency' AND (billing_status IN ('failed', 'past_due') OR paused_reason ILIKE '%payment%')");
+      const mrr = await pgPool.query("SELECT COALESCE(SUM(monthly_rate), 0) as s FROM users WHERE role = 'agency' AND active = 1 AND approved = 1");
       return {
         totalAgencies: parseInt(agencies.rows[0].c),
         activeAgencies: parseInt(active.rows[0].c),
-        totalRevenue: parseFloat(mrr.rows[0].s),
-        totalCharges: parseFloat(charges.rows[0].s),
-        totalCustomers: parseInt(customers.rows[0].c)
+        pausedAgencies: parseInt(paused.rows[0].c),
+        pendingAgencies: parseInt(pending.rows[0].c),
+        failedBillingAccounts: parseInt(failedBilling.rows[0].c),
+        monthlyRecurringRevenue: parseFloat(mrr.rows[0].s),
+        totalRevenue: parseFloat(mrr.rows[0].s)
       };
     })();
   }
   const totalAgencies = sqliteDb.prepare("SELECT COUNT(*) as c FROM users WHERE role = 'agency'").get().c;
-  const activeAgencies = sqliteDb.prepare("SELECT COUNT(*) as c FROM users WHERE role = 'agency' AND active = 1").get().c;
-  const totalRevenue = sqliteDb.prepare("SELECT COALESCE(SUM(monthly_rate), 0) as s FROM users WHERE role = 'agency' AND active = 1").get().s;
-  const totalCharges = sqliteDb.prepare("SELECT COALESCE(SUM(amount), 0) as s FROM charges WHERE status = 'succeeded'").get().s;
-  const totalCustomers = sqliteDb.prepare('SELECT COUNT(*) as c FROM customers').get().c;
-  return { totalAgencies, activeAgencies, totalRevenue, totalCharges, totalCustomers };
+  const activeAgencies = sqliteDb.prepare("SELECT COUNT(*) as c FROM users WHERE role = 'agency' AND active = 1 AND approved = 1").get().c;
+  const pausedAgencies = sqliteDb.prepare("SELECT COUNT(*) as c FROM users WHERE role = 'agency' AND active = 0").get().c;
+  const pendingAgencies = sqliteDb.prepare("SELECT COUNT(*) as c FROM users WHERE role = 'agency' AND approved = 0").get().c;
+  const failedBillingAccounts = sqliteDb.prepare("SELECT COUNT(*) as c FROM users WHERE role = 'agency' AND (billing_status IN ('failed', 'past_due') OR paused_reason LIKE '%payment%')").get().c;
+  const monthlyRecurringRevenue = sqliteDb.prepare("SELECT COALESCE(SUM(monthly_rate), 0) as s FROM users WHERE role = 'agency' AND active = 1 AND approved = 1").get().s;
+  return { totalAgencies, activeAgencies, pausedAgencies, pendingAgencies, failedBillingAccounts, monthlyRecurringRevenue, totalRevenue: monthlyRecurringRevenue };
 }
 
 async function ensureAdmin() {
@@ -1340,7 +1390,7 @@ async function ensureAdmin() {
 module.exports = {
   initSchema,
   all, run, get,
-  createUser, getUserByEmail, getUserById, getUserByGhlSecret, getUserByWhopSecret, updateUser, listUsers,
+  createUser, getUserByEmail, getUserById, getUserByGhlSecret, getUserByWhopSecret, getUserByStripeBillingRef, updateUser, listUsers,
   createCustomer, getCustomerById, getCustomersByUser, getCustomerByEmailAndUser, getCustomerByLocationId, getCustomerByContactId, getCustomerByPhoneAndUser, updateCustomer,
   createCharge, getChargeById, getChargesByUser, updateCharge,
   createAppointment, getAppointmentById, getAppointmentsByUser, updateAppointment,
