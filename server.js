@@ -563,6 +563,21 @@ function isValidStripeSecretKey(value) {
   return key.startsWith('sk_live_') || key.startsWith('sk_test_');
 }
 
+function validateManualStripeIds({ stripeCustomerId = '', stripePaymentMethodId = '' } = {}) {
+  const customerId = String(stripeCustomerId || '').trim();
+  const paymentMethodId = String(stripePaymentMethodId || '').trim();
+  if (customerId && !customerId.startsWith('cus_')) {
+    return 'Stripe Customer ID must start with cus_';
+  }
+  if (paymentMethodId && !paymentMethodId.startsWith('pm_')) {
+    return 'Stripe card Payment Method ID must start with pm_';
+  }
+  if (paymentMethodId && !customerId) {
+    return 'Stripe Customer ID is required when adding a Payment Method ID';
+  }
+  return '';
+}
+
 // ─── AUTH ────────────────────────────────────────────────────────
 app.post('/api/auth/change-password', requireAuth, async (req, res) => {
   try {
@@ -2267,6 +2282,11 @@ app.post('/api/customers', requireAuth, async (req, res) => {
     if ('rate_per_trigger' in allowed) {
       allowed.rate_per_trigger = normalizeRatePerTrigger(allowed.rate_per_trigger);
     }
+    const stripeIdError = validateManualStripeIds({
+      stripeCustomerId: allowed.stripe_customer_id,
+      stripePaymentMethodId: allowed.stripe_payment_method_id
+    });
+    if (stripeIdError) return res.status(400).json({ error: stripeIdError });
     const c = await db.createCustomer({
       ...allowed,
       user_id: req.user.id
@@ -2360,6 +2380,11 @@ app.patch('/api/customers/:id', requireAuth, async (req, res) => {
         c.rate_per_trigger || 147
       );
     }
+    const stripeIdError = validateManualStripeIds({
+      stripeCustomerId: updates.stripe_customer_id !== undefined ? updates.stripe_customer_id : c.stripe_customer_id,
+      stripePaymentMethodId: updates.stripe_payment_method_id !== undefined ? updates.stripe_payment_method_id : c.stripe_payment_method_id
+    });
+    if (stripeIdError) return res.status(400).json({ error: stripeIdError });
     if (
       updates.stripe_payment_method_id ||
       updates.whop_payment_method_id

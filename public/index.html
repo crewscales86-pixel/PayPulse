@@ -1023,10 +1023,10 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
       const ratePerTrigger = Number(editModal.rate_per_trigger);
       const normalizedRate = Number.isFinite(ratePerTrigger) && ratePerTrigger > 0 ? ratePerTrigger : 147;
       if (editModal.id === 'new') {
-        await api('/api/customers', { method: 'POST', body: JSON.stringify({ name: editModal.name, email: editModal.email, rate_per_trigger: normalizedRate, status: editModal.status, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
+        await api('/api/customers', { method: 'POST', body: JSON.stringify({ name: editModal.name, email: editModal.email, rate_per_trigger: normalizedRate, status: editModal.status, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '', card_on_file: !!editModal.stripe_payment_method_id }) });
         showToast('Customer added!', 'success');
       } else {
-        await api('/api/customers/' + editModal.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: normalizedRate, status: editModal.status, name: editModal.name, company_name: editModal.company_name, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '' }) });
+        await api('/api/customers/' + editModal.id, { method: 'PATCH', body: JSON.stringify({ rate_per_trigger: normalizedRate, status: editModal.status, name: editModal.name, company_name: editModal.company_name, ghl_location_id: editModal.ghl_location_id, stripe_customer_id: editModal.stripe_customer_id || '', stripe_payment_method_id: editModal.stripe_payment_method_id || '', card_on_file: !!editModal.stripe_payment_method_id }) });
         showToast('Customer updated!', 'success');
       }
       setEditModal(null); await onRefresh();
@@ -1203,6 +1203,20 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
           e('label', null, 'GHL Location ID (for auto-billing webhook)'),
           e('input', { placeholder: 'e.g. vQ3xK7mNpR', value: editModal.ghl_location_id || '', onChange: ev => setEditModal({...editModal, ghl_location_id: ev.target.value}) })
         ),
+        editModal.id === 'new' && e('div', { style: { padding: 12, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface2)', marginBottom: 16 } },
+          e('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 } }, 'Manual Stripe IDs (optional)'),
+          e('div', { className: 'form-group' },
+            e('label', null, 'Stripe Customer ID'),
+            e('input', { placeholder: 'cus_...', value: editModal.stripe_customer_id || '', onChange: ev => setEditModal({...editModal, stripe_customer_id: ev.target.value}) })
+          ),
+          e('div', { className: 'form-group' },
+            e('label', null, 'Card Payment Method ID'),
+            e('input', { placeholder: 'pm_...', value: editModal.stripe_payment_method_id || '', onChange: ev => setEditModal({...editModal, stripe_payment_method_id: ev.target.value, card_on_file: !!ev.target.value}) })
+          ),
+          e('div', { style: { color: 'var(--text2)', fontSize: 11, lineHeight: 1.5 } },
+            'If this client already exists in Stripe, paste their cus_ and card pm_ IDs. Otherwise leave blank and use Get Card after saving.'
+          )
+        ),
         editModal.ghl_location_id && settings?.ghlWebhookSecret && e('div', { style: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 10, padding: 16, marginBottom: 16 } },
           e('div', { style: { fontSize: 12, fontWeight: 700, color: 'var(--accent)', marginBottom: 8 } }, '⚡ Auto-Billing Webhook'),
           e('div', { style: { fontSize: 12, color: 'var(--text2)', marginBottom: 10, lineHeight: 1.5 } },
@@ -1242,7 +1256,21 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
             }, '💳 Get Card')
           ),
           e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 8 } },
-            'Click "Get Card" to generate a secure Stripe link. It saves the client card without charging them.'
+            'Get Card creates a secure Stripe Checkout setup link to save a new card without charging. Stripe import pulls existing cards directly from Stripe.'
+          ),
+          e('div', { style: { marginTop: 14, padding: 12, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface2)' } },
+            e('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 } }, 'Manual Stripe IDs'),
+            e('div', { className: 'form-group' },
+              e('label', null, 'Stripe Customer ID'),
+              e('input', { placeholder: 'cus_...', value: editModal.stripe_customer_id || '', onChange: ev => setEditModal({...editModal, stripe_customer_id: ev.target.value}) })
+            ),
+            e('div', { className: 'form-group' },
+              e('label', null, 'Card Payment Method ID'),
+              e('input', { placeholder: 'pm_...', value: editModal.stripe_payment_method_id || '', onChange: ev => setEditModal({...editModal, stripe_payment_method_id: ev.target.value, card_on_file: !!ev.target.value}) })
+            ),
+            e('div', { style: { color: 'var(--text2)', fontSize: 11, lineHeight: 1.5 } },
+              'Use this only when the client already exists in Stripe. Paste the customer ID and a card payment method ID from that same Stripe customer. Link methods will not work for auto-charge.'
+            )
           )
         ),
         editModal.id !== 'new' && settings?.failedChargeWebhookUrl && e('div', { style: { marginTop: 12 } },
