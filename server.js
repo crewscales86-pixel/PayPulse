@@ -317,6 +317,9 @@ async function sendDirectEmail(to, subject, text) {
 
 async function buildCardSetupLink(user, customer) {
   if (!user?.stripe_secret_key) return '';
+  if (!isValidStripeSecretKey(user.stripe_secret_key)) {
+    throw new Error('Invalid Stripe Secret Key. In agency Settings, paste the Secret key that starts with sk_live_ or sk_test_. Do not use publishable keys, masked keys, or mk/rk keys.');
+  }
   const stripeClient = Stripe(user.stripe_secret_key);
   let stripeCustomerId = customer.stripe_customer_id;
   if (!stripeCustomerId) {
@@ -527,6 +530,11 @@ function normalizeRatePerTrigger(value, fallback = 147) {
   if (value === null || value === undefined || value === '') return fallback;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function isValidStripeSecretKey(value) {
+  const key = String(value || '').trim();
+  return key.startsWith('sk_live_') || key.startsWith('sk_test_');
 }
 
 // ─── AUTH ────────────────────────────────────────────────────────
@@ -1478,7 +1486,7 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
         shouldWebhook: false
       });
     }
-    if (!user.stripe_secret_key.startsWith('sk_')) {
+    if (!isValidStripeSecretKey(user.stripe_secret_key)) {
       return finalizeFailedCharge({
         user,
         customer,
@@ -2961,8 +2969,15 @@ app.post('/api/settings', requireAuth, async (req, res) => {
   if (
     req.body.stripeSecretKey &&
     !String(req.body.stripeSecretKey).startsWith('•')
-  )
-    updates.stripe_secret_key = req.body.stripeSecretKey;
+  ) {
+    const stripeSecretKey = String(req.body.stripeSecretKey || '').trim();
+    if (!isValidStripeSecretKey(stripeSecretKey)) {
+      return res.status(400).json({
+        error: 'Invalid Stripe Secret Key. Paste the Secret key from Stripe Developers > API keys. It must start with sk_live_ or sk_test_.'
+      });
+    }
+    updates.stripe_secret_key = stripeSecretKey;
+  }
   if (req.body.stripePublishableKey !== undefined)
     updates.stripe_publishable_key = req.body.stripePublishableKey;
   if (

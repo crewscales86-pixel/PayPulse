@@ -1406,7 +1406,10 @@ function SettingsPage({ settings, onSave, showToast }) {
         s.processor === 'stripe' && e('div', null,
           e('div', { className: 'form-group' },
             e('label', null, 'Stripe Secret Key'),
-            e('input', { type: 'password', value: s.stripeSecretKey || '', onChange: ev => update({stripeSecretKey: ev.target.value}), placeholder: 'sk_live_...' })
+            e('input', { type: 'password', value: s.stripeSecretKey || '', onChange: ev => update({stripeSecretKey: ev.target.value}), placeholder: 'sk_live_...' }),
+            e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 6, lineHeight: 1.4 } },
+              'Use the Stripe Secret key from Developers > API keys. It must start with sk_live_ or sk_test_, not pk_, rk_, mk_, or a masked key.'
+            )
           ),
           e('div', { className: 'form-group' },
             e('label', null, 'Stripe Publishable Key'),
