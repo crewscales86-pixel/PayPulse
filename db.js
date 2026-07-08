@@ -95,6 +95,7 @@ async function initSchema() {
         customer_name TEXT DEFAULT '',
         customer_email TEXT DEFAULT '',
         amount REAL NOT NULL,
+        charge_type TEXT DEFAULT 'appointment',
         processor TEXT DEFAULT 'stripe',
         status TEXT DEFAULT 'pending',
         stripe_charge_id TEXT DEFAULT '',
@@ -308,7 +309,7 @@ async function initSchema() {
         id TEXT PRIMARY KEY, user_id TEXT NOT NULL, customer_id TEXT NOT NULL,
         appointment_id TEXT DEFAULT '',
         customer_name TEXT DEFAULT '', customer_email TEXT DEFAULT '',
-        amount REAL NOT NULL, processor TEXT DEFAULT 'stripe',
+        amount REAL NOT NULL, charge_type TEXT DEFAULT 'appointment', processor TEXT DEFAULT 'stripe',
         status TEXT DEFAULT 'pending', stripe_charge_id TEXT DEFAULT '',
         failure_reason TEXT DEFAULT '', note TEXT DEFAULT '',
         retry_count INTEGER DEFAULT 0, next_retry_at TEXT DEFAULT '',
@@ -557,6 +558,7 @@ async function initSchema() {
   // Migrations: add retry/refund columns to charges
   try {
     if (USE_PG) {
+      await pgPool.query(`ALTER TABLE charges ADD COLUMN IF NOT EXISTS charge_type TEXT DEFAULT 'appointment'`);
       await pgPool.query(`ALTER TABLE charges ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0`);
       await pgPool.query(`ALTER TABLE charges ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ NULL`);
       await pgPool.query(`ALTER TABLE charges ADD COLUMN IF NOT EXISTS retry_status TEXT DEFAULT 'none'`);
@@ -564,6 +566,7 @@ async function initSchema() {
       await pgPool.query(`ALTER TABLE charges ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMPTZ NULL`);
     } else {
       const chargeCols = sqliteDb.prepare("PRAGMA table_info(charges)").all();
+      if (!chargeCols.find(c => c.name === 'charge_type')) sqliteDb.exec(`ALTER TABLE charges ADD COLUMN charge_type TEXT DEFAULT 'appointment'`);
       if (!chargeCols.find(c => c.name === 'retry_count')) sqliteDb.exec(`ALTER TABLE charges ADD COLUMN retry_count INTEGER DEFAULT 0`);
       if (!chargeCols.find(c => c.name === 'next_retry_at')) sqliteDb.exec(`ALTER TABLE charges ADD COLUMN next_retry_at TEXT DEFAULT ''`);
       if (!chargeCols.find(c => c.name === 'retry_status')) sqliteDb.exec(`ALTER TABLE charges ADD COLUMN retry_status TEXT DEFAULT 'none'`);
@@ -925,18 +928,18 @@ function createCharge(data) {
   const id = uuid();
   if (USE_PG) {
     return pgPool.query(
-      `INSERT INTO charges (id, user_id, customer_id, appointment_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, failure_reason, note, utm_source, utm_medium, utm_campaign, gclid)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+      `INSERT INTO charges (id, user_id, customer_id, appointment_id, customer_name, customer_email, amount, charge_type, processor, status, stripe_charge_id, failure_reason, note, utm_source, utm_medium, utm_campaign, gclid)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
       [id, data.user_id, data.customer_id, data.appointment_id || '', data.customer_name, data.customer_email, data.amount,
-       data.processor, data.status, data.stripe_charge_id || '', data.failure_reason || '', data.note || '',
+       data.charge_type || 'appointment', data.processor, data.status, data.stripe_charge_id || '', data.failure_reason || '', data.note || '',
        data.utm_source || '', data.utm_medium || '', data.utm_campaign || '', data.gclid || '']
     ).then(() => getChargeById(id));
   }
   sqliteDb.prepare(
-    `INSERT INTO charges (id, user_id, customer_id, appointment_id, customer_name, customer_email, amount, processor, status, stripe_charge_id, failure_reason, note, utm_source, utm_medium, utm_campaign, gclid)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO charges (id, user_id, customer_id, appointment_id, customer_name, customer_email, amount, charge_type, processor, status, stripe_charge_id, failure_reason, note, utm_source, utm_medium, utm_campaign, gclid)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(id, data.user_id, data.customer_id, data.appointment_id || '', data.customer_name, data.customer_email, data.amount,
-    data.processor, data.status, data.stripe_charge_id || '', data.failure_reason || '', data.note || '',
+    data.charge_type || 'appointment', data.processor, data.status, data.stripe_charge_id || '', data.failure_reason || '', data.note || '',
     data.utm_source || '', data.utm_medium || '', data.utm_campaign || '', data.gclid || '');
   return getChargeById(id);
 }

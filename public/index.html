@@ -587,7 +587,7 @@ function CustomerCard({ customer, onCharge, onEdit, onAnalytics, webhookSecret, 
       e('span', { style: { fontSize: 10, color: 'var(--text2)' } }, customer.company_name)
     ),
     e('div', { className: 'cust-actions' },
-      e('button', { className: 'btn-sm green', style: { padding: '3px 10px', fontSize: 10 }, onClick: () => onCharge(customer) }, 'Charge'),
+      e('button', { className: 'btn-sm green', style: { padding: '3px 10px', fontSize: 10 }, onClick: () => onCharge(customer) }, 'One-off'),
       e('button', { className: 'btn-sm', style: { padding: '3px 10px', fontSize: 10 }, onClick: () => onEdit(customer) }, 'Edit'),
       e('button', { className: 'btn-sm purple', style: { padding: '3px 10px', fontSize: 10 }, onClick: () => onAnalytics(customer) }, 'Analytics'),
       e('button', { className: 'btn-sm', style: { padding: '3px 10px', fontSize: 10, background: confirmDelete ? 'rgba(255,68,68,0.2)' : 'transparent', color: confirmDelete ? 'var(--danger)' : 'var(--text3)', borderColor: confirmDelete ? 'var(--danger)' : 'var(--border)' }, onClick: () => {
@@ -609,6 +609,7 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
   const [retrying, setRetrying] = useState(null);
   const [savingCard, setSavingCard] = useState(false);
   const [noteBody, setNoteBody] = useState('');
+  const [chargeAmount, setChargeAmount] = useState('');
   const [creditUnits, setCreditUnits] = useState('1');
   const [creditNote, setCreditNote] = useState('');
   const [showNotesList, setShowNotesList] = useState(false);
@@ -647,9 +648,19 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
 
   const fireCharge = async () => {
     try {
-      const res = await api('/api/customers/' + customer.id + '/charge', { method: 'POST', body: JSON.stringify({ note: chargeNote }) });
+      const amount = parseFloat(chargeAmount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        showToast('Enter a one-off amount greater than $0', 'error');
+        return;
+      }
+      if (!chargeNote.trim()) {
+        showToast('Add a reason for the one-off charge', 'error');
+        return;
+      }
+      const res = await api('/api/customers/' + customer.id + '/one-off-charge', { method: 'POST', body: JSON.stringify({ amount, reason: chargeNote }) });
       showToast(res.status === 'succeeded' ? 'Charge succeeded' : `Charge ${res.status}`, res.status === 'succeeded' ? 'success' : 'warn');
       setChargeNote('');
+      setChargeAmount('');
       setManualChargeConfirm(false);
       await onRefresh();
       await load();
@@ -827,12 +838,13 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
         e('div', { className: 'table-wrap', style: { maxHeight: 250, overflow: 'auto' } },
           e('table', { className: 'charge-table' },
             e('thead', null, e('tr', null,
-              e('th', null, 'Status'), e('th', null, 'Amount'), e('th', null, 'Note'), e('th', null, 'Date'), e('th', null, 'Actions')
+              e('th', null, 'Status'), e('th', null, 'Type'), e('th', null, 'Amount'), e('th', null, 'Note'), e('th', null, 'Date'), e('th', null, 'Actions')
             )),
             e('tbody', null,
               d.charges.slice(0, 15).map(ch =>
                 e('tr', { key: ch.id },
                   e('td', null, e('span', { className: 'status-dot ' + (ch.status==='succeeded'?'ok':ch.status==='failed'?'fail':'warn') }), e('span', { style: { textTransform:'capitalize' } }, ch.status)),
+                  e('td', null, e('span', { className: 'tag ' + (ch.charge_type === 'one_off' ? 'tag-blue' : 'tag-green') }, ch.charge_type === 'one_off' ? 'One-off' : 'Appointment')),
                   e('td', null, '$' + ch.amount.toFixed(2)),
                   e('td', { style: { color: 'var(--text2)' } }, ch.note || ch.failure_reason || '-'),
                   e('td', { style: { color: 'var(--text2)' } }, fmtDate(ch.created_at)),
@@ -924,16 +936,17 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
       ),
 
       e('div', { className: 'detail-section' },
-        e('h4', null, 'Manual Charge'),
+        e('h4', null, 'One-off Manual Charge'),
         !manualChargeConfirm
-          ? e('div', { style: { display: 'flex', gap: 10, alignItems: 'center' } },
-              e('input', { placeholder: 'Note (optional)', value: chargeNote, onChange: ev => setChargeNote(ev.target.value), style: { flex: 1 } }),
-              e('button', { className: 'btn-primary', onClick: () => setManualChargeConfirm(true), style: { width: 'auto' } }, 'Prepare Charge $' + c.rate_per_trigger)
+          ? e('div', { style: { display: 'grid', gridTemplateColumns: '140px 1fr auto', gap: 10, alignItems: 'center' } },
+              e('input', { type: 'number', min: '0', step: '0.01', placeholder: 'Amount', value: chargeAmount, onChange: ev => setChargeAmount(ev.target.value) }),
+              e('input', { placeholder: 'Reason required, e.g. setup fee, extra work, missed invoice', value: chargeNote, onChange: ev => setChargeNote(ev.target.value) }),
+              e('button', { className: 'btn-primary', onClick: () => setManualChargeConfirm(true), style: { width: 'auto' } }, 'Prepare One-off')
             )
           : e('div', { style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' } },
               e('div', { style: { flex: 1, minWidth: 220, color: 'var(--warn)', fontSize: 12, lineHeight: 1.5 } },
-                'You are about to charge ', e('strong', null, c.name), ' for $', e('strong', null, c.rate_per_trigger), '.',
-                ' This is the final confirmation step.'
+                'You are about to run a one-off charge for ', e('strong', null, c.name), ' for $', e('strong', null, (parseFloat(chargeAmount) || 0).toFixed(2)), '.',
+                ' Reason: ', e('strong', null, chargeNote || 'No reason entered'), '. This does not count as an appointment charge.'
               ),
               e('button', { className: 'btn-sm', onClick: () => setManualChargeConfirm(false) }, 'Cancel'),
               e('button', { className: 'btn-primary', onClick: fireCharge, style: { width: 'auto' } }, 'Confirm Charge')
@@ -953,6 +966,7 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
   const [editModal, setEditModal] = useState(null);
   const [detailModal, setDetailModal] = useState(null);
   const [note, setNote] = useState('');
+  const [oneOffAmount, setOneOffAmount] = useState('');
   const [syncModal, setSyncModal] = useState(false);
   const [draggingCustomerId, setDraggingCustomerId] = useState(null);
   const [dragOverStatus, setDragOverStatus] = useState(null);
@@ -991,9 +1005,12 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
   const doCharge = async () => {
     setChargeModal({ ...chargeModal, loading: true });
     try {
-      await api('/api/customers/' + chargeModal.id + '/charge', { method: 'POST', body: JSON.stringify({ note }) });
-      showToast('Charge successful!', 'success');
-      setChargeModal(null); setNote(''); onRefresh();
+      const amount = parseFloat(oneOffAmount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a one-off amount greater than $0');
+      if (!note.trim()) throw new Error('Add a reason for the one-off charge');
+      const res = await api('/api/customers/' + chargeModal.id + '/one-off-charge', { method: 'POST', body: JSON.stringify({ amount, reason: note }) });
+      showToast(res.status === 'succeeded' ? 'One-off charge succeeded' : `One-off charge ${res.status}`, res.status === 'succeeded' ? 'success' : 'warn');
+      setChargeModal(null); setNote(''); setOneOffAmount(''); onRefresh();
     } catch (err) {
       showToast(err.message || 'Charge failed', 'error');
       setChargeModal({ ...chargeModal, loading: false });
@@ -1128,22 +1145,21 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
     ),
     chargeModal && e('div', { className: 'modal-back', onClick: ev => ev.target === ev.currentTarget && setChargeModal(null) },
       e('div', { className: 'modal' },
-        e('h3', null, 'Charge ' + chargeModal.name),
+        e('h3', null, 'One-off Charge ' + chargeModal.name),
         e('div', { style: { color: 'var(--text2)', fontSize: 13, marginBottom: 16 } },
-          'Per appointment rate for ', e('strong', { style: { color: 'var(--text)' } }, chargeModal.name),
-          ': ', e('strong', { style: { color: 'var(--accent)' } }, '$' + chargeModal.rate_per_trigger)
+          'Use this only for non-appointment extras like setup fees, add-ons, or custom work. This will not count as a booked appointment charge.'
         ),
         e('div', { className: 'form-group' },
-          e('label', null, 'Amount'),
-          e('input', { value: '$' + chargeModal.rate_per_trigger, disabled: true })
+          e('label', null, 'One-off Amount'),
+          e('input', { type: 'number', min: '0', step: '0.01', placeholder: '250.00', value: oneOffAmount, onChange: ev => setOneOffAmount(ev.target.value) })
         ),
         e('div', { className: 'form-group' },
-          e('label', null, 'Note (optional)'),
-          e('input', { placeholder: 'e.g. Monthly retainer', value: note, onChange: ev => setNote(ev.target.value) })
+          e('label', null, 'Reason'),
+          e('input', { placeholder: 'Required, e.g. setup fee, extra campaign work', value: note, onChange: ev => setNote(ev.target.value) })
         ),
         e('div', { className: 'modal-actions' },
-          e('button', { className: 'btn-ghost', onClick: () => setChargeModal(null) }, 'Cancel'),
-          e(Button, { className: 'btn-primary', loading: chargeModal.loading, onClick: doCharge }, 'Charge $' + chargeModal.rate_per_trigger)
+          e('button', { className: 'btn-ghost', onClick: () => { setChargeModal(null); setOneOffAmount(''); setNote(''); } }, 'Cancel'),
+          e(Button, { className: 'btn-primary', loading: chargeModal.loading, onClick: doCharge }, 'Charge One-off')
         )
       )
     ),
@@ -1510,7 +1526,7 @@ function ChargesPage({ charges }) {
     e('div', { className: 'table-wrap' },
       e('table', null,
         e('thead', null, e('tr', null,
-          e('th', null, 'Status'), e('th', null, 'Customer'), e('th', null, 'Amount'),
+          e('th', null, 'Status'), e('th', null, 'Type'), e('th', null, 'Customer'), e('th', null, 'Amount'),
           e('th', null, 'Processor'), e('th', null, 'Note'), e('th', null, 'Time')
         )),
         e('tbody', null,
@@ -1520,6 +1536,7 @@ function ChargesPage({ charges }) {
                 e('span', { className: 'status-dot ' + (c.status==='succeeded'?'ok':c.status==='failed'?'fail':'warn') }),
                 e('span', { style: { textTransform:'capitalize' } }, c.status)
               ),
+              e('td', null, e('span', { className: 'tag ' + (c.charge_type === 'one_off' ? 'tag-blue' : 'tag-green') }, c.charge_type === 'one_off' ? 'One-off' : 'Appointment')),
               e('td', null, e('strong', null, c.customer_name), e('br', null), e('span', { style: {color:'var(--text2)',fontSize:12} }, c.customer_email)),
               e('td', null, e('strong', null, '$' + c.amount.toFixed(2))),
               e('td', { style: { textTransform:'capitalize' } }, c.processor),
@@ -1528,7 +1545,7 @@ function ChargesPage({ charges }) {
             )
           ),
           charges.length === 0 && e('tr', null,
-            e('td', { colSpan: 6, style: { textAlign:'center', color:'#555', padding:40 } }, 'No charges yet')
+            e('td', { colSpan: 7, style: { textAlign:'center', color:'#555', padding:40 } }, 'No charges yet')
           )
         )
       )

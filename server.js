@@ -1371,8 +1371,13 @@ async function finalizeFailedCharge({ user, customer, charge, amount, reason, no
 
 // ─── CHARGE PROCESSING ────────────────────────────────────────────
 async function processCharge(user, customer, note = '', utmData = {}, opts = {}) {
-  const rate = parseFloat(customer.rate_per_trigger) || 0;
-  const creditResult = await db.consumeCustomerCredit(customer.id, user.id, rate);
+  const rate = parseFloat(opts.amount !== undefined ? opts.amount : customer.rate_per_trigger) || 0;
+  const chargeType = opts.chargeType || 'appointment';
+  const applyCredit = opts.applyCredit !== false;
+  const countTrigger = opts.countTrigger !== false;
+  const creditResult = applyCredit
+    ? await db.consumeCustomerCredit(customer.id, user.id, rate)
+    : { used: 0, remaining: parseFloat(customer.credit_balance) || 0 };
   const creditUsed = parseFloat(creditResult.used) || 0;
   const remainingCredit = parseFloat(creditResult.remaining) || 0;
 
@@ -1398,6 +1403,7 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
         customer_name: customer.name,
         customer_email: customer.email,
         amount: rate,
+        charge_type: chargeType,
         processor: user.processor,
         status: 'credited',
         note: creditedNote
@@ -1435,6 +1441,7 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
       customer_name: customer.name,
       customer_email: customer.email,
       amount: chargeAmount,
+      charge_type: chargeType,
       processor: user.processor,
       status: 'pending',
       note:
@@ -1522,7 +1529,11 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
             card_on_file: 1
           });
         }
-        await db.run('UPDATE customers SET total_charged = COALESCE(total_charged,0) + ?, total_triggers = COALESCE(total_triggers,0) + 1 WHERE id = ?', [chargeAmount, customer.id]);
+        if (countTrigger) {
+          await db.run('UPDATE customers SET total_charged = COALESCE(total_charged,0) + ?, total_triggers = COALESCE(total_triggers,0) + 1 WHERE id = ?', [chargeAmount, customer.id]);
+        } else {
+          await db.run('UPDATE customers SET total_charged = COALESCE(total_charged,0) + ? WHERE id = ?', [chargeAmount, customer.id]);
+        }
         await db.addNotification({
           user_id: user.id,
           type: 'success',
@@ -1592,7 +1603,11 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
           status: 'succeeded',
           stripe_charge_id: payment.id
         });
-        await db.run('UPDATE customers SET total_charged = COALESCE(total_charged,0) + ?, total_triggers = COALESCE(total_triggers,0) + 1 WHERE id = ?', [chargeAmount, customer.id]);
+        if (countTrigger) {
+          await db.run('UPDATE customers SET total_charged = COALESCE(total_charged,0) + ?, total_triggers = COALESCE(total_triggers,0) + 1 WHERE id = ?', [chargeAmount, customer.id]);
+        } else {
+          await db.run('UPDATE customers SET total_charged = COALESCE(total_charged,0) + ? WHERE id = ?', [chargeAmount, customer.id]);
+        }
         await db.addNotification({
           user_id: user.id,
           type: 'success',
@@ -1670,7 +1685,13 @@ async function retryFailedCharge(user, oldCharge, actor = user) {
     chargeCustomer,
     `Retry of charge ${oldCharge.id.slice(-8)}`,
     {},
-    { appointmentId: oldCharge.appointment_id || '' }
+    {
+      appointmentId: oldCharge.appointment_id || '',
+      amount: originalAmount,
+      chargeType: oldCharge.charge_type || 'appointment',
+      applyCredit: oldCharge.charge_type !== 'one_off',
+      countTrigger: oldCharge.charge_type !== 'one_off'
+    }
   );
   await db.updateCharge(oldCharge.id, { status: 'retried', retry_status: 'completed', next_retry_at: null });
   await clearChargeRetryJob(oldCharge.id, 'completed');
@@ -2345,6 +2366,41 @@ app.post('/api/customers/:id/charge', requireAuth, async (req, res) => {
     c,
     req.body.note || 'Manual charge'
   );
+  res.json(charge);
+});
+
+app.post('/api/customers/:id/one-off-charge', requireAuth, async (req, res) => {
+  const c = await db.getCustomerById(req.params.id);
+  if (!c || c.user_id !== req.user.id)
+    return res.status(404).json({ error: 'Not found' });
+  const amount = parseFloat(req.body.amount);
+  if (!Number.isFinite(amount) || amount <= 0)
+    return res.status(400).json({ error: 'One-off charge amount must be greater than 0' });
+  if (amount > 100000)
+    return res.status(400).json({ error: 'One-off charge amount is too high' });
+  const reason = String(req.body.reason || req.body.note || '').trim();
+  if (!reason)
+    return res.status(400).json({ error: 'Add a reason for this one-off charge' });
+  const user = await db.getUserById(req.user.id);
+  const charge = await processCharge(
+    user,
+    c,
+    `One-off charge: ${reason}`,
+    {},
+    {
+      amount,
+      chargeType: 'one_off',
+      applyCredit: false,
+      countTrigger: false
+    }
+  );
+  await audit('charge.one_off_created', {
+    actor: req.user,
+    customer_id: c.id,
+    target_type: 'charge',
+    target_id: charge.id,
+    details: { customer_id: c.id, amount, status: charge.status, reason }
+  });
   res.json(charge);
 });
 
