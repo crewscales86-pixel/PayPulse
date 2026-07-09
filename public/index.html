@@ -1274,10 +1274,28 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
                   window.open(data.url, '_blank');
                 } catch (err) { showToast(err.message, 'error'); }
               }
-            }, '💳 Get Card')
+            }, '💳 Get Card'),
+            settings?.processor === 'whop' && e('button', {
+              className: 'btn-sm',
+              style: { background: 'rgba(0,255,136,0.1)', color: 'var(--accent)', borderColor: 'rgba(0,255,136,0.3)', padding: '6px 16px', fontSize: 11 },
+              onClick: async () => {
+                try {
+                  const data = await api('/api/customers/' + editModal.id + '/import-whop-payment-method', { method: 'POST' });
+                  setEditModal({
+                    ...editModal,
+                    whop_member_id: data.whopMemberId,
+                    whop_payment_method_id: data.whopPaymentMethodId,
+                    card_on_file: true
+                  });
+                  showToast('Whop saved payment method imported', 'success');
+                } catch (err) { showToast(err.message, 'error'); }
+              }
+            }, 'Import Whop Card')
           ),
           e('div', { style: { color: 'var(--text2)', fontSize: 11, marginTop: 8 } },
-            'Get Card creates a secure Stripe Checkout setup link to save a new card without charging. Stripe import pulls existing cards directly from Stripe.'
+            settings?.processor === 'whop'
+              ? 'Import Whop Card searches Whop by this customer email and links an existing saved payment method. No customer link required.'
+              : 'Get Card creates a secure Stripe Checkout setup link to save a new card without charging. Stripe import pulls existing cards directly from Stripe.'
           ),
           e('div', { style: { marginTop: 14, padding: 12, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface2)' } },
             e('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 } }, 'Manual Payment IDs'),

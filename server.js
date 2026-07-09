@@ -381,6 +381,87 @@ async function getStripeCustomerCardPaymentMethod(stripe, customer) {
   return cards.data[0]?.id || '';
 }
 
+function getWhopItems(body) {
+  if (!body) return [];
+  if (Array.isArray(body.data)) return body.data;
+  if (Array.isArray(body.data?.nodes)) return body.data.nodes;
+  if (Array.isArray(body.nodes)) return body.nodes;
+  return [];
+}
+
+async function whopFetchJson(user, path, params = {}) {
+  if (!user?.whop_api_key) {
+    const err = new Error('Set your Whop API key in Settings first');
+    err.status = 400;
+    throw err;
+  }
+  const url = new URL(`https://api.whop.com/api/v1/${path}`);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      url.searchParams.set(key, String(value));
+    }
+  });
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${user.whop_api_key}` }
+  });
+  const bodyText = await response.text();
+  let body = null;
+  try {
+    body = bodyText ? JSON.parse(bodyText) : null;
+  } catch {
+    body = bodyText;
+  }
+  if (!response.ok) {
+    const err = new Error(`Whop ${response.status}: ${getProcessorFailureReason(body)}`);
+    err.status = response.status === 401 || response.status === 403 ? 400 : response.status;
+    throw err;
+  }
+  return body;
+}
+
+async function findWhopMemberForCustomer(user, customer) {
+  const email = String(customer.email || '').trim().toLowerCase();
+  if (!email) {
+    const err = new Error('Customer email is required to find the matching Whop member');
+    err.status = 400;
+    throw err;
+  }
+  const membersBody = await whopFetchJson(user, 'members', {
+    company_id: user.whop_company_id,
+    first: 100
+  });
+  const members = getWhopItems(membersBody);
+  return members.find(member => String(member.user?.email || '').trim().toLowerCase() === email) || null;
+}
+
+async function importWhopPaymentMethodForCustomer(user, customer) {
+  if (!user.whop_company_id) {
+    const err = new Error('Set your Whop Company ID in Settings first');
+    err.status = 400;
+    throw err;
+  }
+  const member = customer.whop_member_id?.startsWith('mber_')
+    ? { id: customer.whop_member_id }
+    : await findWhopMemberForCustomer(user, customer);
+  if (!member?.id) {
+    const err = new Error(`No Whop member found for ${customer.email}. Confirm the email matches the Whop customer.`);
+    err.status = 404;
+    throw err;
+  }
+  const methodsBody = await whopFetchJson(user, 'payment_methods', {
+    member_id: member.id,
+    first: 10
+  });
+  const methods = getWhopItems(methodsBody);
+  const method = methods.find(pm => String(pm.id || '').startsWith('payt_') || String(pm.id || '').startsWith('pmt_'));
+  if (!method?.id) {
+    const err = new Error(`No saved Whop payment method found for member ${member.id}. This customer may not have a reusable saved method yet.`);
+    err.status = 404;
+    throw err;
+  }
+  return { memberId: member.id, paymentMethodId: method.id, method };
+}
+
 function metaConfigured() {
   return !!(META_APP_ID && META_APP_SECRET && META_REDIRECT_URI);
 }
@@ -2617,6 +2698,45 @@ app.post('/api/customers/:id/setup-card', requireAuth, async (req, res) => {
     res.json({ url: await buildCardSetupLink(user, customer) });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/customers/:id/import-whop-payment-method', requireAuth, async (req, res) => {
+  try {
+    const customer = await db.getCustomerById(req.params.id);
+    if (!customer || customer.user_id !== req.user.id)
+      return res.status(404).json({ error: 'Not found' });
+    const user = await db.getUserById(req.user.id);
+    const imported = await importWhopPaymentMethodForCustomer(user, customer);
+    const updated = await db.updateCustomer(customer.id, {
+      whop_member_id: imported.memberId,
+      whop_payment_method_id: imported.paymentMethodId,
+      card_on_file: 1
+    });
+    await audit('customer.whop_payment_method_imported', {
+      actor: req.user,
+      customer_id: customer.id,
+      target_type: 'customer',
+      target_id: customer.id,
+      details: {
+        whop_member_id: imported.memberId,
+        whop_payment_method_id: imported.paymentMethodId
+      }
+    });
+    await db.addNotification({
+      user_id: req.user.id,
+      type: 'success',
+      title: `Whop card imported — ${customer.name}`,
+      body: `Saved Whop payment method ${imported.paymentMethodId} linked to this customer.`
+    });
+    res.json({
+      ok: true,
+      customer: updated,
+      whopMemberId: imported.memberId,
+      whopPaymentMethodId: imported.paymentMethodId
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
