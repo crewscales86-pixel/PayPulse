@@ -151,20 +151,13 @@ async function main() {
   if (manualCharge.data.status !== 'failed') throw new Error(`Manual charge expected failed, got ${manualCharge.data.status}`);
   logStep('manual charge failure path');
 
-  const scheduled = await request(`/api/charges/${manualCharge.data.id}/schedule-retry`, {
-    method: 'POST',
-    token: agencyToken,
-    body: {}
-  });
-  if (scheduled.data.retry_status !== 'scheduled') throw new Error('Schedule retry did not set scheduled status');
-  logStep('retry schedule');
-
   const retry = await request(`/api/charges/${manualCharge.data.id}/retry`, {
     method: 'POST',
     token: agencyToken,
     body: {}
   });
   if (retry.data.status !== 'failed') throw new Error(`Retry expected failed no-card path, got ${retry.data.status}`);
+  if (retry.data.retry_status === 'scheduled') throw new Error('Retry should not create scheduled retry state');
   logStep('manual retry path');
 
   const credit = await request(`/api/customers/${customerId}/credits`, {

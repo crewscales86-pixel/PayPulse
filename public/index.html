@@ -846,8 +846,7 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
                   e('td', null, e('span', { className: 'tag ' + (ch.charge_type === 'one_off' ? 'tag-blue' : 'tag-green') }, ch.charge_type === 'one_off' ? 'One-off' : 'Appointment')),
                   e('td', null, formatMoney(ch.amount, ch.currency || customerCurrency)),
                   e('td', { style: { color: 'var(--text2)' } },
-                    ch.note || ch.failure_reason || '-',
-                    ch.retry_status === 'scheduled' && ch.next_retry_at && e('div', { style: { marginTop: 4, fontSize: 10, color: 'var(--warn)' } }, 'Retry: ' + fmtDate(ch.next_retry_at))
+                    ch.note || ch.failure_reason || '-'
                   ),
                   e('td', { style: { color: 'var(--text2)' } }, fmtDate(ch.created_at)),
                   e('td', null,

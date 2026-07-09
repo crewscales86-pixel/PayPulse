@@ -582,6 +582,21 @@ async function initSchema() {
     }
   } catch (e) { /* ignore */ }
 
+  // Migration: scheduled retries were removed; clear any existing queued state.
+  try {
+    if (USE_PG) {
+      await pgPool.query(`UPDATE charges SET retry_status = 'none', next_retry_at = NULL WHERE retry_status = 'scheduled'`);
+      await pgPool.query(
+        `UPDATE background_jobs
+         SET status = 'cancelled', locked_at = NULL, locked_by = '', last_error = 'Scheduled retry feature disabled'
+         WHERE type = 'charge_retry' AND status IN ('pending', 'retrying')`
+      );
+    } else {
+      sqliteDb.exec(`UPDATE charges SET retry_status = 'none', next_retry_at = '' WHERE retry_status = 'scheduled'`);
+      sqliteDb.exec(`UPDATE background_jobs SET status = 'cancelled', locked_at = '', locked_by = '', last_error = 'Scheduled retry feature disabled' WHERE type = 'charge_retry' AND status IN ('pending', 'retrying')`);
+    }
+  } catch (e) { /* ignore */ }
+
   // Migration: expand ad_metrics for native Meta tracking
   try {
     if (USE_PG) {

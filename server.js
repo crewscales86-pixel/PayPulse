@@ -495,12 +495,10 @@ async function buildAlerts(user) {
   );
   const failed24h = charges.filter(ch => ch.status === 'failed' && new Date(ch.created_at).getTime() >= now - 86400000).length;
   const webhookFailures24h = events.filter(evt => evt.status === 'failed' && new Date(evt.created_at).getTime() >= now - 86400000).length;
-  const scheduledRetries = charges.filter(ch => ch.retry_status === 'scheduled').length;
   const dueFollowups = notes.filter(note => note.next_due_at && new Date(note.next_due_at).getTime() <= now).length;
   const alerts = [
     { id: 'failed_24h', level: failed24h > 0 ? 'warn' : 'info', label: 'Failed charges (24h)', value: failed24h, action: 'Review failed customers' },
     { id: 'no_card', level: customers.some(c => !c.card_on_file) ? 'warn' : 'info', label: 'Customers without card', value: customers.filter(c => !c.card_on_file).length, action: 'Collect payment methods' },
-    { id: 'retry_queue', level: scheduledRetries > 0 ? 'warn' : 'info', label: 'Scheduled retries', value: scheduledRetries, action: 'Work retry queue' },
     { id: 'webhook_failures', level: webhookFailures24h > 0 ? 'warn' : 'info', label: 'Webhook failures (24h)', value: webhookFailures24h, action: 'Inspect webhook history' },
     { id: 'due_followups', level: dueFollowups > 0 ? 'warn' : 'info', label: 'Follow-up notes due', value: dueFollowups, action: 'Open customer notes' }
   ];
@@ -1368,33 +1366,6 @@ function getChargeRetryJobKey(chargeId) {
   return `charge_retry:${chargeId}`;
 }
 
-async function ensureChargeRetryJob(charge) {
-  const jobKey = getChargeRetryJobKey(charge.id);
-  const payload = JSON.stringify({ chargeId: charge.id });
-  const existing = await db.getBackgroundJobByKey(jobKey);
-  if (existing && !['completed', 'cancelled'].includes(existing.status)) {
-    return db.updateBackgroundJob(existing.id, {
-      user_id: charge.user_id,
-      payload,
-      status: 'pending',
-      run_at: charge.next_retry_at || new Date().toISOString(),
-      locked_at: null,
-      locked_by: '',
-      last_error: '',
-      completed_at: null
-    });
-  }
-  return db.createBackgroundJob({
-    user_id: charge.user_id,
-    type: 'charge_retry',
-    job_key: jobKey,
-    payload,
-    status: 'pending',
-    run_at: charge.next_retry_at || new Date().toISOString(),
-    max_attempts: 5
-  });
-}
-
 async function clearChargeRetryJob(chargeId, status = 'completed') {
   const existing = await db.getBackgroundJobByKey(getChargeRetryJobKey(chargeId));
   if (!existing) return null;
@@ -1407,34 +1378,16 @@ async function clearChargeRetryJob(chargeId, status = 'completed') {
   });
 }
 
-async function scheduleChargeRetry(charge, reason = '') {
-  const retryCount = (parseInt(charge.retry_count, 10) || 0) + 1;
-  if (retryCount > 5) {
-    await clearChargeRetryJob(charge.id, 'cancelled');
-    await db.updateCharge(charge.id, { retry_status: 'exhausted', retry_count: retryCount });
-    return;
-  }
-  const nextRetryAt = new Date(Date.now() + Math.min(retryCount, 3) * 24 * 60 * 60 * 1000).toISOString();
-  const updatedCharge = await db.updateCharge(charge.id, {
-    retry_count: retryCount,
-    retry_status: 'scheduled',
-    next_retry_at: nextRetryAt,
-    failure_reason: reason || charge.failure_reason || ''
-  });
-  await ensureChargeRetryJob(updatedCharge);
-  return updatedCharge;
-}
-
 async function finalizeFailedCharge({ user, customer, charge, amount, reason, notificationBody, shouldWebhook = true }) {
   const currencyLabel = normalizeCurrency(charge.currency || customer.currency).toUpperCase();
   await db.updateCustomer(customer.id, { status: 'at_risk' });
-  const updatedCharge = await scheduleChargeRetry(
-    await db.updateCharge(charge.id, {
-      status: 'failed',
-      failure_reason: reason
-    }),
-    reason
-  );
+  const updatedCharge = await db.updateCharge(charge.id, {
+    status: 'failed',
+    failure_reason: reason,
+    retry_status: 'none',
+    next_retry_at: null
+  });
+  await clearChargeRetryJob(charge.id, 'cancelled');
   await db.addNotification({
     user_id: user.id,
     type: 'fail',
@@ -1446,12 +1399,12 @@ async function finalizeFailedCharge({ user, customer, charge, amount, reason, no
     customer_id: customer.id,
     target_type: 'charge',
     target_id: charge.id,
-    details: { customer_id: customer.id, amount, currency: currencyLabel.toLowerCase(), reason, retry_status: 'scheduled' }
+    details: { customer_id: customer.id, amount, currency: currencyLabel.toLowerCase(), reason, retry_status: 'none' }
   });
   await sendEmailAlert(
     user,
     `PayPulse failed charge for ${customer.name}`,
-    `A charge for ${customer.name} failed.\nAmount: ${currencyLabel} ${amount.toFixed(2)}\nReason: ${reason}\nA retry has been scheduled automatically.`
+    `A charge for ${customer.name} failed.\nAmount: ${currencyLabel} ${amount.toFixed(2)}\nReason: ${reason}\nNo automatic retry was scheduled. Retry manually after fixing the issue.`
   );
   if (shouldWebhook) {
     await fireFailWebhook(user, customer, amount, reason);
@@ -1770,6 +1723,15 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
       } else {
         const errorBody = await response.text();
         const failureReason = `Whop ${response.status}: ${getProcessorFailureReason(errorBody)}`;
+        console.error('Whop payment rejected:', {
+          status: response.status,
+          customer_id: customer.id,
+          amount: chargeAmount,
+          currency,
+          member_id: customer.whop_member_id,
+          payment_method_id: customer.whop_payment_method_id,
+          reason: failureReason
+        });
         await audit('whop.payment_rejected', {
           actor: user,
           customer_id: customer.id,
@@ -1849,8 +1811,8 @@ async function retryFailedCharge(user, oldCharge, actor = user) {
   await clearChargeRetryJob(oldCharge.id, 'completed');
   await db.updateCharge(newCharge.id, {
     retry_count: (parseInt(oldCharge.retry_count, 10) || 0) + 1,
-    retry_status: newCharge.status === 'failed' ? 'scheduled' : 'completed',
-    next_retry_at: newCharge.status === 'failed' ? newCharge.next_retry_at : null
+    retry_status: newCharge.status === 'failed' ? 'none' : 'completed',
+    next_retry_at: null
   });
   await audit('charge.retry_requested', {
     actor,
@@ -1873,28 +1835,12 @@ async function processBackgroundJob(job) {
 
   try {
     if (claimedJob.type === 'charge_retry') {
-      const payload = safeJsonParse(claimedJob.payload, {}) || {};
-      const charge = await db.getChargeById(payload.chargeId || '');
-      if (!charge || charge.retry_status !== 'scheduled' || charge.status !== 'failed') {
-        return db.updateBackgroundJob(claimedJob.id, {
-          status: 'completed',
-          locked_at: null,
-          locked_by: '',
-          completed_at: new Date().toISOString(),
-          last_error: ''
-        });
-      }
-      const user = await db.getUserById(charge.user_id);
-      if (!user) {
-        throw new Error(`User not found for charge ${charge.id}`);
-      }
-      await retryFailedCharge(user, charge, user);
       return db.updateBackgroundJob(claimedJob.id, {
-        status: 'completed',
+        status: 'cancelled',
         locked_at: null,
         locked_by: '',
-        completed_at: new Date().toISOString(),
-        last_error: ''
+        completed_at: null,
+        last_error: 'Scheduled retry feature disabled'
       });
     }
 
@@ -2652,28 +2598,7 @@ app.post('/api/charges/:id/retry', requireAuth, async (req, res) => {
 });
 
 app.post('/api/charges/:id/schedule-retry', requireAuth, async (req, res) => {
-  try {
-    const charge = await db.getChargeById(req.params.id);
-    if (!charge || charge.user_id !== req.user.id)
-      return res.status(404).json({ error: 'Not found' });
-    const nextRetryAt = req.body.nextRetryAt || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    const updated = await db.updateCharge(charge.id, {
-      retry_status: 'scheduled',
-      next_retry_at: nextRetryAt,
-      retry_count: (parseInt(charge.retry_count, 10) || 0) + 1
-    });
-    await ensureChargeRetryJob(updated);
-    await audit('charge.retry_scheduled', {
-      actor: req.user,
-      customer_id: charge.customer_id,
-      target_type: 'charge',
-      target_id: charge.id,
-      details: { next_retry_at: nextRetryAt, customer_id: charge.customer_id }
-    });
-    res.json(updated);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  res.status(410).json({ error: 'Scheduled retries have been removed. Use manual Retry after fixing the payment issue.' });
 });
 
 app.post('/api/charges/:id/refund', requireAuth, async (req, res) => {
@@ -3431,8 +3356,6 @@ app.get('/api/forecast', requireAuth, async (req, res) => {
     ]);
     const now = Date.now();
     const trailing30 = charges.filter(ch => ch.status === 'succeeded' && new Date(ch.created_at).getTime() >= now - 30 * 86400000);
-    const trailing14Failures = charges.filter(ch => ch.status === 'failed' && new Date(ch.created_at).getTime() >= now - 14 * 86400000);
-    const scheduledRetries = charges.filter(ch => ch.retry_status === 'scheduled');
     const trailingRevenue = trailing30.reduce((sum, ch) => sum + (parseFloat(ch.amount) || 0), 0);
     const activeCustomers = customers.filter(c => c.status === 'active');
     const atRiskCustomers = customers.filter(c => c.status === 'at_risk');
@@ -3442,14 +3365,12 @@ app.get('/api/forecast', requireAuth, async (req, res) => {
     const avgRevenuePerActiveCustomer = activeCustomers.length
       ? trailingRevenue / activeCustomers.length
       : 0;
-    const scheduledRetryRevenue = scheduledRetries.reduce((sum, ch) => sum + (parseFloat(ch.amount) || 0), 0);
     const atRiskExposure = atRiskCustomers.reduce((sum, customer) => sum + (parseFloat(customer.rate_per_trigger) || 0), 0);
     const noCardExposure = noCardCustomers.reduce((sum, customer) => sum + (parseFloat(customer.rate_per_trigger) || 0), 0);
-    const recoveryRate = trailing14Failures.length
-      ? Math.min(0.65, scheduledRetries.length / trailing14Failures.length || 0.25)
-      : 0.25;
-    const projectedRecoveryRevenue = scheduledRetryRevenue * recoveryRate;
-    const projectedNext30Revenue = trailingRevenue + projectedRecoveryRevenue;
+    const scheduledRetryRevenue = 0;
+    const recoveryRate = 0;
+    const projectedRecoveryRevenue = 0;
+    const projectedNext30Revenue = trailingRevenue;
 
     res.json({
       trailing30Revenue,
