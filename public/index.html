@@ -1372,10 +1372,13 @@ function SettingsPage({ settings, onSave, showToast }) {
   const [s, setS] = useState(settings || {});
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [savingPassword, setSavingPassword] = useState(false);
 
   useEffect(() => { if (settings && !dirty) setS(settings); }, [settings, dirty]);
 
   const update = (patch) => { setDirty(true); setS(prev => ({...prev, ...patch})); };
+  const updatePassword = (patch) => setPasswordForm(prev => ({ ...prev, ...patch }));
 
   const save = async () => {
     setSaving(true);
@@ -1397,6 +1400,36 @@ function SettingsPage({ settings, onSave, showToast }) {
   };
 
   const copy = (text) => { navigator.clipboard.writeText(text); };
+
+  const savePassword = async () => {
+    if (!passwordForm.currentPassword || !passwordForm.newPassword) {
+      showToast('Current password and new password required', 'error');
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      showToast('New passwords do not match', 'error');
+      return;
+    }
+    if (passwordForm.newPassword.length < 6) {
+      showToast('New password must be at least 6 characters', 'error');
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      await api('/api/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({
+          currentPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword
+        })
+      });
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      showToast('Password updated. Current/default password will keep working only if you did not change it.', 'success');
+    } catch (err) {
+      showToast(err.message || 'Password update failed', 'error');
+    }
+    setSavingPassword(false);
+  };
 
   return e('div', { className: 'page' },
     e('div', { className: 'settings-grid' },
@@ -1459,6 +1492,25 @@ function SettingsPage({ settings, onSave, showToast }) {
         e('div', { style: { marginTop: 8 } },
           e('button', { className: 'btn-sm green', onClick: save }, saving ? 'Saving...' : 'Save')
         )
+      ),
+      e('div', { className: 'settings-card' },
+        e('h3', null, 'Login Password'),
+        e('div', { style: { color: 'var(--text2)', fontSize: 13, marginBottom: 16, lineHeight: 1.5 } },
+          'Agency owners can change their own login password here. Existing/default passwords stay unchanged unless this form is submitted successfully.'
+        ),
+        e('div', { className: 'form-group' },
+          e('label', null, 'Current Password'),
+          e('input', { type: 'password', value: passwordForm.currentPassword, onChange: ev => updatePassword({ currentPassword: ev.target.value }), placeholder: 'Current password' })
+        ),
+        e('div', { className: 'form-group' },
+          e('label', null, 'New Password'),
+          e('input', { type: 'password', value: passwordForm.newPassword, onChange: ev => updatePassword({ newPassword: ev.target.value }), placeholder: 'New password' })
+        ),
+        e('div', { className: 'form-group' },
+          e('label', null, 'Confirm New Password'),
+          e('input', { type: 'password', value: passwordForm.confirmPassword, onChange: ev => updatePassword({ confirmPassword: ev.target.value }), placeholder: 'Confirm new password' })
+        ),
+        e(Button, { className: 'btn-primary', loading: savingPassword, onClick: savePassword }, savingPassword ? 'Updating...' : 'Update Password')
       ),
       e('div', { className: 'settings-card' },
         e('h3', { style: { opacity: 0.6 } }, 'Meta Ads'),
