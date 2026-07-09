@@ -77,6 +77,7 @@ async function initSchema() {
         stripe_payment_method_id TEXT DEFAULT '',
         whop_member_id TEXT DEFAULT '',
         whop_payment_method_id TEXT DEFAULT '',
+        currency TEXT DEFAULT 'usd',
         rate_per_trigger REAL DEFAULT 147,
         total_charged REAL DEFAULT 0,
         total_triggers INTEGER DEFAULT 0,
@@ -95,6 +96,7 @@ async function initSchema() {
         customer_name TEXT DEFAULT '',
         customer_email TEXT DEFAULT '',
         amount REAL NOT NULL,
+        currency TEXT DEFAULT 'usd',
         charge_type TEXT DEFAULT 'appointment',
         processor TEXT DEFAULT 'stripe',
         status TEXT DEFAULT 'pending',
@@ -296,7 +298,7 @@ async function initSchema() {
         id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
         company_name TEXT DEFAULT '', email TEXT NOT NULL, phone TEXT DEFAULT '', status TEXT DEFAULT 'new',
         card_on_file INTEGER DEFAULT 0, stripe_customer_id TEXT DEFAULT '', stripe_payment_method_id TEXT DEFAULT '',
-        whop_member_id TEXT DEFAULT '', whop_payment_method_id TEXT DEFAULT '', rate_per_trigger REAL DEFAULT 147,
+        whop_member_id TEXT DEFAULT '', whop_payment_method_id TEXT DEFAULT '', currency TEXT DEFAULT 'usd', rate_per_trigger REAL DEFAULT 147,
         total_charged REAL DEFAULT 0, total_triggers INTEGER DEFAULT 0,
         credit_balance REAL DEFAULT 0,
         ghl_location_id TEXT DEFAULT '',
@@ -309,7 +311,7 @@ async function initSchema() {
         id TEXT PRIMARY KEY, user_id TEXT NOT NULL, customer_id TEXT NOT NULL,
         appointment_id TEXT DEFAULT '',
         customer_name TEXT DEFAULT '', customer_email TEXT DEFAULT '',
-        amount REAL NOT NULL, charge_type TEXT DEFAULT 'appointment', processor TEXT DEFAULT 'stripe',
+        amount REAL NOT NULL, currency TEXT DEFAULT 'usd', charge_type TEXT DEFAULT 'appointment', processor TEXT DEFAULT 'stripe',
         status TEXT DEFAULT 'pending', stripe_charge_id TEXT DEFAULT '',
         failure_reason TEXT DEFAULT '', note TEXT DEFAULT '',
         retry_count INTEGER DEFAULT 0, next_retry_at TEXT DEFAULT '',
@@ -558,15 +560,20 @@ async function initSchema() {
   // Migrations: add retry/refund columns to charges
   try {
     if (USE_PG) {
+      await pgPool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'usd'`);
       await pgPool.query(`ALTER TABLE charges ADD COLUMN IF NOT EXISTS charge_type TEXT DEFAULT 'appointment'`);
+      await pgPool.query(`ALTER TABLE charges ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'usd'`);
       await pgPool.query(`ALTER TABLE charges ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0`);
       await pgPool.query(`ALTER TABLE charges ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ NULL`);
       await pgPool.query(`ALTER TABLE charges ADD COLUMN IF NOT EXISTS retry_status TEXT DEFAULT 'none'`);
       await pgPool.query(`ALTER TABLE charges ADD COLUMN IF NOT EXISTS refunded_amount REAL DEFAULT 0`);
       await pgPool.query(`ALTER TABLE charges ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMPTZ NULL`);
     } else {
+      const customerCols = sqliteDb.prepare("PRAGMA table_info(customers)").all();
+      if (!customerCols.find(c => c.name === 'currency')) sqliteDb.exec(`ALTER TABLE customers ADD COLUMN currency TEXT DEFAULT 'usd'`);
       const chargeCols = sqliteDb.prepare("PRAGMA table_info(charges)").all();
       if (!chargeCols.find(c => c.name === 'charge_type')) sqliteDb.exec(`ALTER TABLE charges ADD COLUMN charge_type TEXT DEFAULT 'appointment'`);
+      if (!chargeCols.find(c => c.name === 'currency')) sqliteDb.exec(`ALTER TABLE charges ADD COLUMN currency TEXT DEFAULT 'usd'`);
       if (!chargeCols.find(c => c.name === 'retry_count')) sqliteDb.exec(`ALTER TABLE charges ADD COLUMN retry_count INTEGER DEFAULT 0`);
       if (!chargeCols.find(c => c.name === 'next_retry_at')) sqliteDb.exec(`ALTER TABLE charges ADD COLUMN next_retry_at TEXT DEFAULT ''`);
       if (!chargeCols.find(c => c.name === 'retry_status')) sqliteDb.exec(`ALTER TABLE charges ADD COLUMN retry_status TEXT DEFAULT 'none'`);
@@ -716,6 +723,12 @@ function normalizeRatePerTrigger(value, fallback = 147) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function normalizeCurrency(value, fallback = 'usd') {
+  const allowed = new Set(['usd', 'cad', 'gbp', 'eur', 'aud']);
+  const currency = String(value || fallback).trim().toLowerCase();
+  return allowed.has(currency) ? currency : fallback;
+}
+
 // ─── USERS ──────────────────────────────────────────────────────
 function createUser(data) {
   const id = uuid();
@@ -776,25 +789,26 @@ function createCustomer(data) {
   const id = uuid();
   const email = String(data.email || '').trim().toLowerCase();
   const ratePerTrigger = normalizeRatePerTrigger(data.rate_per_trigger);
+  const currency = normalizeCurrency(data.currency);
   const cardOnFile =
     data.card_on_file !== undefined
       ? (data.card_on_file ? 1 : 0)
       : (data.stripe_payment_method_id || data.whop_payment_method_id ? 1 : 0);
   if (USE_PG) {
     return pgPool.query(
-      `INSERT INTO customers (id, user_id, name, company_name, email, phone, status, card_on_file, stripe_customer_id, stripe_payment_method_id, whop_member_id, whop_payment_method_id, rate_per_trigger, ghl_location_id, ghl_contact_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+      `INSERT INTO customers (id, user_id, name, company_name, email, phone, status, card_on_file, stripe_customer_id, stripe_payment_method_id, whop_member_id, whop_payment_method_id, currency, rate_per_trigger, ghl_location_id, ghl_contact_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
       [id, data.user_id, data.name, data.company_name || '', email, data.phone || '', data.status || 'new',
        cardOnFile, data.stripe_customer_id || '', data.stripe_payment_method_id || '',
-       data.whop_member_id || '', data.whop_payment_method_id || '', ratePerTrigger, data.ghl_location_id || '', data.ghl_contact_id || '']
+       data.whop_member_id || '', data.whop_payment_method_id || '', currency, ratePerTrigger, data.ghl_location_id || '', data.ghl_contact_id || '']
     ).then(() => getCustomerById(id));
   }
   sqliteDb.prepare(
-    `INSERT INTO customers (id, user_id, name, company_name, email, phone, status, card_on_file, stripe_customer_id, stripe_payment_method_id, whop_member_id, whop_payment_method_id, rate_per_trigger, ghl_location_id, ghl_contact_id)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO customers (id, user_id, name, company_name, email, phone, status, card_on_file, stripe_customer_id, stripe_payment_method_id, whop_member_id, whop_payment_method_id, currency, rate_per_trigger, ghl_location_id, ghl_contact_id)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(id, data.user_id, data.name, data.company_name || '', email, data.phone || '', data.status || 'new',
     cardOnFile, data.stripe_customer_id || '', data.stripe_payment_method_id || '',
-    data.whop_member_id || '', data.whop_payment_method_id || '', ratePerTrigger, data.ghl_location_id || '', data.ghl_contact_id || '');
+    data.whop_member_id || '', data.whop_payment_method_id || '', currency, ratePerTrigger, data.ghl_location_id || '', data.ghl_contact_id || '');
   return getCustomerById(id);
 }
 
@@ -926,20 +940,21 @@ async function consumeCustomerCredit(customerId, userId, maxAmount) {
 // ─── CHARGES ────────────────────────────────────────────────────
 function createCharge(data) {
   const id = uuid();
+  const currency = normalizeCurrency(data.currency);
   if (USE_PG) {
     return pgPool.query(
-      `INSERT INTO charges (id, user_id, customer_id, appointment_id, customer_name, customer_email, amount, charge_type, processor, status, stripe_charge_id, failure_reason, note, utm_source, utm_medium, utm_campaign, gclid)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+      `INSERT INTO charges (id, user_id, customer_id, appointment_id, customer_name, customer_email, amount, currency, charge_type, processor, status, stripe_charge_id, failure_reason, note, utm_source, utm_medium, utm_campaign, gclid)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
       [id, data.user_id, data.customer_id, data.appointment_id || '', data.customer_name, data.customer_email, data.amount,
-       data.charge_type || 'appointment', data.processor, data.status, data.stripe_charge_id || '', data.failure_reason || '', data.note || '',
+       currency, data.charge_type || 'appointment', data.processor, data.status, data.stripe_charge_id || '', data.failure_reason || '', data.note || '',
        data.utm_source || '', data.utm_medium || '', data.utm_campaign || '', data.gclid || '']
     ).then(() => getChargeById(id));
   }
   sqliteDb.prepare(
-    `INSERT INTO charges (id, user_id, customer_id, appointment_id, customer_name, customer_email, amount, charge_type, processor, status, stripe_charge_id, failure_reason, note, utm_source, utm_medium, utm_campaign, gclid)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO charges (id, user_id, customer_id, appointment_id, customer_name, customer_email, amount, currency, charge_type, processor, status, stripe_charge_id, failure_reason, note, utm_source, utm_medium, utm_campaign, gclid)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(id, data.user_id, data.customer_id, data.appointment_id || '', data.customer_name, data.customer_email, data.amount,
-    data.charge_type || 'appointment', data.processor, data.status, data.stripe_charge_id || '', data.failure_reason || '', data.note || '',
+    currency, data.charge_type || 'appointment', data.processor, data.status, data.stripe_charge_id || '', data.failure_reason || '', data.note || '',
     data.utm_source || '', data.utm_medium || '', data.utm_campaign || '', data.gclid || '');
   return getChargeById(id);
 }

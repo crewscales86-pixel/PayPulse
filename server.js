@@ -336,7 +336,7 @@ async function buildCardSetupLink(user, customer) {
 
   const session = await stripeClient.checkout.sessions.create({
     mode: 'setup',
-    currency: 'usd',
+    currency: normalizeCurrency(customer.currency),
     payment_method_types: ['card'],
     customer: stripeCustomerId,
     setup_intent_data: {
@@ -556,6 +556,12 @@ function normalizeRatePerTrigger(value, fallback = 147) {
   if (value === null || value === undefined || value === '') return fallback;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeCurrency(value, fallback = 'usd') {
+  const allowed = new Set(['usd', 'cad', 'gbp', 'eur', 'aud']);
+  const currency = String(value || fallback).trim().toLowerCase();
+  return allowed.has(currency) ? currency : fallback;
 }
 
 function isValidStripeSecretKey(value) {
@@ -973,6 +979,7 @@ app.post('/webhook/ghl/:secret', async (req, res) => {
         whop_payment_method_id: payload.whop_payment_method_id || '',
         stripe_customer_id: payload.stripe_customer_id || '',
         stripe_payment_method_id: payload.stripe_payment_method_id || '',
+        currency: payload.currency || 'usd',
         rate_per_trigger:
           payload.rate_trigger || user.monthly_rate || 147,
         status: 'new',
@@ -1175,6 +1182,7 @@ app.post('/webhook/ghl/:secret/:locationId', async (req, res) => {
         whop_payment_method_id: payload.whop_payment_method_id || '',
         stripe_customer_id: payload.stripe_customer_id || '',
         stripe_payment_method_id: payload.stripe_payment_method_id || '',
+        currency: payload.currency || 'usd',
         rate_per_trigger:
           payload.rate_trigger || user.monthly_rate || 147,
         status: 'new',
@@ -1418,6 +1426,7 @@ async function scheduleChargeRetry(charge, reason = '') {
 }
 
 async function finalizeFailedCharge({ user, customer, charge, amount, reason, notificationBody, shouldWebhook = true }) {
+  const currencyLabel = normalizeCurrency(charge.currency || customer.currency).toUpperCase();
   await db.updateCustomer(customer.id, { status: 'at_risk' });
   const updatedCharge = await scheduleChargeRetry(
     await db.updateCharge(charge.id, {
@@ -1437,12 +1446,12 @@ async function finalizeFailedCharge({ user, customer, charge, amount, reason, no
     customer_id: customer.id,
     target_type: 'charge',
     target_id: charge.id,
-    details: { customer_id: customer.id, amount, reason, retry_status: 'scheduled' }
+    details: { customer_id: customer.id, amount, currency: currencyLabel.toLowerCase(), reason, retry_status: 'scheduled' }
   });
   await sendEmailAlert(
     user,
     `PayPulse failed charge for ${customer.name}`,
-    `A charge for ${customer.name} failed.\nAmount: $${amount.toFixed(2)}\nReason: ${reason}\nA retry has been scheduled automatically.`
+    `A charge for ${customer.name} failed.\nAmount: ${currencyLabel} ${amount.toFixed(2)}\nReason: ${reason}\nA retry has been scheduled automatically.`
   );
   if (shouldWebhook) {
     await fireFailWebhook(user, customer, amount, reason);
@@ -1453,6 +1462,8 @@ async function finalizeFailedCharge({ user, customer, charge, amount, reason, no
 // ─── CHARGE PROCESSING ────────────────────────────────────────────
 async function processCharge(user, customer, note = '', utmData = {}, opts = {}) {
   const rate = parseFloat(opts.amount !== undefined ? opts.amount : customer.rate_per_trigger) || 0;
+  const currency = normalizeCurrency(opts.currency || customer.currency);
+  const currencyLabel = currency.toUpperCase();
   const chargeType = opts.chargeType || 'appointment';
   const applyCredit = opts.applyCredit !== false;
   const countTrigger = opts.countTrigger !== false;
@@ -1484,6 +1495,7 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
         customer_name: customer.name,
         customer_email: customer.email,
         amount: rate,
+        currency,
         charge_type: chargeType,
         processor: user.processor,
         status: 'credited',
@@ -1491,13 +1503,13 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
       })
     );
     await db.addNotification({
-      user_id: user.id,
-      type: 'success',
-      title: `Credit applied — ${customer.name}`,
-      body: `Credited appointment for ${customer.name}. $${rate.toFixed(2)} covered by credit balance. Remaining credit: $${(
-        remainingCredit
-      ).toFixed(2)}`
-    });
+    user_id: user.id,
+    type: 'success',
+    title: `Credit applied — ${customer.name}`,
+    body: `Credited appointment for ${customer.name}. ${currencyLabel} ${rate.toFixed(2)} covered by credit balance. Remaining credit: ${currencyLabel} ${(
+      remainingCredit
+    ).toFixed(2)}`
+  });
     await audit('charge.credit_applied', {
       actor: user,
       customer_id: customer.id,
@@ -1522,6 +1534,7 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
       customer_name: customer.name,
       customer_email: customer.email,
       amount: chargeAmount,
+      currency,
       charge_type: chargeType,
       processor: user.processor,
       status: 'pending',
@@ -1542,7 +1555,7 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
       charge,
       amount: chargeAmount,
       reason: 'No payment method on file',
-      notificationBody: `$${chargeAmount.toFixed(2)} failed — No payment method on file`
+      notificationBody: `${currencyLabel} ${chargeAmount.toFixed(2)} failed — No payment method on file`
     });
   }
 
@@ -1584,7 +1597,7 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
       const stripeClient = Stripe(user.stripe_secret_key);
       const piOptions = {
         amount: Math.round(chargeAmount * 100),
-        currency: 'usd',
+        currency,
         customer: customer.stripe_customer_id,
         payment_method_types: ['card'],
         off_session: true,
@@ -1635,7 +1648,7 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
           user_id: user.id,
           type: 'success',
           title: `Charge successful — ${customer.name}`,
-          body: `$${chargeAmount.toFixed(2)} charged via Stripe. PI: ${
+          body: `${currencyLabel} ${chargeAmount.toFixed(2)} charged via Stripe. PI: ${
             paymentIntent.id.slice(-8)
           }`
         });
@@ -1712,7 +1725,7 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
           payment_method_id: customer.whop_payment_method_id,
           plan: {
             initial_price: Number(chargeAmount.toFixed(2)),
-            currency: 'usd',
+            currency,
             plan_type: 'one_time',
             force_create_new_plan: true,
             title: chargeType === 'one_off' ? 'PayPulse one-off charge' : 'PayPulse appointment charge',
@@ -1741,7 +1754,7 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
           user_id: user.id,
           type: 'success',
           title: `Charge successful — ${customer.name}`,
-          body: `$${chargeAmount.toFixed(2)} charged via Whop. Payment: ${payment.id}`
+          body: `${currencyLabel} ${chargeAmount.toFixed(2)} charged via Whop. Payment: ${payment.id}`
         });
         await db.updateCharge(charge.id, {
           retry_status: 'none',
@@ -1756,7 +1769,22 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
         });
       } else {
         const errorBody = await response.text();
-        const failureReason = getProcessorFailureReason(errorBody);
+        const failureReason = `Whop ${response.status}: ${getProcessorFailureReason(errorBody)}`;
+        await audit('whop.payment_rejected', {
+          actor: user,
+          customer_id: customer.id,
+          target_type: 'charge',
+          target_id: charge.id,
+          details: {
+            customer_id: customer.id,
+            amount: chargeAmount,
+            currency,
+            status: response.status,
+            member_id: customer.whop_member_id,
+            payment_method_id: customer.whop_payment_method_id,
+            reason: failureReason
+          }
+        });
         await finalizeFailedCharge({
           user,
           customer,
@@ -1802,7 +1830,7 @@ async function retryFailedCharge(user, oldCharge, actor = user) {
     throw new Error('Customer not found for failed charge');
   }
   const originalAmount = parseFloat(oldCharge.amount) || 0;
-  const chargeCustomer = { ...customer, rate_per_trigger: originalAmount };
+  const chargeCustomer = { ...customer, rate_per_trigger: originalAmount, currency: oldCharge.currency || customer.currency };
   const newCharge = await processCharge(
     user,
     chargeCustomer,
@@ -1811,6 +1839,7 @@ async function retryFailedCharge(user, oldCharge, actor = user) {
     {
       appointmentId: oldCharge.appointment_id || '',
       amount: originalAmount,
+      currency: oldCharge.currency || customer.currency,
       chargeType: oldCharge.charge_type || 'appointment',
       applyCredit: oldCharge.charge_type !== 'one_off',
       countTrigger: oldCharge.charge_type !== 'one_off'
@@ -2334,11 +2363,15 @@ app.post('/api/customers', requireAuth, async (req, res) => {
       'stripe_payment_method_id',
       'whop_member_id',
       'whop_payment_method_id',
+      'currency',
       'rate_per_trigger',
       'ghl_location_id'
     ]);
     if ('rate_per_trigger' in allowed) {
       allowed.rate_per_trigger = normalizeRatePerTrigger(allowed.rate_per_trigger);
+    }
+    if ('currency' in allowed) {
+      allowed.currency = normalizeCurrency(allowed.currency);
     }
     const stripeIdError = validateManualStripeIds({
       stripeCustomerId: allowed.stripe_customer_id,
@@ -2430,6 +2463,7 @@ app.patch('/api/customers/:id', requireAuth, async (req, res) => {
       'stripe_payment_method_id',
       'whop_member_id',
       'whop_payment_method_id',
+      'currency',
       'rate_per_trigger',
       'credit_balance',
       'ghl_location_id'
@@ -2442,6 +2476,9 @@ app.patch('/api/customers/:id', requireAuth, async (req, res) => {
         updates.rate_per_trigger,
         c.rate_per_trigger || 147
       );
+    }
+    if ('currency' in updates) {
+      updates.currency = normalizeCurrency(updates.currency, c.currency || 'usd');
     }
     const stripeIdError = validateManualStripeIds({
       stripeCustomerId: updates.stripe_customer_id !== undefined ? updates.stripe_customer_id : c.stripe_customer_id,
@@ -2743,6 +2780,7 @@ app.get('/api/customers/:id/payment-details', requireAuth, async (req, res) => {
       failureCount,
       chargebackCount,
       ratePerTrigger: c.rate_per_trigger,
+      currency: normalizeCurrency(c.currency),
       cardOnFile: !!c.card_on_file,
       ghlLocationId: c.ghl_location_id,
       webhookUrl
