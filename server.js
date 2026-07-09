@@ -588,6 +588,12 @@ function validateManualWhopIds({ whopMemberId = '', whopPaymentMethodId = '' } =
   if (paymentMethodId && !memberId) {
     return 'Whop Member ID is required when adding a Whop Payment Method ID';
   }
+  if (memberId && !memberId.startsWith('mber_')) {
+    return 'Whop Member ID must start with mber_. Do not use the Whop user ID.';
+  }
+  if (paymentMethodId && !paymentMethodId.startsWith('payt_') && !paymentMethodId.startsWith('pmt_')) {
+    return 'Whop saved Payment Method ID must start with payt_ or pmt_.';
+  }
   return '';
 }
 
@@ -1643,6 +1649,21 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
 
   // Whop processor — real API call
   if (customer.whop_member_id && customer.whop_payment_method_id) {
+    const whopIdError = validateManualWhopIds({
+      whopMemberId: customer.whop_member_id,
+      whopPaymentMethodId: customer.whop_payment_method_id
+    });
+    if (whopIdError) {
+      return finalizeFailedCharge({
+        user,
+        customer,
+        charge,
+        amount: chargeAmount,
+        reason: whopIdError,
+        notificationBody: whopIdError,
+        shouldWebhook: false
+      });
+    }
     if (!user.whop_api_key) {
       return finalizeFailedCharge({
         user,
@@ -1944,29 +1965,62 @@ app.post('/webhook/whop/:secret', async (req, res) => {
       return res.json({ received: true, duplicate: true, eventId: webhookStart.event.id });
     }
     if (
+      event === 'setup_intent.succeeded' ||
+      req.body.type === 'setup_intent.succeeded' ||
       event === 'payment.succeeded' ||
       event === 'membership.went_valid'
     ) {
-      const email = data.user?.email || data.customer?.email;
-      const name = data.user?.name || data.customer?.name;
-      let customer = await db.getCustomerByEmailAndUser(email, user.id);
+      const whopMemberId = data.member?.id || data.payment_method?.member?.id || '';
+      const whopPaymentMethodId = data.payment_method?.id || data.payment_method_id || '';
+      const email =
+        data.member?.user?.email ||
+        data.user?.email ||
+        data.customer?.email ||
+        data.metadata?.customer_email ||
+        '';
+      const name =
+        data.member?.user?.name ||
+        data.user?.name ||
+        data.customer?.name ||
+        '';
+      const paypulseCustomerId =
+        data.metadata?.paypulse_customer_id ||
+        data.metadata?.customer_id ||
+        '';
+      let customer = paypulseCustomerId
+        ? await db.getCustomerById(paypulseCustomerId)
+        : null;
+      if (customer && customer.user_id !== user.id) customer = null;
+      if (!customer && email) customer = await db.getCustomerByEmailAndUser(email, user.id);
+      if (!customer && !email) {
+        await markWebhookEvent(webhookStart.event.id, 'ignored', {
+          event,
+          reason: 'No customer metadata or email on Whop webhook'
+        });
+        return res.json({ received: true, ignored: true });
+      }
       if (!customer)
         customer = await db.createCustomer({
           user_id: user.id,
           name: name || (email ? email.split('@')[0] : 'Whop Customer'),
           email,
-          whop_member_id: data.user?.id || ''
+          whop_member_id: whopMemberId,
+          whop_payment_method_id: whopPaymentMethodId,
+          card_on_file: !!whopPaymentMethodId
         });
-      await db.updateCustomer(customer.id, {
-        card_on_file: 1,
-        whop_member_id: data.user?.id || ''
-      });
+      const updates = {};
+      if (whopMemberId) updates.whop_member_id = whopMemberId;
+      if (whopPaymentMethodId) updates.whop_payment_method_id = whopPaymentMethodId;
+      if (whopPaymentMethodId) updates.card_on_file = 1;
+      if (Object.keys(updates).length) await db.updateCustomer(customer.id, updates);
       await db.updateWebhookEvent(webhookStart.event.id, { customer_id: customer.id });
       await db.addNotification({
         user_id: user.id,
         type: 'success',
         title: `Whop payment — ${customer.name}`,
-        body: 'Payment succeeded via Whop webhook.'
+        body: whopPaymentMethodId
+          ? 'Whop saved payment method linked to this customer.'
+          : 'Whop payment event received.'
       });
     }
     await markWebhookEvent(webhookStart.event.id, 'succeeded', { event });

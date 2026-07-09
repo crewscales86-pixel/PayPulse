@@ -1227,15 +1227,15 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
             e('input', { placeholder: 'pm_...', value: editModal.stripe_payment_method_id || '', onChange: ev => setEditModal({...editModal, stripe_payment_method_id: ev.target.value, card_on_file: !!ev.target.value || !!editModal.whop_payment_method_id}) })
           ),
           e('div', { className: 'form-group' },
-            e('label', null, 'Whop Member ID'),
-            e('input', { placeholder: 'Whop member/user ID', value: editModal.whop_member_id || '', onChange: ev => setEditModal({...editModal, whop_member_id: ev.target.value}) })
+            e('label', null, 'Whop Member ID (mber_...)'),
+            e('input', { placeholder: 'mber_... not user_...', value: editModal.whop_member_id || '', onChange: ev => setEditModal({...editModal, whop_member_id: ev.target.value}) })
           ),
           e('div', { className: 'form-group' },
             e('label', null, 'Whop Payment Method ID'),
-            e('input', { placeholder: 'pmt_... or payt_... saved payment method', value: editModal.whop_payment_method_id || '', onChange: ev => setEditModal({...editModal, whop_payment_method_id: ev.target.value, card_on_file: !!ev.target.value || !!editModal.stripe_payment_method_id}) })
+            e('input', { placeholder: 'payt_... saved payment method', value: editModal.whop_payment_method_id || '', onChange: ev => setEditModal({...editModal, whop_payment_method_id: ev.target.value, card_on_file: !!ev.target.value || !!editModal.stripe_payment_method_id}) })
           ),
           e('div', { style: { color: 'var(--text2)', fontSize: 11, lineHeight: 1.5 } },
-            'If this client already exists in Stripe or Whop, paste the matching IDs. Whop must be the saved payment method attached to that exact member.'
+            'If this client already exists in Stripe or Whop, paste the matching IDs. Whop Member ID must be mber_..., and the saved payment method is usually payt_....'
           )
         ),
         editModal.ghl_location_id && settings?.ghlWebhookSecret && e('div', { style: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 10, padding: 16, marginBottom: 16 } },
@@ -1290,15 +1290,15 @@ function CustomersPage({ customers, onRefresh, settings, showToast }) {
               e('input', { placeholder: 'pm_...', value: editModal.stripe_payment_method_id || '', onChange: ev => setEditModal({...editModal, stripe_payment_method_id: ev.target.value, card_on_file: !!ev.target.value || !!editModal.whop_payment_method_id}) })
             ),
             e('div', { className: 'form-group' },
-              e('label', null, 'Whop Member ID'),
-              e('input', { placeholder: 'Whop member/user ID', value: editModal.whop_member_id || '', onChange: ev => setEditModal({...editModal, whop_member_id: ev.target.value}) })
+              e('label', null, 'Whop Member ID (mber_...)'),
+              e('input', { placeholder: 'mber_... not user_...', value: editModal.whop_member_id || '', onChange: ev => setEditModal({...editModal, whop_member_id: ev.target.value}) })
             ),
             e('div', { className: 'form-group' },
               e('label', null, 'Whop Payment Method ID'),
-              e('input', { placeholder: 'pmt_... or payt_... saved payment method', value: editModal.whop_payment_method_id || '', onChange: ev => setEditModal({...editModal, whop_payment_method_id: ev.target.value, card_on_file: !!ev.target.value || !!editModal.stripe_payment_method_id}) })
+              e('input', { placeholder: 'payt_... saved payment method', value: editModal.whop_payment_method_id || '', onChange: ev => setEditModal({...editModal, whop_payment_method_id: ev.target.value, card_on_file: !!ev.target.value || !!editModal.stripe_payment_method_id}) })
             ),
             e('div', { style: { color: 'var(--text2)', fontSize: 11, lineHeight: 1.5 } },
-              'Use this when the client already exists in Stripe or Whop. Stripe needs cus_ + card pm_. Whop needs member ID + the saved payment method ID attached to that member.'
+              'Use this when the client already exists in Stripe or Whop. Stripe needs cus_ + card pm_. Whop needs mber_ member ID + payt_ saved payment method attached to that member.'
             )
           )
         ),
