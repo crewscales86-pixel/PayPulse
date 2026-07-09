@@ -389,6 +389,10 @@ function getWhopItems(body) {
   return [];
 }
 
+function getWhopPageInfo(body) {
+  return body?.page_info || body?.data?.page_info || {};
+}
+
 async function whopFetchJson(user, path, params = {}) {
   if (!user?.whop_api_key) {
     const err = new Error('Set your Whop API key in Settings first');
@@ -426,12 +430,32 @@ async function findWhopMemberForCustomer(user, customer) {
     err.status = 400;
     throw err;
   }
-  const membersBody = await whopFetchJson(user, 'members', {
+
+  const searchedBody = await whopFetchJson(user, 'members', {
     company_id: user.whop_company_id,
-    first: 100
+    first: 25,
+    query: email
   });
-  const members = getWhopItems(membersBody);
-  return members.find(member => String(member.user?.email || '').trim().toLowerCase() === email) || null;
+  const searchedMembers = getWhopItems(searchedBody);
+  const exactMatch = searchedMembers.find(member => String(member.user?.email || '').trim().toLowerCase() === email);
+  if (exactMatch) return exactMatch;
+
+  let after = '';
+  for (let page = 0; page < 5; page += 1) {
+    const membersBody = await whopFetchJson(user, 'members', {
+      company_id: user.whop_company_id,
+      first: 100,
+      after
+    });
+    const members = getWhopItems(membersBody);
+    const match = members.find(member => String(member.user?.email || '').trim().toLowerCase() === email);
+    if (match) return match;
+    const pageInfo = getWhopPageInfo(membersBody);
+    if (!pageInfo.has_next_page || !pageInfo.end_cursor) break;
+    after = pageInfo.end_cursor;
+  }
+
+  return null;
 }
 
 async function importWhopPaymentMethodForCustomer(user, customer) {
@@ -455,7 +479,7 @@ async function importWhopPaymentMethodForCustomer(user, customer) {
   const methods = getWhopItems(methodsBody);
   const method = methods.find(pm => String(pm.id || '').startsWith('payt_') || String(pm.id || '').startsWith('pmt_'));
   if (!method?.id) {
-    const err = new Error(`No saved Whop payment method found for member ${member.id}. This customer may not have a reusable saved method yet.`);
+    const err = new Error(`Found Whop member ${member.id} for ${customer.email}, but Whop returned ${methods.length} saved payment method(s). None were reusable payt_/pmt_ methods.`);
     err.status = 404;
     throw err;
   }
