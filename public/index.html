@@ -1972,8 +1972,8 @@ function CreateAgencyModal({ onClose, onRefresh }) {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [companyName, setCompanyName] = useState('');
-  const [plan, setPlan] = useState('free');
-  const [monthlyRate, setMonthlyRate] = useState(0);
+  const [plan, setPlan] = useState('standard');
+  const [monthlyRate, setMonthlyRate] = useState(97);
   const [processor, setProcessor] = useState('stripe');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -2013,12 +2013,12 @@ function CreateAgencyModal({ onClose, onRefresh }) {
       e('label', null, 'Plan'),
       e('select', { value: plan, onChange: ev => setPlan(ev.target.value) },
         e('option', { value: 'free' }, 'Free'),
-        e('option', { value: 'standard' }, 'Standard'),
+        e('option', { value: 'standard' }, 'Standard - $97/mo'),
         e('option', { value: 'pro' }, 'Pro')
       )
     ),
     e('div', { className: 'form-group' },
-      e('label', null, 'Monthly Rate'),
+      e('label', null, 'Monthly Price You Charge'),
       e('input', { type: 'number', value: monthlyRate, onChange: ev => setMonthlyRate(parseFloat(ev.target.value) || 0) })
     ),
     e('div', { className: 'form-group' },
@@ -2537,18 +2537,17 @@ function App() {
     { key: 'charges', label: 'Charges' },
     { key: 'metrics', label: 'Metrics' },
     { key: 'margin', label: 'Margin' },
-    { key: 'ops', label: 'Ops' },
   ];
   const adminNav = [
     { key: 'customers', label: 'Customers' },
     { key: 'admin', label: 'Agencies' },
     { key: 'margin', label: 'Margin' },
-    { key: 'ops', label: 'Ops' },
     ...(user?.role === 'admin' ? [{ key: 'subadmins', label: 'Sub Admins' }] : []),
     { key: 'admin-settings', label: 'Settings' },
   ];
 
   const navItems = isAdmin ? adminNav : agencyNav;
+  const activePage = navItems.some(item => item.key === page) || (!isAdmin && page === 'inbox') ? page : 'customers';
 
   return e('div', null,
     e('nav', { className: 'nav' },
@@ -2559,7 +2558,7 @@ function App() {
       navItems.map(item =>
         e('div', {
           key: item.key,
-          className: 'nav-link ' + (page === item.key ? 'active' : ''),
+          className: 'nav-link ' + (activePage === item.key ? 'active' : ''),
           onClick: () => { window.location.hash = item.key; }
         }, item.label)
       ),
@@ -2571,14 +2570,14 @@ function App() {
       ),
       e('div', { className: 'nav-link', style: { opacity: 0.5, cursor: 'pointer' }, onClick: logout }, 'Sign Out')
     ),
-    !isAdmin && page === 'customers' && e(CustomersPage, {
+    !isAdmin && activePage === 'customers' && e(CustomersPage, {
       customers, onRefresh: refresh, settings, showToast
     }),
-    !isAdmin && page === 'settings' && e(SettingsPage, { settings, onSave: refresh, showToast }),
-    !isAdmin && page === 'inbox' && e(InboxPage, { notifications, onRefresh: refresh, showToast }),
-    !isAdmin && page === 'charges' && e(ChargesPage, { charges, showToast }),
-    !isAdmin && page === 'metrics' && e(MetricsPage, { metrics, showToast }),
-    !isAdmin && page === 'margin' && e(MarginPage, {
+    !isAdmin && activePage === 'settings' && e(SettingsPage, { settings, onSave: refresh, showToast }),
+    !isAdmin && activePage === 'inbox' && e(InboxPage, { notifications, onRefresh: refresh, showToast }),
+    !isAdmin && activePage === 'charges' && e(ChargesPage, { charges, showToast }),
+    !isAdmin && activePage === 'metrics' && e(MetricsPage, { metrics, showToast }),
+    !isAdmin && activePage === 'margin' && e(MarginPage, {
       marginDashboard,
       syncingAllMeta,
       onSyncAllMeta: async () => {
@@ -2592,12 +2591,11 @@ function App() {
       },
       showToast
     }),
-    !isAdmin && page === 'ops' && e(OpsPage, { alerts, webhookEvents, auditLogs, forecast, showToast }),
-    isAdmin && page === 'admin' && e(AdminPage, { agencies, adminStats, onRefresh: refresh, showToast }),
-    isAdmin && page === 'customers' && e(CustomersPage, {
+    isAdmin && activePage === 'admin' && e(AdminPage, { agencies, adminStats, onRefresh: refresh, showToast }),
+    isAdmin && activePage === 'customers' && e(CustomersPage, {
       customers, onRefresh: refresh, settings, showToast
     }),
-    isAdmin && page === 'margin' && e(MarginPage, {
+    isAdmin && activePage === 'margin' && e(MarginPage, {
       marginDashboard,
       syncingAllMeta,
       onSyncAllMeta: async () => {
@@ -2611,9 +2609,8 @@ function App() {
       },
       showToast
     }),
-    isAdmin && page === 'ops' && e(OpsPage, { alerts, webhookEvents, auditLogs, forecast, showToast }),
-    isAdmin && page === 'subadmins' && e(SubAdminsPage, { showToast }),
-    isAdmin && page === 'admin-settings' && e(AdminSettingsPage, { user, onSave: refresh, showToast }),
+    isAdmin && activePage === 'subadmins' && e(SubAdminsPage, { showToast }),
+    isAdmin && activePage === 'admin-settings' && e(AdminSettingsPage, { user, onSave: refresh, showToast }),
     e(Toast, { toast, onDismiss: () => setToast(null) })
   );
 }
