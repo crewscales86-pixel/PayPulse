@@ -578,6 +578,15 @@ function validateManualStripeIds({ stripeCustomerId = '', stripePaymentMethodId 
   return '';
 }
 
+function validateManualWhopIds({ whopMemberId = '', whopPaymentMethodId = '' } = {}) {
+  const memberId = String(whopMemberId || '').trim();
+  const paymentMethodId = String(whopPaymentMethodId || '').trim();
+  if (paymentMethodId && !memberId) {
+    return 'Whop Member ID is required when adding a Whop Payment Method ID';
+  }
+  return '';
+}
+
 // ─── AUTH ────────────────────────────────────────────────────────
 app.post('/api/auth/change-password', requireAuth, async (req, res) => {
   try {
@@ -2287,6 +2296,11 @@ app.post('/api/customers', requireAuth, async (req, res) => {
       stripePaymentMethodId: allowed.stripe_payment_method_id
     });
     if (stripeIdError) return res.status(400).json({ error: stripeIdError });
+    const whopIdError = validateManualWhopIds({
+      whopMemberId: allowed.whop_member_id,
+      whopPaymentMethodId: allowed.whop_payment_method_id
+    });
+    if (whopIdError) return res.status(400).json({ error: whopIdError });
     const c = await db.createCustomer({
       ...allowed,
       user_id: req.user.id
@@ -2385,6 +2399,11 @@ app.patch('/api/customers/:id', requireAuth, async (req, res) => {
       stripePaymentMethodId: updates.stripe_payment_method_id !== undefined ? updates.stripe_payment_method_id : c.stripe_payment_method_id
     });
     if (stripeIdError) return res.status(400).json({ error: stripeIdError });
+    const whopIdError = validateManualWhopIds({
+      whopMemberId: updates.whop_member_id !== undefined ? updates.whop_member_id : c.whop_member_id,
+      whopPaymentMethodId: updates.whop_payment_method_id !== undefined ? updates.whop_payment_method_id : c.whop_payment_method_id
+    });
+    if (whopIdError) return res.status(400).json({ error: whopIdError });
     if (
       updates.stripe_payment_method_id ||
       updates.whop_payment_method_id
