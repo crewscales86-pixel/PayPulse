@@ -587,6 +587,29 @@ function validateManualWhopIds({ whopMemberId = '', whopPaymentMethodId = '' } =
   return '';
 }
 
+function getProcessorFailureReason(body) {
+  if (!body) return 'Unknown processor error';
+  if (typeof body === 'string') {
+    try {
+      return getProcessorFailureReason(JSON.parse(body));
+    } catch {
+      return body;
+    }
+  }
+  if (typeof body === 'object') {
+    const nested = body.error || body.reason;
+    if (nested && nested !== body) return getProcessorFailureReason(nested);
+    return (
+      body.message ||
+      body.failure_message ||
+      body.detail ||
+      body.code ||
+      JSON.stringify(body)
+    );
+  }
+  return String(body);
+}
+
 // ─── AUTH ────────────────────────────────────────────────────────
 app.post('/api/auth/change-password', requireAuth, async (req, res) => {
   try {
@@ -1654,8 +1677,30 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
 
   // Whop processor — real API call
   if (customer.whop_member_id && customer.whop_payment_method_id) {
+    if (!user.whop_api_key) {
+      return finalizeFailedCharge({
+        user,
+        customer,
+        charge,
+        amount: chargeAmount,
+        reason: 'No Whop API Key configured',
+        notificationBody: 'No Whop API Key configured',
+        shouldWebhook: false
+      });
+    }
+    if (!user.whop_company_id) {
+      return finalizeFailedCharge({
+        user,
+        customer,
+        charge,
+        amount: chargeAmount,
+        reason: 'No Whop Company ID configured',
+        notificationBody: 'No Whop Company ID configured',
+        shouldWebhook: false
+      });
+    }
     try {
-      const response = await fetch('https://api.whop.com/v1/payments', {
+      const response = await fetch('https://api.whop.com/api/v1/payments', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1665,9 +1710,19 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
           company_id: user.whop_company_id,
           member_id: customer.whop_member_id,
           payment_method_id: customer.whop_payment_method_id,
-          total: chargeAmount,
-          plan: { currency: 'usd' },
-          metadata: { paypulse_customer_id: customer.id }
+          plan: {
+            initial_price: Number(chargeAmount.toFixed(2)),
+            currency: 'usd',
+            plan_type: 'one_time',
+            force_create_new_plan: true,
+            title: chargeType === 'one_off' ? 'PayPulse one-off charge' : 'PayPulse appointment charge',
+            description: note || `PayPulse charge for ${customer.name}`
+          },
+          metadata: {
+            paypulse_customer_id: customer.id,
+            paypulse_charge_id: charge.id,
+            paypulse_charge_type: chargeType
+          }
         })
       });
 
@@ -1701,13 +1756,7 @@ async function processCharge(user, customer, note = '', utmData = {}, opts = {})
         });
       } else {
         const errorBody = await response.text();
-        let failureReason;
-        try {
-          const errJson = JSON.parse(errorBody);
-          failureReason = errJson.error || errJson.message || errorBody;
-        } catch {
-          failureReason = errorBody;
-        }
+        const failureReason = getProcessorFailureReason(errorBody);
         await finalizeFailedCharge({
           user,
           customer,

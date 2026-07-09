@@ -696,8 +696,8 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
   const scheduleRetry = async (chargeId) => {
     setRetrying(chargeId);
     try {
-      await api('/api/charges/' + chargeId + '/schedule-retry', { method: 'POST', body: JSON.stringify({}) });
-      showToast('Retry scheduled', 'success');
+      const res = await api('/api/charges/' + chargeId + '/schedule-retry', { method: 'POST', body: JSON.stringify({}) });
+      showToast('Retry scheduled for ' + fmtDate(res.next_retry_at), 'success');
       await load();
     } catch (err) {
       showToast(err.message, 'error');
@@ -846,7 +846,10 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
                   e('td', null, e('span', { className: 'status-dot ' + (ch.status==='succeeded'?'ok':ch.status==='failed'?'fail':'warn') }), e('span', { style: { textTransform:'capitalize' } }, ch.status)),
                   e('td', null, e('span', { className: 'tag ' + (ch.charge_type === 'one_off' ? 'tag-blue' : 'tag-green') }, ch.charge_type === 'one_off' ? 'One-off' : 'Appointment')),
                   e('td', null, '$' + ch.amount.toFixed(2)),
-                  e('td', { style: { color: 'var(--text2)' } }, ch.note || ch.failure_reason || '-'),
+                  e('td', { style: { color: 'var(--text2)' } },
+                    ch.note || ch.failure_reason || '-',
+                    ch.retry_status === 'scheduled' && ch.next_retry_at && e('div', { style: { marginTop: 4, fontSize: 10, color: 'var(--warn)' } }, 'Retry: ' + fmtDate(ch.next_retry_at))
+                  ),
                   e('td', { style: { color: 'var(--text2)' } }, fmtDate(ch.created_at)),
                   e('td', null,
                     ch.status === 'failed' && e('span', null,
@@ -857,7 +860,7 @@ function PaymentDetailModal({ customer, settings, onClose, onRefresh, showToast 
                   )
                 )
               ),
-              d.charges.length === 0 && e('tr', null, e('td', { colSpan: 5, style: { textAlign:'center', color:'#555', padding:20 } }, 'No charges yet'))
+              d.charges.length === 0 && e('tr', null, e('td', { colSpan: 6, style: { textAlign:'center', color:'#555', padding:20 } }, 'No charges yet'))
             )
           )
         )
